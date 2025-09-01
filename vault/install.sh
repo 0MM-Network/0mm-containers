@@ -130,14 +130,22 @@ MOUNTS="-v \"\$DATA_DIR:/vault/file:Z\" -v \"\$CONFIG_DIR:/vault/config:Z\" -v \
 # Expose ports for this node
 PORTS="-p \$API_PORT:8200 -p \$CLUSTER_PORT:8201"
 
-# Execute Vault server in container (default to server mode with generated config)
-eval podman run --rm \$TTY_FLAG \\
-    --name "vault-\$NN" \\
-    \$PORTS \\
-    \$MOUNTS \\
-    -e VAULT_ADDR="http://127.0.0.1:\$API_PORT" \\
-    -e VAULT_API_ADDR="http://127.0.0.1:\$API_PORT" \\
-    "\$IMAGE" server -config=/vault/config/server.hcl "\$@"
+# Determine if running in CLI mode or server mode
+if [ \$# -gt 0 ] && { [ "\$1" = "--version" ] || [ "\$1" = "version" ]; }; then
+    # CLI mode for version check
+    eval podman run --rm \$TTY_FLAG \\
+        \$MOUNTS \\
+        "\$IMAGE" "\$@"
+else
+    # Server mode
+    eval podman run --rm \$TTY_FLAG \\
+        --name "vault-\$NN" \\
+        \$PORTS \\
+        \$MOUNTS \\
+        -e VAULT_ADDR="http://127.0.0.1:\$API_PORT" \\
+        -e VAULT_API_ADDR="http://127.0.0.1:\$API_PORT" \\
+        "\$IMAGE" server -config=/vault/config/server.hcl "\$@"
+fi
 EOF
     chmod +x "$SCRIPTS_DIR/$SHIM_NAME"
     echo "Created wrapper script for $SHIM_NAME"
@@ -151,7 +159,7 @@ FAILED_SHIMS=()
 
 for shim in "${VAULT_SHIMS[@]}"; do
     echo -n "Testing $shim... "
-    if "$SCRIPTS_DIR/$shim" --version &>/dev/null; then
+    if "$SCRIPTS_DIR/$shim" version &>/dev/null; then
         echo "✅ Success"
         SUCCESS_COUNT=$((SUCCESS_COUNT + 1))
     else
