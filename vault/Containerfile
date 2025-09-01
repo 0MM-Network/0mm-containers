@@ -24,7 +24,10 @@ ENV VERSION=$PRODUCT_VERSION
 
 RUN set -eux; \
     apt-get update; \
-    apt-get install -y --no-install-recommends curl dumb-init wget tzdata libcap2-bin ca-certificates; \
+    apt-get install -y --no-install-recommends curl dumb-init wget tzdata libcap2-bin ca-certificates jq; \
+    if [ -z "$PRODUCT_VERSION" ]; then \
+      PRODUCT_VERSION=$(curl -s https://api.github.com/repos/openbao/openbao/releases/latest | jq -r '.tag_name' | sed 's/^v//'); \
+    fi; \
     wget https://github.com/openbao/openbao/releases/download/v${PRODUCT_VERSION}/openbao_${PRODUCT_VERSION}_linux_${TARGETARCH}.zip; \
     unzip openbao_${PRODUCT_VERSION}_linux_${TARGETARCH}.zip; \
     mv openbao /usr/bin/${BIN_NAME}; \

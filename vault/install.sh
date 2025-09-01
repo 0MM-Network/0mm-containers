@@ -29,7 +29,7 @@ TRANSIT_VAULT_ADDR="http://127.0.0.100:8200"  # Fixed transit Vault server for a
 BUILD_CONTEXT="$SCRIPTS_DIR"
 
 # Set build parameters (optional; PRODUCT_VERSION controls installed Vault version, empty for latest)
-PRODUCT_VERSION="2.4.0"  # Set to e.g. "1.16.3" for a specific version; empty installs latest
+PRODUCT_VERSION=""  # Set to e.g. "2.0.1" for a specific version; empty installs latest
 
 # Build the final container image
 echo "Building Vault container image..."
