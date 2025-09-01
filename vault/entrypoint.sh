@@ -1,6 +1,4 @@
 #!/usr/bin/dumb-init /bin/bash
-# Copyright (c) HashiCorp, Inc.
-# SPDX-License-Identifier: BUSL-1.1
 
 set -e
 
@@ -60,10 +58,7 @@ if [ "$1" = 'server' ]; then
         -dev-root-token-id="$VAULT_DEV_ROOT_TOKEN_ID" \
         -dev-listen-address="${VAULT_DEV_LISTEN_ADDRESS:-"0.0.0.0:8200"}" \
         "$@"
-elif [ "$1" = 'version' ]; then
-    # This needs a special case because there's no help output.
-    set -- vault "$@"
-elif vault --help "$1" 2>&1 | grep -q "vault $1"; then
+elif vault "$1" -h 2>&1 | grep -q "vault $1"; then
     # We can't use the return code to check for the existence of a subcommand, so
     # we have to use grep to look for a pattern in the help output.
     set -- vault "$@"

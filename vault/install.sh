@@ -66,6 +66,7 @@ CONFIG_FILE="\$CONFIG_DIR/server.hcl"
 
 # Error handling
 set -e
+set -x
 
 # Function to display error messages
 error_exit() {
@@ -147,8 +148,8 @@ CONFIG_EOF
 
     # Server mode
     eval podman run --rm \$TTY_FLAG \\
-        --uidmap "\$HUID:\$CUID:1" \\
-        --gidmap "\$HGID:\$CGID:1" \\
+        --uidmap +\$HUID:@\$CUID:1 \\
+        --gidmap +\$HGID:@\$CGID:1 \\
         --name "vault-\$NN" \\
         \$PORTS \\
         \$MOUNTS \\

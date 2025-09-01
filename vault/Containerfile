@@ -1,26 +1,16 @@
-# Copyright (c) OpenBao
-# SPDX-License-Identifier: MPL-2.0
-
-## DOCKERHUB DOCKERFILE ##
 FROM ubuntu:noble AS default
 
 ARG BIN_NAME
 ARG PRODUCT_VERSION
 ARG PRODUCT_REVISION
-ARG TARGETOS TARGETARCH
-
-LABEL name="Vault" \
-      maintainer="OpenBao Team <info@openbao.org>" \
-      vendor="OpenBao" \
-      version=${PRODUCT_VERSION} \
-      release=${PRODUCT_REVISION} \
-      revision=${PRODUCT_REVISION} \
-      org.opencontainers.image.source="https://github.com/openbao/openbao" \
-      summary="OpenBao is a tool for securely accessing secrets." \
-      description="OpenBao is a tool for securely accessing secrets. A secret is anything that you want to tightly control access to, such as API keys, passwords, certificates, and more. OpenBao provides a unified interface to any secret, while providing tight access control and recording a detailed audit log."
+ARG TARGETOS
+ARG TARGETARCH
 
 ENV NAME=$BIN_NAME
 ENV VERSION=$PRODUCT_VERSION
+
+# Create non-root user with UID 1000
+RUN useradd -u 1001 -m -s /bin/bash vault
 
 RUN set -eux; \
     apt-get update; \
@@ -32,8 +22,6 @@ RUN set -eux; \
     dpkg -i bao_${PRODUCT_VERSION}_linux_${TARGETARCH}.deb; \
     cp -f /usr/bin/bao /usr/bin/${BIN_NAME}; \
     chmod +x /usr/bin/${BIN_NAME}; \
-    setcap cap_ipc_lock=ep /usr/bin/bao; \
-    setcap cap_ipc_lock=ep /usr/bin/${BIN_NAME}; \
     rm bao_${PRODUCT_VERSION}_linux_${TARGETARCH}.deb; \
     apt-get clean; \
     rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
@@ -54,21 +42,34 @@ RUN  set -ex; \
      \
      apt-get purge -y --auto-remove $fetch_deps
     
-RUN groupadd ${NAME} && useradd -r -g ${NAME} ${NAME}
+# Create user and configure sudo
+# RUN echo "${NAME} ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/${NAME} && \
+#     chmod 0440 /etc/sudoers.d/${NAME}
 
 RUN mkdir -p /vault/logs && \
     mkdir -p /vault/file && \
     mkdir -p /vault/config && \
     chown -R ${NAME}:${NAME} /vault
 
+COPY entrypoint.sh /usr/local/bin/entrypoint.sh
+RUN vault -autocomplete-install && \
+    chmod +x /usr/local/bin/entrypoint.sh && \
+    sed -i "s/openbao/${BIN_NAME}/g" /usr/local/bin/entrypoint.sh
+
+USER vault
+
 VOLUME /vault/logs
 VOLUME /vault/file
 
 EXPOSE 8200
 
-COPY entrypoint.sh /usr/local/bin/entrypoint.sh
-RUN chmod +x /usr/local/bin/entrypoint.sh && \
-    sed -i "s/openbao/${BIN_NAME}/g" /usr/local/bin/entrypoint.sh
+# Verify Vault commands are available
+RUN vault version && \
+    vault status -h && \
+    vault kv -h && \
+    vault path-help -h && \
+    vault server -h
+
 ENTRYPOINT ["entrypoint.sh"]
 
-CMD ["server", "-dev"]
+CMD ["vault", "server"]
