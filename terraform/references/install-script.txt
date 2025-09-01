@@ -1,0 +1,179 @@
+#!/bin/bash
+# filepath: /home/hedge/src/ckrd/protocol/podular/pdlr-containers/opentofu/install.sh
+
+# Script to install containerized OpenTofu solution
+
+# Error handling
+set -e
+
+# Function to display error messages
+error_exit() {
+    echo "Error: $1" >&2
+    exit 1
+}
+
+# Check if Podman is installed
+if ! command -v podman &> /dev/null; then
+    error_exit "Podman is not installed. Please install Podman first."
+fi
+
+SCRIPTS_DIR="$PWD"
+TOFU_IMAGE="localhost/opentofu-container:latest"
+
+# Build the container image
+echo "Building OpenTofu container image..."
+podman build -t $TOFU_IMAGE -f "$SCRIPTS_DIR/Containerfile" "$SCRIPTS_DIR" || error_exit "Failed to build container image"
+
+# Create wrapper scripts for each OpenTofu command
+echo "Creating wrapper scripts..."
+TOFU_COMMANDS=(
+    "tofu"
+    "tofu-init"
+    "tofu-plan"
+    "tofu-apply"
+    "tofu-destroy"
+    "tofu-output"
+    "tofu-validate"
+    "tofu-fmt"
+    "tofu-state"
+    "tofu-console"
+)
+
+# Create the main tofu wrapper script
+cat > "$SCRIPTS_DIR/tofu" << EOF
+#!/bin/bash
+
+# Define variables
+TOFU_IMAGE="$TOFU_IMAGE"
+HUID=\$(id -u)
+HGID=\$(id -g)
+CUID=\$(podman run --rm \$TOFU_IMAGE id -u)
+CGID=\$(podman run --rm \$TOFU_IMAGE id -g)
+
+# Error handling
+set -e
+
+# Function to display error messages
+error_exit() {
+    echo "Error: \$1" >&2
+    exit 1
+}
+
+# Check if the container image exists
+if ! podman image exists "\$TOFU_IMAGE"; then
+    error_exit "OpenTofu container image not found. Please run the installation script again."
+fi
+
+# Create required directories if they don't exist
+mkdir -p "\$PWD/.terraform"
+mkdir -p "\$PWD/.terraform.d"
+mkdir -p "\$PWD/.aws"
+
+# Ensure proper permissions
+chmod -R 755 "\$PWD/.terraform"
+chmod -R 755 "\$PWD/.terraform.d"
+
+# Check if stdin is a TTY and set flags accordingly
+TTY_FLAG=""
+if [ -t 0 ] && [ -t 1 ]; then
+    TTY_FLAG="-it"
+else
+    TTY_FLAG="-i"
+fi
+
+# Prepare volume mounts
+MOUNTS="-v \"\$PWD:/infra:Z\" -v \"\$HOME/.aws:/home/tofu/.aws:ro,Z\" -v \"\$PWD/.terraform:/home/tofu/.terraform:Z\" -v \"\$PWD/.terraform.d:/home/tofu/.terraform.d:Z\""
+
+# Execute tofu command in container
+eval podman run --rm \$TTY_FLAG \\
+    --uidmap +\${CUID}:@\${HUID}:1 \\
+    --gidmap +\${CGID}:@\${HGID}:1 \\
+    \$MOUNTS \\
+    -e HOME=/home/tofu \\
+    -e USER="\$USER" \\
+    -e AWS_PROFILE \\
+    -e AWS_ACCESS_KEY_ID \\
+    -e AWS_SECRET_ACCESS_KEY \\
+    -e AWS_SESSION_TOKEN \\
+    -e TF_LOG \\
+    -e TF_VAR_* \\
+    "\$TOFU_IMAGE" tofu "\$@"
+EOF
+chmod +x "$SCRIPTS_DIR/tofu"
+echo "Created main wrapper script for tofu"
+
+# Create convenience wrapper scripts for common tofu commands
+for cmd in "${TOFU_COMMANDS[@]}"; do
+    # Skip the main tofu command, we already created it
+    if [ "$cmd" != "tofu" ]; then
+        # Extract the subcommand (e.g., 'init' from 'tofu-init')
+        subcmd=${cmd#tofu-}
+
+        cat > "$SCRIPTS_DIR/$cmd" << EOF
+#!/bin/bash
+
+# Simple wrapper to call tofu with the appropriate subcommand
+"\$PWD/tofu" $subcmd "\$@"
+EOF
+        chmod +x "$SCRIPTS_DIR/$cmd"
+        echo "Created wrapper script for $cmd"
+    fi
+done
+
+# Test commands
+echo "Testing OpenTofu commands..."
+echo "============================"
+SUCCESS_COUNT=0
+FAILED_COMMANDS=()
+
+for cmd in "${TOFU_COMMANDS[@]}"; do
+    echo -n "Testing $cmd... "
+    if [ "$cmd" == "tofu" ]; then
+        # Test main command
+        if "$SCRIPTS_DIR/tofu" --help &>/dev/null; then
+            echo "✅ Success"
+            SUCCESS_COUNT=$((SUCCESS_COUNT + 1))
+        else
+            echo "❌ Failed"
+            FAILED_COMMANDS+=("$cmd")
+        fi
+    else
+        # For subcommand wrappers, test if they exist and are executable
+        if [ -x "$SCRIPTS_DIR/$cmd" ]; then
+            echo "✅ Success"
+            SUCCESS_COUNT=$((SUCCESS_COUNT + 1))
+        else
+            echo "❌ Failed"
+            FAILED_COMMANDS+=("$cmd")
+        fi
+    fi
+done
+
+# Print summary
+echo "============================"
+echo "Test summary: $SUCCESS_COUNT/${#TOFU_COMMANDS[@]} commands available"
+
+if [ ${#FAILED_COMMANDS[@]} -eq 0 ]; then
+    echo "All OpenTofu commands are available!"
+else
+    echo "Failed commands:"
+    for cmd in "${FAILED_COMMANDS[@]}"; do
+        echo "- $cmd"
+    done
+    echo
+    echo "Troubleshooting tips:"
+    echo "1. Check if the container image was built successfully"
+    echo "2. Try running 'podman run --rm $TOFU_IMAGE --help'"
+    echo "3. Check permissions on the wrapper scripts"
+fi
+
+echo
+echo "OpenTofu container solution installed successfully."
+echo "You can now use OpenTofu commands directly from this folder."
+echo
+echo "Examples:"
+echo "  ./tofu-init             # Initialize working directory (shortcut for ./tofu init)"
+echo "  ./tofu-plan             # Create an execution plan (shortcut for ./tofu plan)"
+echo "  ./tofu-apply            # Apply changes (shortcut for ./tofu apply)"
+echo "  ./tofu-fmt              # Format .tf files (shortcut for ./tofu fmt)"
+exit 0

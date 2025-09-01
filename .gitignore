@@ -13,9 +13,10 @@
 !LICENSE
 !aider
 !goose
-!**/examples/**/*
 !**/artifacts/**/*
 !**/bats/**/*
+!**/examples/**/*
+!**/references/**/*
 
 # ...even if they are in subdirectories
 !aider-ai/

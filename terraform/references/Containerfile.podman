@@ -1,0 +1,47 @@
+# podman image build -q -t localhost:tofu-test -f references/Containerfile.podman .
+# podman run -q -it --rm --user tofu --device /dev/fuse --security-opt=no-new-privileges     quay.io/podman/stable bash
+# podman run -q -it --rm \
+#    --device /dev/fuse \
+#    --cap-drop setuid,setgid \
+#    localhost:tofu-test \
+#        podman unshare bash
+# OR:
+# podman run -q -it --rm --device /dev/fuse  --security-opt=no-new-privileges localhost:tofu-test podman unshare bash
+#        podman run -q -it --rm alpine:latest sh
+FROM debian:testing
+
+ARG TARGETARCH
+
+# Set environment variables (optimization: set early for cache reuse)
+ENV DEBIAN_FRONTEND=noninteractive
+ENV LANG=C.UTF-8
+
+RUN apt-get update && \
+    apt-get upgrade -y && \
+    apt-get install -y --no-install-recommends podman fuse-overlayfs slirp4netns uidmap
+
+RUN useradd tofu -s /bin/bash && \
+    echo "tofu:1001:64535" > /etc/subuid && \
+    echo "tofu:1001:64535" > /etc/subgid
+
+COPY ../artifacts/containers.conf /etc/containers/containers.conf
+COPY ../artifacts/home-containers.conf /home/tofu/.config/containers/containers.conf
+
+RUN mkdir -p /home/tofu/.local/share/containers && \
+    chown tofu:tofu -R /home/tofu && \
+    chmod 0644 /etc/containers/containers.conf
+
+VOLUME /home/tofu/.local/share/containers
+
+# Replace setuid bits by proper file capabilities for uidmap binaries.
+# See <https://github.com/containers/tofu/discussions/19931>.
+RUN apt-get install -y libcap2-bin && \
+    chmod 0755 /usr/bin/newuidmap /usr/bin/newgidmap && \
+    setcap cap_setuid=ep /usr/bin/newuidmap && \
+    setcap cap_setgid=ep /usr/bin/newgidmap && \
+    apt-get autoremove --purge -y libcap2-bin
+
+ENV _CONTAINERS_USERNS_CONFIGURED=""
+
+USER tofu
+
