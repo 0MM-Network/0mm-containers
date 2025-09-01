@@ -82,8 +82,8 @@ fi
 # Get host and container UIDs/GIDs for mapping
 HUID=\$(id -u)
 HGID=\$(id -g)
-CUID=\$(podman run --rm "\$IMAGE" id -u vault)
-CGID=\$(podman run --rm "\$IMAGE" id -g vault)
+CUID=\$(podman run --rm --entrypoint /usr/bin/id "\$IMAGE" -u vault)
+CGID=\$(podman run --rm --entrypoint /usr/bin/id "\$IMAGE" -g vault)
 
 # Check if stdin is a TTY and set flags accordingly
 TTY_FLAG=""
@@ -147,21 +147,22 @@ CONFIG_EOF
 
     # Server mode
     eval podman run --rm \$TTY_FLAG \\
-        --uidmap \$CUID:\$HUID:1 \\
-        --gidmap \$CGID:\$HGID:1 \\
+        --uidmap 0:100000:65536 --uidmap +\$CUID:@\$HUID:1 \\
+        --gidmap 0:100000:65536 --gidmap +\$CGID:@\$HGID:1 \\
         --name "vault-\$NN" \\
         \$PORTS \\
         \$MOUNTS \\
         -e VAULT_ADDR="http://127.0.0.1:\$API_PORT" \\
         -e VAULT_API_ADDR="http://127.0.0.1:\$API_PORT" \\
+        -e SKIP_SETCAP=0 \\
         "\$IMAGE" server -config=/vault/config/server.hcl "\$@"
 else
     # CLI mode
     eval podman run --rm \$TTY_FLAG \\
-        --uidmap \$CUID:\$HUID:1 \\
-        --gidmap \$CGID:\$HGID:1 \\
+        --uidmap 0:100000:65536 --uidmap +\$CUID:@\$HUID:1 \\
+        --gidmap 0:100000:65536 --gidmap +\$CGID:@\$HGID:1 \\
         -e SKIP_SETCAP=1 \\
-        "\$IMAGE" "\$@"
+        "\$IMAGE" vault "\$@"
 fi
 EOF
     chmod +x "$SCRIPTS_DIR/$SHIM_NAME"
