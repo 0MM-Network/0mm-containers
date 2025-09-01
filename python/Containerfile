@@ -1,0 +1,101 @@
+FROM docker.io/python:3.12-slim
+
+# Set environment variables
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=off \
+    PIP_DISABLE_PIP_VERSION_CHECK=on
+
+# Install system dependencies
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+    git \
+    curl \
+    gcc \
+    build-essential \
+    ca-certificates \
+    sudo \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create non-root user to run scripts
+RUN useradd -m python && \
+    echo "python ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/python && \
+    chmod 0440 /etc/sudoers.d/python
+
+# Install common Python packages
+RUN python3 -m venv /home/python/.venv && \
+    . /home/python/.venv/bin/activate && \
+    python3 -m pip install --upgrade pip && \
+    python3 -m pip install --no-cache-dir --upgrade setuptools wheel && \
+    python3 -m pip install --no-cache-dir ipython \
+    jupyter \
+    numpy \
+    pandas \
+    matplotlib \
+    requests \
+    pytest \
+    black \
+    flake8 \
+    mypy \
+    poetry \
+    scipy
+
+# Ensure venv is owned by python user
+RUN chown -R python:python /home/python
+
+# Create workspace for script execution
+WORKDIR /workspace
+
+# Create volume mount point
+RUN mkdir -p /scripts && \
+    chown -R python:python /scripts /workspace
+
+# Set permissions for the workspace
+RUN chmod 755 /workspace
+
+# Create a script to run Python files with proper paths
+RUN echo '#!/bin/bash\n\
+if [ -z "$1" ]; then\n\
+  echo "Usage: ./run-script.sh <python_script.py> [args...]"\n\
+  exit 1\n\
+fi\n\
+\n\
+SCRIPT_PATH="$1"\n\
+shift\n\
+\n\
+if [ -f "$SCRIPT_PATH" ]; then\n\
+  # Add the directory of the script to PYTHONPATH\n\
+  export PYTHONPATH="$(dirname $(realpath $SCRIPT_PATH)):$PYTHONPATH"\n\
+  . /home/python/.venv/bin/activate\n\
+  python "$SCRIPT_PATH" "$@"\n\
+else\n\
+  echo "Error: File not found - $SCRIPT_PATH"\n\
+  exit 1\n\
+fi' > /usr/local/bin/run-script.sh && \
+    chmod +x /usr/local/bin/run-script.sh
+
+# Create a proper entrypoint script
+RUN echo '#!/bin/bash\n\
+# Source the virtual environment\n\
+source /home/python/.venv/bin/activate\n\
+\n\
+# If no arguments given, show help\n\
+if [ $# -eq 0 ]; then\n\
+  echo "Usage: podman run -v $(pwd):/scripts python-runner python /scripts/your_script.py"\n\
+  exit 1\n\
+fi\n\
+\n\
+# Execute the command with all arguments\n\
+exec "$@"\n\
+' > /usr/local/bin/entrypoint.sh && \
+chmod +x /usr/local/bin/entrypoint.sh
+
+# Switch to non-root user
+USER python
+
+# Set entrypoint to the script
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
+
+# Default command - show Python help if nothing specified
+CMD ["python", "--help"]

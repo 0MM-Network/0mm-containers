@@ -1,0 +1,73 @@
+FROM python:3.10.14-slim AS base
+
+# Install system dependencies (including Playwright/Chromium deps)
+RUN apt-get update && \
+    apt-get install --no-install-recommends -y \
+    build-essential git libportaudio2 pandoc \
+    libnss3 libnspr4 libatk1.0-0 libatk-bridge2.0-0 libcups2 libdrm2 libxkbcommon0 \
+    libxcomposite1 libxdamage1 libxfixes3 libxrandr2 libgbm1 libpango-1.0-0 \
+    libcairo2 libasound2 libatspi2.0-0 libgtk-3-0 fonts-liberation fonts-noto-color-emoji && \
+    rm -rf /var/lib/apt/lists/*
+
+# Create app user with UID 1000
+RUN useradd -m -u 1000 -s /bin/bash appuser
+
+WORKDIR /app
+
+# Create virtual environment
+RUN python -m venv /venv
+ENV PATH="/venv/bin:$PATH"
+
+# Playwright browser settings
+ENV PLAYWRIGHT_BROWSERS_PATH=/home/appuser/pw-browsers
+ENV PLAYWRIGHT_SKIP_BROWSER_GC=1
+
+# Create directories with proper permissions (default 755 is sufficient)
+RUN mkdir -p /home/appuser/.aider /home/appuser/.cache /home/appuser/pw-browsers && \
+    chown -R appuser:appuser /home/appuser /app /venv
+
+# So git doesn't complain about unusual permissions
+RUN git config --system --add safe.directory /app
+
+# This puts the container's ~/.aider into the host's project directory (usually host's cwd).
+# That way caches, version checks, etc get stored in the host filesystem not
+# simply discarded every time the container exits.
+ENV HOME=/app
+
+#########################
+FROM base AS aider-full
+
+USER appuser
+
+ENV AIDER_DOCKER_IMAGE=localhost/aider-full
+
+COPY --chown=appuser:appuser . /tmp/aider
+
+RUN cd /tmp/aider && \
+    python -m pip install --upgrade --no-cache-dir pip && \
+    python -m pip install --resume-retries 5 --no-cache-dir ".[help,browser,playwright]" boto3 \
+       --extra-index-url https://download.pytorch.org/whl/cpu && \
+    cd /app && \
+    rm -rf /tmp/aider && \
+    playwright install chromium
+
+ENTRYPOINT ["/venv/bin/aider"]
+
+#########################
+FROM base AS aider
+
+USER appuser
+
+ENV AIDER_DOCKER_IMAGE=localhost/aider
+
+COPY --chown=appuser:appuser . /tmp/aider
+
+RUN cd /tmp/aider && \
+    python -m pip install --upgrade --no-cache-dir pip && \
+    python -m pip install --resume-retries 5 --no-cache-dir ".[playwright]" boto3 google-cloud-aiplatform \
+       --extra-index-url https://download.pytorch.org/whl/cpu && \
+    cd /app && \
+    rm -rf /tmp/aider && \
+    playwright install chromium
+
+ENTRYPOINT ["/venv/bin/aider"]

@@ -1,0 +1,13 @@
+[Unit]
+Description=User Rootless Podman Setup
+After=user-systemd-setup.service
+Requires=user-systemd-setup.service
+
+[Service]
+ExecStart=/bin/bash -c "systemctl --user enable --now podman.socket; systemctl --user start podman.service --log-driver=journald --log-level=debug"
+RemainAfterExit=yes
+Restart=on-failure
+RestartSec=5s
+
+[Install]
+WantedBy=default.target

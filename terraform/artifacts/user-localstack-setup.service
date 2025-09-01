@@ -1,0 +1,14 @@
+[Unit]
+Description=User LocalStack Setup
+After=user-podman-setup.service
+After=user-systemd-setup.service
+Requires=user-systemd-setup.service
+
+[Service]
+ExecStart=/bin/bash -c "DEBUG=1 DOCKER_CMD=\"podman\" DOCKER_SOCK=%h/podman.sock DOCKER_HOST=unix://%h/podman.sock localstack start --network podman &"
+RemainAfterExit=yes
+Restart=on-failure
+RestartSec=5s
+
+[Install]
+WantedBy=default.target

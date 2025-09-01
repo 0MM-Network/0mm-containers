@@ -1,0 +1,6 @@
+[default]
+region = us-west-2
+output = json
+endpoint_url = http://localhost:4566
+s3 =
+    endpoint_url = http://localhost:4566

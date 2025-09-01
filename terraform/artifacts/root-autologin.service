@@ -1,0 +1,16 @@
+[Unit]
+Description=Automatic Root User Login
+
+[Service]
+ExecStart=/bin/bash
+Restart=no
+StandardInput=tty
+StandardOutput=tty
+TTYPath=/dev/console
+TTYReset=yes
+TTYVHangup=yes
+User=root
+WorkingDirectory=/root
+
+[Install]
+WantedBy=multi-user.target

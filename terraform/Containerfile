@@ -1,0 +1,47 @@
+FROM debian:bookworm
+
+# Add repository for latest Podman
+RUN apt-get update && apt-get install -y curl gnupg
+RUN mkdir -p /etc/apt/keyrings
+RUN curl -sL https://download.opensuse.org/repositories/devel:/kubic:/libcontainers:/unstable/Debian_12/Release.key | gpg --dearmor -o /etc/apt/keyrings/devel-kubic-libcontainers-unstable.gpg
+RUN echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/devel-kubic-libcontainers-unstable.gpg] https://download.opensuse.org/repositories/devel:/kubic:/libcontainers:/unstable/Debian_12/ /" > /etc/apt/sources.list.d/devel:kubic:libcontainers:unstable.list
+
+# Install required packages for systemd, podman, and rootless essentials
+RUN apt-get update && \
+    apt-get install -y systemd podman fuse-overlayfs slirp4netns containernetworking-plugins uidmap && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
+# Ensure newuidmap and newgidmap are setuid
+RUN chmod 4755 /usr/bin/newuidmap /usr/bin/newgidmap
+
+# Slim down systemd by removing unnecessary services
+RUN (cd /lib/systemd/system/sysinit.target.wants/; for i in *; do [ "$i" = "systemd-tmpfiles-setup.service" ] || rm -f "$i"; done); \
+    rm -f /lib/systemd/system/multi-user.target.wants/*; \
+    rm -f /etc/systemd/system/*.wants/*; \
+    rm -f /lib/systemd/system/local-fs.target.wants/*; \
+    rm -f /lib/systemd/system/sockets.target.wants/*udev*; \
+    rm -f /lib/systemd/system/sockets.target.wants/*initctl*; \
+    rm -f /lib/systemd/system/basic.target.wants/*; \
+    rm -f /lib/systemd/system/anaconda.target.wants/*;
+
+# Create non-root user 'podman' with UID 1000
+RUN useradd -u 1000 -m -s /bin/bash podman
+
+# Setup subuid and subgid for rootless Podman
+RUN echo "podman:100000:65536" > /etc/subuid && \
+    echo "podman:100000:65536" > /etc/subgid
+
+# Copy and enable the systemd service for nested Podman
+#COPY nested-podman.service /etc/systemd/system/nested-podman.service
+#RUN ln -s /etc/systemd/system/nested-podman.service /etc/systemd/system/multi-user.target.wants/nested-podman.service
+
+# Copy and enable the cgroup setup service
+COPY cgroup-setup.service /etc/systemd/system/cgroup-setup.service
+RUN ln -s /etc/systemd/system/cgroup-setup.service /etc/systemd/system/multi-user.target.wants/cgroup-setup.service
+
+# Set environment for container detection
+ENV container=podman
+
+# Set ENTRYPOINT to run systemd
+ENTRYPOINT ["/sbin/init"]

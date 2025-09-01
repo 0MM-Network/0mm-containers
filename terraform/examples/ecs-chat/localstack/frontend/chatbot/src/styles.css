@@ -1,0 +1,106 @@
+/* General container styling */
+.container {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100vh;
+    background-color: #f5f5f7;
+    padding: 20px;
+    box-sizing: border-box;
+    overflow: hidden;
+}
+
+/* Chatbot styling */
+.chatbot {
+    background-color: #ffffff;
+    border-radius: 24px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+    width: 450px;
+    max-height: 80vh;  /* Make sure the chatbot box doesn’t exceed 80% of the viewport height */
+    padding: 20px;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    overflow: hidden;
+}
+
+/* Header styling */
+.chatbot h1 {
+    text-align: center;
+    font-size: 24px;
+    font-weight: 600;
+    color: #333;
+    margin-bottom: 20px;
+}
+
+/* Form input styling */
+.chatbot label {
+    display: block;
+    font-size: 16px;
+    color: #555;
+    margin-bottom: 10px;
+}
+
+.chatbot input[type="text"] {
+    width: calc(100% - 20px);
+    padding: 10px;
+    font-size: 16px;
+    border-radius: 12px;
+    border: 1px solid #d1d1d6;
+    margin-bottom: 20px;
+    box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.05);
+}
+
+/* Button styling */
+.chatbot button {
+    display: block;
+    width: 100%;
+    padding: 12px;
+    font-size: 16px;
+    font-weight: 600;
+    color: white;
+    background-color: #007aff;
+    border: none;
+    border-radius: 12px;
+    cursor: pointer;
+    transition: background-color 0.3s ease;
+}
+
+.chatbot button:hover {
+    background-color: #005bb5;
+}
+
+/* Scrollable content area */
+.chatbot .content {
+    flex: 1;
+    overflow-y: auto;
+    margin-bottom: 20px;
+}
+
+/* Loading text styling */
+.chatbot .loading {
+    text-align: center;
+    font-size: 14px;
+    color: #777;
+    margin-top: 20px;
+}
+
+/* Response styling */
+.chatbot .response {
+    margin-top: 20px;
+}
+
+.chatbot .response h2 {
+    font-size: 18px;
+    font-weight: 600;
+    color: #333;
+    margin-bottom: 10px;
+}
+
+.chatbot .response p {
+    font-size: 16px;
+    line-height: 1.6;
+    color: #333;
+    white-space: pre-wrap;
+}

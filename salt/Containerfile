@@ -1,0 +1,75 @@
+FROM docker.io/ubuntu:latest
+
+# Set environment variables
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Install dependencies and Salt prerequisites
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+    python3 \
+    python3-pip \
+    python3-dev \
+    openssh-client \
+    sshpass \
+    git \
+    ca-certificates \
+    curl \
+    sudo \
+    gnupg2 \
+    lsb-release \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+# Add Salt repository and install Salt
+RUN mkdir -p /etc/apt/keyrings && \
+    curl -fsSL https://packages.broadcom.com/artifactory/api/security/keypair/SaltProjectKey/public | sudo tee /etc/apt/keyrings/salt-archive-keyring.pgp && \
+    curl -fsSL https://github.com/saltstack/salt-install-guide/releases/latest/download/salt.sources | sudo tee /etc/apt/sources.list.d/salt.sources && \
+    apt-get update && \
+    apt-get install -y salt-master salt-minion salt-ssh salt-api salt-cloud salt-syndic && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
+# Create a directory for Salt data
+WORKDIR /salt
+
+# Create salt user and configure sudo
+RUN echo "salt ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/salt && \
+    chmod 0440 /etc/sudoers.d/salt
+
+# Set Salt configuration directories
+RUN mkdir -p /etc/salt/master.d /etc/salt/minion.d && \
+    mkdir -p /srv/salt /srv/pillar && \
+    chown -R salt:salt /etc/salt /srv/salt /srv/pillar /salt
+
+# Configure Salt for masterless mode (similar to Ansible's standalone mode)
+RUN echo "file_client: local" > /etc/salt/minion.d/local.conf && \
+    echo "file_roots:" > /etc/salt/minion.d/file_roots.conf && \
+    echo "  base:" >> /etc/salt/minion.d/file_roots.conf && \
+    echo "    - /srv/salt" >> /etc/salt/minion.d/file_roots.conf && \
+    echo "pillar_roots:" > /etc/salt/minion.d/pillar_roots.conf && \
+    echo "  base:" >> /etc/salt/minion.d/pillar_roots.conf && \
+    echo "    - /srv/pillar" >> /etc/salt/minion.d/pillar_roots.conf
+
+# Set environment variables for Salt
+ENV PYTHONPATH=/usr/lib/python3/dist-packages
+ENV PATH="/usr/bin:$PATH"
+
+# Create temp directory and set permissions
+RUN mkdir -p /home/salt/.salt/tmp && \
+    chmod -R 755 /home/salt/.salt && \
+    chown -R salt:salt /home/salt/.salt
+
+# Switch to non-root user
+USER salt
+
+# Verify Salt commands are available
+RUN salt-call --version && \
+    salt-key --version && \
+    salt-master --version && \
+    salt-minion --version && \
+    salt-ssh --version && \
+    salt-run --version
+
+# Set entrypoint script
+ENTRYPOINT ["sh", "-c", "exec \"$@\"", "--"]
+CMD ["salt-call --local state.apply"]

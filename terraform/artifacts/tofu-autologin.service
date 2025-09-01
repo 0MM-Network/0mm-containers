@@ -1,0 +1,17 @@
+[Unit]
+Description=Automatic Tofu User Login
+
+[Service]
+ExecStart=/bin/bash
+ExecStartPost=/bin/bash -c "source /home/tofu/.profile; systemd --user &; sleep 1"
+Restart=no
+StandardInput=tty
+StandardOutput=tty
+TTYPath=/dev/console
+TTYReset=yes
+TTYVHangup=yes
+User=tofu
+WorkingDirectory=/home/tofu
+
+[Install]
+WantedBy=multi-user.target

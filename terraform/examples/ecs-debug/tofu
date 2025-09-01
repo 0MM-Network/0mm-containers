@@ -1,0 +1,156 @@
+#!/bin/bash
+
+# Define variables
+IMAGE="localhost/opentofu-container:latest"
+HUID=$(id -u)
+HGID=$(id -g)
+CUID=$(podman run --rm --entrypoint /usr/bin/id $IMAGE -u)
+CGID=$(podman run --rm --entrypoint /usr/bin/id $IMAGE -g)
+CONTAINER_NAME="tofu-container"  # Added for singleton pattern
+
+# Error handling
+set -e
+set -x
+
+# Function to display error messages
+error_exit() {
+    echo "Error: $1" >&2
+    exit 1
+}
+
+# Check if the container image exists
+if ! podman image exists "$IMAGE"; then
+    error_exit "OpenTofu container image not found. Please run the installation script again."
+fi
+
+# Create required directories if they don't exist
+mkdir -p "$PWD/.terraform"
+mkdir -p "$PWD/.terraform.d"
+mkdir -p "$PWD/.aws"
+
+# Ensure proper permissions
+chmod -R 755 "$PWD/.terraform"
+chmod -R 755 "$PWD/.terraform.d"
+
+# Check if stdin is a TTY and set flags accordingly
+TTY_FLAG=""
+if [ -t 0 ] && [ -t 1 ]; then
+    TTY_FLAG="-it"
+else
+    TTY_FLAG="-i"
+fi
+
+# Container will startup as the (namespaced) root user, we need to pre-create
+# the container-storage volume; otherwise, the ownership will be incorrect
+#  – undoubtedly generating a ton of permission-denied errors.
+# This host volume mounts the Containerfile 
+# See: references/rootless-systemd-in-rootless-podman.md
+# Check if the volume exists; create it only if it doesn't
+if ! podman volume exists tofu-internal-containers; then
+  podman volume create -o o=uid="$CUID",gid="$CGID" tofu-internal-containers
+fi
+
+if ! podman volume exists cgroup-user-slice; then
+  podman volume create --opt type=bind --opt device="/sys/fs/cgroup/" --opt o=bind cgroup-user-slice
+fi
+
+
+# Host configuration checks for rootless systemd support
+# Check if cgroup v2 is unified (required for delegation in rootless mode)
+if [ ! -f /sys/fs/cgroup/cgroup.controllers ]; then
+    error_exit "Host system does not have cgroup v2 enabled. Enable it by adding 'systemd.unified_cgroup_hierarchy=1' to your kernel cmdline (e.g., via GRUB: edit /etc/default/grub, add to GRUB_CMDLINE_LINUX_DEFAULT, then run 'sudo update-grub' and reboot)."
+fi
+
+# Check if Podman is configured for cgroup delegation (e.g., via systemd service)
+if ! grep -q -E "Delegate=(true|yes|1|on)" /usr/lib/systemd/system/podman.service 2>/dev/null && ! grep -q -E "Delegate=(true|yes|1|on)" /etc/systemd/system/podman.service.d/* 2>/dev/null; then
+    error_exit "Podman service does not have cgroup delegation enabled (missing Delegate=yes). This is required for rootless nested systemd. Run 'sudo systemctl edit podman.service', add '[Service]\nDelegate=yes', then 'sudo systemctl daemon-reload' and 'sudo systemctl restart podman.service'. For user-level, also run 'systemctl --user enable --now podman.socket'."
+fi
+
+# Check if linger is enabled for the current host user (required for persistent user-level services in rootless mode)
+CURRENT_USER=$(whoami)
+if [ ! -f "/var/lib/systemd/linger/$CURRENT_USER" ]; then
+    error_exit "Linger is not enabled for host user '$CURRENT_USER'. This is required for rootless Podman and user-level systemd persistence. Run 'sudo loginctl enable-linger $CURRENT_USER' to enable it (requires logind; reboot or relogin may be needed)."
+fi
+
+# Check if user-level Podman socket is active (required for rootless delegation)
+if ! systemctl --user is-active -q podman.socket; then
+   echo "Warning: User-level Podman socket is not active. This is needed for rootless operations."
+   echo "To fix: Run 'systemctl --user enable --now podman.socket'."
+   echo "Continuing, but nested Podman may fail."
+   # Optionally: error_exit to enforce
+fi
+
+# Check if cgroup v2 is unified (required for delegation in rootless mode)
+if [ ! -f /sys/fs/cgroup/cgroup.controllers ]; then
+    error_exit "Host system does not have cgroup v2 enabled. Enable it by adding 'systemd.unified_cgroup_hierarchy=1' to your kernel cmdline (e.g., via GRUB: edit /etc/default/grub, add to GRUB_CMDLINE_LINUX_DEFAULT, then run 'sudo update-grub' and reboot). Verify after reboot with 'ls /sys/fs/cgroup/cgroup.controllers'."
+fi
+
+# Prepare volume mounts
+MOUNTS="-v \"$PWD:/infra:Z,rw\" -v \"$PWD/.terraform:/home/tofu/.terraform:Z\" -v \"$PWD/.terraform.d:/home/tofu/.terraform.d:Z\""
+# Mount named volume for simplified cgroup subtree access
+MOUNTS="$MOUNTS -v /sys/fs/cgroup:/sys/fs/cgroup:rw,rslave"
+
+# Ensure host log dir exists with permissive ownership for rootless mapping
+mkdir -p ./container-logs ./container-storage
+chmod 777 ./container-logs  ./container-storage # Allow container's mapped UID to write
+
+# In the MOUNTS variable, add:
+#MOUNTS="$MOUNTS -v $PWD/container-logs:/home/tofu/.local/share/containers/storage:Z,rw"
+MOUNTS="$MOUNTS -v $PWD/container-storage:/home/tofu/.local/share/containers/storage:Z,rw"
+# Two-stage singleton pattern: Check if the container is already running
+# If not, start it in detached mode without --rm or command (relies on ENTRYPOINT /sbin/init)
+#     ┊   --uidmap +$CUID:@$HUID:1 \
+#     ┊   --gidmap +$CGID:@$HGID:1 \
+#podman run --replace --systemd=always --security-opt label=disable --device /dev/fuse --cap-add=setuid,setgid,sys_admin,chown --userns=keep-id:uid=1001 -d --name=test-tofu --log-level=debug --log-driver=journald -v ./container-logs:/var/log/journal:Z localhost/opentofu-container:latest /sbin/init
+if [ -z "$(podman ps -q -f name=^${CONTAINER_NAME}$)" ]; then
+    echo "Starting singleton container $CONTAINER_NAME..."
+    eval podman --log-level=debug run --replace \
+        --name "$CONTAINER_NAME" \
+        -d \
+        --security-opt label=disable \
+        --cap-add=setuid,setgid,sys_admin,net_admin,chown,cap_kill \
+        --userns=keep-id:uid=$CUID \
+        --device /dev/fuse \
+        --device /dev/net/tun \
+        --sysctl net.ipv4.ip_forward=1 \
+        --sysctl net.ipv6.conf.all.forwarding=1 \
+        --storage-opt=overlay.mount_program=/usr/bin/fuse-overlayfs \
+        $MOUNTS \
+        -v tofu-internal-containers:/home/tofu/.local/share/containers \
+        -e HOME=/home/tofu \
+        -e USER="$USER" \
+        -e AWS_PROFILE=default \
+        -e DNS_ADDRESS=0 \
+        -e AWS_ACCESS_KEY_ID \
+        -e AWS_SECRET_ACCESS_KEY \
+        -e AWS_SESSION_TOKEN \
+        -e TF_LOG \
+        -e TF_VAR_* \
+        "$IMAGE" tail -f /dev/null || error_exit "Failed to start singleton container"
+fi
+
+# Responsive wait loop: Poll for systemd readiness (max 30 seconds)
+echo "Waiting for container to be ready (container download)..."
+for i in {1..30}; do
+    output=$(podman exec "$CONTAINER_NAME" echo ready 2>/dev/null)
+    status=$?
+    if [ "$status" -eq 0 ] && [[ "$output" == "ready" ]]; then
+        echo "Container is ready."
+        break
+    else
+       podman logs $CONTAINER_NAME &>tofu-err.log
+       podman inspect $CONTAINER_NAME &>tofu-inspect.log
+    fi
+    sleep 6
+done
+if [ "$i" -eq 30 ]; then
+    error_exit "Timeout waiting for container to become ready."
+fi
+
+# Exec the provided arguments as the 'tofu' user inside the running container
+if [ $# -eq 0 ]; then
+    echo "No command provided to execute"
+    exit 1
+fi
+CMD=$(printf '%q ' "$@")
+podman exec -u tofu $TTY_FLAG "$CONTAINER_NAME" /bin/bash -lc "$CMD" || error_exit "Failed to exec command in container"

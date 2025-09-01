@@ -1,0 +1,67 @@
+#!/bin/bash
+# This entrypoint script initializes LocalStack and Podman in a containerized environment,
+# supporting both root and non-root (tofu user) execution modes. It follows guidelines from
+# how_to_run_systemd_in_a_container.md for running systemd in containers, including tmpfs
+# mounts, signal handling (SIGRTMIN+3), and user-level services for rootless Podman.
+# Key decisions:
+# - Use /sbin/init as the final exec to enable systemd mode, but only after setup tasks
+#   (e.g., starting podman.service and LocalStack) to ensure they complete in non-TTY or
+#   non-interactive runs.
+# - For non-root mode, start user-level podman.service first (per LocalStack's rootless
+#   Podman config) before handing off to init, avoiding premature exec that would halt
+#   the script.
+# - This order prevents hangs in non-interactive commands (e.g., tofu --version) while
+#   allowing systemd to manage processes post-setup.
+
+set -e
+if [ ! -f /etc/machine-id ]; then
+   dbus-uuidgen > /etc/machine-id
+fi
+# Root mode: Directly exec init for full systemd control as root.
+# Decision: No pre-init setup needed here, as root has full privileges. Aligns with
+# how_to_run_systemd_in_a_container.md's recommendation for privileged containers.
+# Check if RUN_AS_ROOT is set
+if [ "${RUN_AS_ROOT}" = "1" ]; then
+  exec sudo /sbin/init
+else
+  # Non-root mode: Start user-level Podman service first for rootless container support.
+  # Decision: This must precede exec /sbin/init, as exec replaces the process and would
+  # prevent subsequent commands (e.g., LocalStack start and health check). Per
+  # how_to_run_systemd_in_a_container.md, user namespaces and services like podman.socket
+  # need explicit activation before systemd takes over for proper reaping/restarting.
+  # Start LocalStack in background
+  # https://docs.localstack.cloud/aws/capabilities/config/podman/#rootless-podman
+  export XDG_RUNTIME_DIR="/run/user/$(id -u)"
+  export DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/$(id -u)/bus"
+  dbus-daemon --session --address=$DBUS_SESSION_BUS_ADDRESS &
+  systemctl --user start podman.service
+
+  # Launch LocalStack in background with Podman config for rootless mode.
+  # Decision: Run this after podman.service but before exec init to allow health polling.
+  # If init ran first, the script would terminate prematurely. This setup enables
+  # LocalStack to use Podman for service isolation while systemd handles overall process
+  # management, as suggested in how_to_run_systemd_in_a_container.md for multi-service
+  # containers.
+  DEBUG=1 DOCKER_CMD="podman" DOCKER_SOCK=$HOME/podman.sock DOCKER_HOST=unix://$HOME/podman.sock localstack start --network podman &
+
+  # Wait for LocalStack to be ready
+  for i in $(seq 1 30); do
+    if curl -s http://localhost:4566/_localstack/health > /dev/null; then
+      break
+    fi
+    sleep 1
+  done
+  if [ $i -eq 30 ]; then
+    echo 'LocalStack failed to start' >&2
+    exit 1
+  fi
+
+  # Finally, exec init to run under systemd supervision.
+  # Decision: Placed at the end to allow all setup (Podman, LocalStack, health check) to
+  # complete. Running it earlier would halt the script before critical steps, breaking
+  # non-interactive runs. This follows how_to_run_systemd_in_a_container.md's guidance
+  # for systemd as a process manager in containers, enabling features like automatic
+  # tmpfs mounts and signal handling without modifications.
+  # Exec the command as tofu user with systemd if needed
+  exec /sbin/init
+fi

@@ -1,0 +1,43 @@
+# Ignore everything
+*
+
+# Except the .gitignore file itself
+!.gitignore
+
+# And these specific files
+!Containerfile
+!install.sh
+!entrypoint.sh
+!README.md
+!TESTING.md
+!LICENSE
+!aider
+!goose
+!**/examples/**/*
+!**/artifacts/**/*
+!**/bats/**/*
+
+# ...even if they are in subdirectories
+!aider-ai/
+
+!ansible/
+
+!aws/
+
+!goose-ai/
+
+!python/
+
+!salt/
+
+!terraform/
+!terraform/artifacts/
+!terraform/bats/
+!terraform/examples/
+!terraform/references/
+terraform/examples/**/container-storage/
+terraform/examples/**/node_modules/
+terraform/examples/**/.vscode/
+
+!vault/
+
