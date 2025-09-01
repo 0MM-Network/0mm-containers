@@ -38,7 +38,6 @@
 !terraform/references/
 terraform/examples/**/container-storage/
 terraform/examples/**/node_modules/
-terraform/examples/**/.vscode/
 
 !vault/
 
