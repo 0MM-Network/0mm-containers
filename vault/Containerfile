@@ -28,12 +28,13 @@ RUN set -eux; \
     if [ -z "$PRODUCT_VERSION" ]; then \
       PRODUCT_VERSION=$(curl -s https://api.github.com/repos/openbao/openbao/releases/latest | jq -r '.tag_name' | sed 's/^v//'); \
     fi; \
-    wget https://github.com/openbao/openbao/releases/download/v${PRODUCT_VERSION}/openbao_${PRODUCT_VERSION}_linux_${TARGETARCH}.zip; \
-    unzip openbao_${PRODUCT_VERSION}_linux_${TARGETARCH}.zip; \
-    mv openbao /usr/bin/${BIN_NAME}; \
+    wget https://github.com/openbao/openbao/releases/download/v${PRODUCT_VERSION}/bao_${PRODUCT_VERSION}_linux_${TARGETARCH}.deb; \
+    dpkg -i bao_${PRODUCT_VERSION}_linux_${TARGETARCH}.deb; \
+    cp -f /usr/bin/bao /usr/bin/${BIN_NAME}; \
     chmod +x /usr/bin/${BIN_NAME}; \
+    setcap cap_ipc_lock=ep /usr/bin/bao; \
     setcap cap_ipc_lock=ep /usr/bin/${BIN_NAME}; \
-    rm openbao_${PRODUCT_VERSION}_linux_${TARGETARCH}.zip; \
+    rm bao_${PRODUCT_VERSION}_linux_${TARGETARCH}.deb; \
     apt-get clean; \
     rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
