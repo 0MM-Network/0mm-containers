@@ -60,6 +60,7 @@ BASE_PORT=\$((8200 + (10 * \$NN)))  # Unique ports per node, e.g., 8200+ for API
 API_PORT=\$BASE_PORT
 CLUSTER_PORT=\$((BASE_PORT + 1))
 DATA_DIR="\$PWD/vault-data-\$NN"
+LOG_DIR="\$PWD/vault-logs-\$NN"
 CONFIG_DIR="\$PWD/vault-config-\$NN"
 CONFIG_FILE="\$CONFIG_DIR/server.hcl"
 
@@ -77,11 +78,33 @@ if ! podman image exists "\$IMAGE"; then
     error_exit "Vault container image not found. Please run the installation script again."
 fi
 
-# Create data and config directories if they don't exist
-mkdir -p "\$DATA_DIR" "\$CONFIG_DIR"
+# Get host and container UIDs/GIDs for mapping
+HUID=\$(id -u)
+HGID=\$(id -g)
+CUID=\$(podman run --rm "\$IMAGE" id -u vault)
+CGID=\$(podman run --rm "\$IMAGE" id -g vault)
 
-# Generate Vault config file (HCL) for this node with Raft integrated storage and transit auto-unseal
-cat > "\$CONFIG_FILE" << CONFIG_EOF
+# Check if stdin is a TTY and set flags accordingly
+TTY_FLAG=""
+if [ -t 0 ] && [ -t 1 ]; then
+    TTY_FLAG="-it"
+else
+    TTY_FLAG="-i"
+fi
+
+# Determine if running in CLI mode or server mode
+if [ \$# -gt 0 ] && { [ "\$1" = "--version" ] || [ "\$1" = "version" ]; }; then
+    # CLI mode for version check
+    eval podman run --rm \$TTY_FLAG \\
+        --uidmap "\$HUID:\$CUID:1" \\
+        --gidmap "\$HGID:\$CGID:1" \\
+        "\$IMAGE" "\$@"
+else
+    # Create data, logs, and config directories if they don't exist
+    mkdir -p "\$DATA_DIR" "\$LOG_DIR" "\$CONFIG_DIR"
+
+    # Generate Vault config file (HCL) for this node with Raft integrated storage and transit auto-unseal
+    cat > "\$CONFIG_FILE" << CONFIG_EOF
 ui = true
 
 listener "tcp" {
@@ -116,29 +139,16 @@ seal "transit" {
 disable_mlock = true
 CONFIG_EOF
 
-# Check if stdin is a TTY and set flags accordingly
-TTY_FLAG=""
-if [ -t 0 ] && [ -t 1 ]; then
-    TTY_FLAG="-it"
-else
-    TTY_FLAG="-i"
-fi
+    # Prepare volume mounts (map local dirs to container paths, adhering to OCI volume best practices)
+    MOUNTS="-v \"\$DATA_DIR:/vault/file:Z\" -v \"\$CONFIG_DIR:/vault/config:Z\" -v \"\$LOG_DIR:/vault/logs:Z\""
 
-# Prepare volume mounts (map local dirs to container paths, adhering to OCI volume best practices)
-MOUNTS="-v \"\$DATA_DIR:/vault/file:Z\" -v \"\$CONFIG_DIR:/vault/config:Z\" -v \"\$PWD/vault-logs-\$NN:/vault/logs:Z\""
+    # Expose ports for this node
+    PORTS="-p \$API_PORT:8200 -p \$CLUSTER_PORT:8201"
 
-# Expose ports for this node
-PORTS="-p \$API_PORT:8200 -p \$CLUSTER_PORT:8201"
-
-# Determine if running in CLI mode or server mode
-if [ \$# -gt 0 ] && { [ "\$1" = "--version" ] || [ "\$1" = "version" ]; }; then
-    # CLI mode for version check
-    eval podman run --rm \$TTY_FLAG \\
-        \$MOUNTS \\
-        "\$IMAGE" "\$@"
-else
     # Server mode
     eval podman run --rm \$TTY_FLAG \\
+        --uidmap "\$HUID:\$CUID:1" \\
+        --gidmap "\$HGID:\$CGID:1" \\
         --name "vault-\$NN" \\
         \$PORTS \\
         \$MOUNTS \\
