@@ -93,14 +93,9 @@ else
     TTY_FLAG="-i"
 fi
 
-# Determine if running in CLI mode or server mode
-if [ \$# -gt 0 ] && { [ "\$1" = "--version" ] || [ "\$1" = "version" ]; }; then
-    # CLI mode for version check
-    eval podman run --rm \$TTY_FLAG \\
-        --uidmap "\$HUID:\$CUID:1" \\
-        --gidmap "\$HGID:\$CGID:1" \\
-        "\$IMAGE" "\$@"
-else
+# Determine if running in server mode
+if [ \$# -eq 0 ] || [ "\$1" = "server" ]; then
+    # Server mode
     # Create data, logs, and config directories if they don't exist
     mkdir -p "\$DATA_DIR" "\$LOG_DIR" "\$CONFIG_DIR"
 
@@ -146,16 +141,27 @@ CONFIG_EOF
     # Expose ports for this node
     PORTS="-p \$API_PORT:8200 -p \$CLUSTER_PORT:8201"
 
+    if [ \$# -gt 0 ] && [ "\$1" = "server" ]; then
+        shift
+    fi
+
     # Server mode
     eval podman run --rm \$TTY_FLAG \\
-        --uidmap +\$HUID:@\$CUID:1 \\
-        --gidmap +\$HGID:@\$CGID:1 \\
+        --uidmap \$CUID:\$HUID:1 \\
+        --gidmap \$CGID:\$HGID:1 \\
         --name "vault-\$NN" \\
         \$PORTS \\
         \$MOUNTS \\
         -e VAULT_ADDR="http://127.0.0.1:\$API_PORT" \\
         -e VAULT_API_ADDR="http://127.0.0.1:\$API_PORT" \\
         "\$IMAGE" server -config=/vault/config/server.hcl "\$@"
+else
+    # CLI mode
+    eval podman run --rm \$TTY_FLAG \\
+        --uidmap \$CUID:\$HUID:1 \\
+        --gidmap \$CGID:\$HGID:1 \\
+        -e SKIP_SETCAP=1 \\
+        "\$IMAGE" "\$@"
 fi
 EOF
     chmod +x "$SCRIPTS_DIR/$SHIM_NAME"
