@@ -156,8 +156,7 @@ CONFIG_EOF
 
     # Server mode
     eval podman run --rm \$TTY_FLAG \\
-        --uidmap "0:\$SUBUID_START:\$CUID" --uidmap "\$CUID:\$HUID:1" --uidmap "\$((\$CUID + 1)):\$((\$SUBUID_START + \$CUID)):\$((\$SUBUID_RANGE - \$CUID))" \\
-        --gidmap "0:\$SUBGID_START:\$CGID" --gidmap "\$CGID:\$HGID:1" --gidmap "\$((\$CGID + 1)):\$((\$SUBGID_START + \$CGID)):\$((\$SUBGID_RANGE - \$CGID))" \\
+        --userns=keep-id:uid=\$CUID \\
         --name "vault-\$NN" \\
         \$PORTS \\
         \$MOUNTS \\
@@ -168,8 +167,7 @@ CONFIG_EOF
 else
     # CLI mode
     eval podman run --rm \$TTY_FLAG \\
-        --uidmap "0:\$SUBUID_START:\$CUID" --uidmap "\$CUID:\$HUID:1" --uidmap "\$((\$CUID + 1)):\$((\$SUBUID_START + \$CUID)):\$((\$SUBUID_RANGE - \$CUID))" \\
-        --gidmap "0:\$SUBGID_START:\$CGID" --gidmap "\$CGID:\$HGID:1" --gidmap "\$((\$CGID + 1)):\$((\$SUBGID_START + \$CGID)):\$((\$SUBGID_RANGE - \$CGID))" \\
+        --userns=keep-id:uid=\$CUID \\
         -e SKIP_SETCAP=1 \\
         "\$IMAGE" vault "\$@"
 fi
