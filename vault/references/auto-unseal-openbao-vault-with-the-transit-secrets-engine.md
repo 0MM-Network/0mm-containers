@@ -20,7 +20,7 @@ You'll walk through how to:
 *   Set up the Transit secrets engine
 *   Enable automatic unsealing using the Transit seal
 
-💡 To dive deeper into the concepts covered in this tutorial, check out the [References](https://labs.iximiuz.com/tutorials/openbao-vault-auto-unseal-transit-82d2a212#references) section.
+  To dive deeper into the concepts covered in this tutorial, check out the [References](https://labs.iximiuz.com/tutorials/openbao-vault-auto-unseal-transit-82d2a212#references) section.
 
 ## Preparations
 
@@ -49,7 +49,7 @@ Automatic unsealing isn't fundamentally different from the manual unsealing proc
 
 In the manual process, a set of **unseal keys** is required to reconstruct the **root key** (or _master key_). The root key is then used to decrypt the **encryption key**, which the service uses to access the underlying data.
 
-💡 To learn more about the unsealing process, check out [this tutorial](https://labs.iximiuz.com/tutorials/openbao-vault-getting-started-e783c133).
+  To learn more about the unsealing process, check out [this tutorial](https://labs.iximiuz.com/tutorials/openbao-vault-getting-started-e783c133).
 
 With automatic unsealing, an external service manages the encryption of the root key, eliminating the need for unseal keys.
 
@@ -130,7 +130,7 @@ Vault
 
 Copy to clipboard
 
-Hint 1 💡
+Hint 1  
 
 `sudo -u openbao $EDITOR /etc/openbao/config.d/seal.hcl`
 
@@ -154,7 +154,7 @@ Copy to clipboard
 
 Copy to clipboard
 
-Hint 1 💡
+Hint 1  
 
 `sudo -u vault $EDITOR /etc/vault.d/config.d/seal.hcl`
 
@@ -290,7 +290,7 @@ Start playground to activate this check
 
 ## Summary
 
-**🎉 Congratulations!**
+**  Congratulations!**
 
 You’ve learned how automatic unsealing works in OpenBao/Vault.
 
@@ -311,7 +311,7 @@ If you want to test your knowledge or experiment further, check out these playgr
 
 ## References
 
-💡 To dive deeper into the concepts covered in this tutorial, check out the resources below.
+  To dive deeper into the concepts covered in this tutorial, check out the resources below.
 
 OpenBao
 
