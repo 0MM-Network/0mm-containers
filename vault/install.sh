@@ -85,6 +85,13 @@ HGID=\$(id -g)
 CUID=\$(podman run --rm --entrypoint /usr/bin/id "\$IMAGE" -u vault)
 CGID=\$(podman run --rm --entrypoint /usr/bin/id "\$IMAGE" -g vault)
 
+# Get subuid/subgid for full user namespace mapping in rootless mode
+HOST_USER=\$(id -un)
+SUBUID_START=\$(awk -F: -v user="\$HOST_USER" '\$1 == user {print \$2}' /etc/subuid)
+SUBUID_RANGE=\$(awk -F: -v user="\$HOST_USER" '\$1 == user {print \$3}' /etc/subuid)
+SUBGID_START=\$(awk -F: -v user="\$HOST_USER" '\$1 == user {print \$2}' /etc/subgid)
+SUBGID_RANGE=\$(awk -F: -v user="\$HOST_USER" '\$1 == user {print \$3}' /etc/subgid)
+
 # Check if stdin is a TTY and set flags accordingly
 TTY_FLAG=""
 if [ -t 0 ] && [ -t 1 ]; then
@@ -96,6 +103,8 @@ fi
 # Determine if running in server mode
 if [ \$# -eq 0 ] || [ "\$1" = "server" ]; then
     # Server mode
+    # Force recreate config dir to reset ownership/permissions if misconfigured by previous runs
+    rm -rf "\$CONFIG_DIR"
     # Create data, logs, and config directories if they don't exist
     mkdir -p "\$DATA_DIR" "\$LOG_DIR" "\$CONFIG_DIR"
 
@@ -147,8 +156,8 @@ CONFIG_EOF
 
     # Server mode
     eval podman run --rm \$TTY_FLAG \\
-        --uidmap 0:100000:65536 --uidmap +\$CUID:@\$HUID:1 \\
-        --gidmap 0:100000:65536 --gidmap +\$CGID:@\$HGID:1 \\
+        --uidmap "0:\$SUBUID_START:\$CUID" --uidmap "\$CUID:\$HUID:1" --uidmap "\$((\$CUID + 1)):\$((\$SUBUID_START + \$CUID)):\$((\$SUBUID_RANGE - \$CUID))" \\
+        --gidmap "0:\$SUBGID_START:\$CGID" --gidmap "\$CGID:\$HGID:1" --gidmap "\$((\$CGID + 1)):\$((\$SUBGID_START + \$CGID)):\$((\$SUBGID_RANGE - \$CGID))" \\
         --name "vault-\$NN" \\
         \$PORTS \\
         \$MOUNTS \\
@@ -159,8 +168,8 @@ CONFIG_EOF
 else
     # CLI mode
     eval podman run --rm \$TTY_FLAG \\
-        --uidmap 0:100000:65536 --uidmap +\$CUID:@\$HUID:1 \\
-        --gidmap 0:100000:65536 --gidmap +\$CGID:@\$HGID:1 \\
+        --uidmap "0:\$SUBUID_START:\$CUID" --uidmap "\$CUID:\$HUID:1" --uidmap "\$((\$CUID + 1)):\$((\$SUBUID_START + \$CUID)):\$((\$SUBUID_RANGE - \$CUID))" \\
+        --gidmap "0:\$SUBGID_START:\$CGID" --gidmap "\$CGID:\$HGID:1" --gidmap "\$((\$CGID + 1)):\$((\$SUBGID_START + \$CGID)):\$((\$SUBGID_RANGE - \$CGID))" \\
         -e SKIP_SETCAP=1 \\
         "\$IMAGE" vault "\$@"
 fi
