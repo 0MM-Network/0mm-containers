@@ -40,4 +40,4 @@ terraform/examples/**/container-storage/
 terraform/examples/**/node_modules/
 
 !vault/
-
+!vault/references/
