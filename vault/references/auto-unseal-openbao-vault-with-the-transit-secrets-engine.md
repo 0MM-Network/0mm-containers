@@ -84,11 +84,15 @@ OpenBao
 
 Vault
 
-`bao secrets enable transit`
+```bash
+bao secrets enable transit
+```
 
 Copy to clipboard
 
-`vault secrets enable transit`
+```bash
+vault secrets enable transit
+```
 
 Copy to clipboard
 
@@ -102,11 +106,15 @@ OpenBao
 
 Vault
 
-`bao write -f transit/keys/unseal-key`
+```bash
+bao write -f transit/keys/unseal-key
+```
 
 Copy to clipboard
 
-`vault write -f transit/keys/unseal-key`
+```bash
+vault write -f transit/keys/unseal-key
+```
 
 Copy to clipboard
 
@@ -126,13 +134,17 @@ Vault
 
 /etc/openbao/config.d/seal.hcl
 
-`seal "transit" {   address = "http://unsealer:8200"  token   = "iximiuz"   key_name   = "unseal-key"  mount_path = "transit/" }`
+```bash
+seal "transit" {   address = "http://unsealer:8200"  token   = "iximiuz"   key_name   = "unseal-key"  mount_path = "transit/" }
+```
 
 Copy to clipboard
 
 Hint 1  
 
-`sudo -u openbao $EDITOR /etc/openbao/config.d/seal.hcl`
+```bash
+sudo -u openbao $EDITOR /etc/openbao/config.d/seal.hcl
+```
 
 Copy to clipboard
 
@@ -144,19 +156,25 @@ Configuration breakdown
 
 Then restart the service:
 
-`sudo systemctl restart openbao`
+```bash
+sudo systemctl restart openbao
+```
 
 Copy to clipboard
 
 /etc/vault.d/config.d/seal.hcl
 
-`seal "transit" {   address = "http://unsealer:8200"  token   = "iximiuz"   key_name   = "unseal-key"  mount_path = "transit/" }`
+```bash
+seal "transit" {   address = "http://unsealer:8200"  token   = "iximiuz"   key_name   = "unseal-key"  mount_path = "transit/" }
+```
 
 Copy to clipboard
 
 Hint 1  
 
-`sudo -u vault $EDITOR /etc/vault.d/config.d/seal.hcl`
+```bash
+sudo -u vault $EDITOR /etc/vault.d/config.d/seal.hcl
+```
 
 Copy to clipboard
 
@@ -168,7 +186,9 @@ Configuration breakdown
 
 Then restart the service:
 
-`sudo systemctl restart vault`
+```bash
+sudo systemctl restart vault
+```
 
 Copy to clipboard
 
@@ -194,11 +214,15 @@ OpenBao
 
 Vault
 
-`bao operator init -recovery-shares=1 -recovery-threshold=1`
+```bash
+bao operator init -recovery-shares=1 -recovery-threshold=1
+```
 
 Copy to clipboard
 
-`vault operator init -recovery-shares=1 -recovery-threshold=1`
+```bash
+vault operator init -recovery-shares=1 -recovery-threshold=1
+```
 
 Copy to clipboard
 
@@ -226,11 +250,15 @@ OpenBao
 
 Vault
 
-`bao login`
+```bash
+bao login
+```
 
 Copy to clipboard
 
-`vault login`
+```bash
+vault login
+```
 
 Copy to clipboard
 
@@ -244,11 +272,15 @@ OpenBao
 
 Vault
 
-`bao operator seal`
+```bash
+bao operator seal
+```
 
 Copy to clipboard
 
-`vault operator seal`
+```bash
+vault operator seal
+```
 
 Copy to clipboard
 
@@ -262,11 +294,15 @@ OpenBao
 
 Vault
 
-`bao status`
+```bash
+bao status
+```
 
 Copy to clipboard
 
-`vault status`
+```bash
+vault status
+```
 
 Copy to clipboard
 
@@ -276,11 +312,15 @@ OpenBao
 
 Vault
 
-`bao operator unseal`
+```bash
+bao operator unseal
+```
 
 Copy to clipboard
 
-`vault operator unseal`
+```bash
+vault operator unseal
+```
 
 Copy to clipboard
 
@@ -328,46 +368,3 @@ Vault
 *   Configuration
     *   [`seal` stanza](https://developer.hashicorp.com/vault/docs/configuration/seal)
     *   [Transit](https://developer.hashicorp.com/vault/docs/configuration/seal/transit)
-
-html .default .shiki span {color: var(--shiki-default);background: var(--shiki-default-bg);font-style: var(--shiki-default-font-style);font-weight: var(--shiki-default-font-weight);text-decoration: var(--shiki-default-text-decoration);}html .shiki span {color: var(--shiki-default);background: var(--shiki-default-bg);font-style: var(--shiki-default-font-style);font-weight: var(--shiki-default-font-weight);text-decoration: var(--shiki-default-text-decoration);}
-
-Level up your Server Side game — Join 12,000 engineers who receive insightful learning materials straight to their inbox
-
-Subscribe
-
-Experiment right in your browser
-
-![Web terminal](Auto%20Unseal%20OpenBao_Vault%20with%20the%20Transit%20Secrets%20Engine_files/webterm.png) [Start tutorial](https://labs.iximiuz.com/signup?return_to=%2Ftutorials%2Fopenbao-vault-auto-unseal-transit-82d2a212)
-
-✕
-
-### How to Author Tutorials on iximiuz Labs
-
-Instead of providing a subpar online editing experience, iximiuz Labs offers a helper CLI tool called [labctl](https://github.com/iximiuz/labctl), allowing you to use your favorite text editor (or a full-featured IDE) to write content from the comfort of your local machine.
-
-#### Install labctl CLI
-
-`curl -sf https://labs.iximiuz.com/cli/install.sh | sh`
-
-This will download and install the latest version of the labctl CLI. You only need to do this once per workstation.
-
-#### Authorize labctl
-
-`labctl auth login`
-
-This will open a browser window asking you to authorize labctl to access your account. You need to do it after a fresh install of labctl and repeat it whenever the auth session expires.
-
-#### Pull tutorial content
-
-`labctl content pull tutorial openbao-vault-auto-unseal-transit-82d2a212`
-
-This will create a local copy of the tutorial content in a directory named `openbao-vault-auto-unseal-transit-82d2a212`. You only need to do this once per tutorial.
-
-#### Stream your changes
-
-`labctl content push -fw tutorial openbao-vault-auto-unseal-transit-82d2a212`
-
-Run this command in a separate terminal to continuously upload your changes to the server while editing the tutorial in your favorite text editor or IDE.
-
-You can also use labctl to create, list, and delete your content. Learn more about the available commands: `labctl content --help`
-
