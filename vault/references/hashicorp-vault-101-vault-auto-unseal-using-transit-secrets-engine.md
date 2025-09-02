@@ -76,7 +76,7 @@ Key                  Value
 \---                  -----  
 token                hvs.RKH9hOXD3aHvtJTFgkSQv68s  
 token\_accessor       spYtE1ZifnJP8uy8CppnnK1h  
-token\_duration       ∞  
+token\_duration         
 token\_renewable      false  
 token\_policies       \["root"\]  
 identity\_policies    \[\]  
@@ -89,7 +89,7 @@ Enable the `transit` secrets engine
 Success! Enabled the transit secrets engine at: transit/  
 \[root@ip\-172\-31\-28\-77 ~\]#
 
-create an encryption key named, “autounseal”
+create an encryption key named, autounseal
 
 \[root@ip\-172\-31\-28\-77 ~\]\# vault write -f transit/keys/autounseal  
 Key                       Value  

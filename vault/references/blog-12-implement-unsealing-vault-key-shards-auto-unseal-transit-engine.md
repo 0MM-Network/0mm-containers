@@ -2,7 +2,7 @@
 
 **Commencement:**
 
-In this blog, we’ll explore one of the fundamental security features of HashiCorp Vault: the unsealing process. When Vault is initialized, it secures its data using a Master Key, which is stored in a protected, encrypted state. To ensure this key and the underlying data are safe, Vault begins in a sealed state, meaning that access to the data is restricted until the Vault is unsealed.
+In this blog, well explore one of the fundamental security features of HashiCorp Vault: the unsealing process. When Vault is initialized, it secures its data using a Master Key, which is stored in a protected, encrypted state. To ensure this key and the underlying data are safe, Vault begins in a sealed state, meaning that access to the data is restricted until the Vault is unsealed.
 
 Unsealing is essential to safeguarding sensitive information and controlling access, especially after a Vault restart or when it is brought online, as administrators must provide specific credentials to unlock the Vault.
 
@@ -10,9 +10,9 @@ The unsealing process can be handled in several ways, each tailored to different
 
 > **Manual Unseal Using Key Shards**:
 
-In this approach, Vault divides the Master Key generated during initialization into multiple key shards using Shamir’s Secret Sharing Algorithm.
+In this approach, Vault divides the Master Key generated during initialization into multiple key shards using Shamirs Secret Sharing Algorithm.
 
-A predefined number of key shards, known as a quorum, must be combined to unseal Vault. This ensures a secure, manual method of controlling access, as no single person has full access to the Master Key. By requiring multiple key holders to contribute their shards, Vault’s security is reinforced, preventing unauthorized access to sensitive data.
+A predefined number of key shards, known as a quorum, must be combined to unseal Vault. This ensures a secure, manual method of controlling access, as no single person has full access to the Master Key. By requiring multiple key holders to contribute their shards, Vaults security is reinforced, preventing unauthorized access to sensitive data.
 
 Press enter or click to view image in full size
 
@@ -142,7 +142,7 @@ Press enter or click to view image in full size
 
 ![](Blog%2012.%20Implement%20Unsealing%20HashiCorp%20Vault_%20Key%20Shards,%20Auto-Unseal,%20Transit%20Auto%20Unseal.%20_%20by%20Rakshantha%20M%20_%20Medium_files/1_zLvkHFJGLlsdlTYE560IbA_005.png)
 
-It’s time to check the CLI part to verify,
+Its time to check the CLI part to verify,
 
 $ ubuntu@ip\-172\-31\-32\-104:~$ vault status  
 Key                     Value  
@@ -174,7 +174,7 @@ Key                  Value
 \---                  -----  
 token                hvs.3JclHlS3AfD1H6lUPF3gbKsW  
 token\_accessor       NmQugy7LAbJnCINaGmieK5N4  
-token\_duration       ∞  
+token\_duration         
 token\_renewable      false  
 token\_policies       \["root"\]  
 identity\_policies    \[\]  
@@ -205,7 +205,7 @@ Press enter or click to view image in full size
 
 ![](Blog%2012.%20Implement%20Unsealing%20HashiCorp%20Vault_%20Key%20Shards,%20Auto-Unseal,%20Transit%20Auto%20Unseal.%20_%20by%20Rakshantha%20M%20_%20Medium_files/0_qxyElBJW4O_NiIo0_005.png)
 
-Create KMS key named “auto\_unseal\_kms” in AWS with below configurations,
+Create KMS key named auto\_unseal\_kms in AWS with below configurations,
 
 **Key type :** Symmetric
 
@@ -407,15 +407,15 @@ Raft Applied Index       60
 
 **Auto-Unseal Process:**
 
-## Get Rakshantha M’s stories in your inbox
+## Get Rakshantha Ms stories inyourinbox
 
-Join Medium for free to get updates from this writer.
-
-Subscribe
+Join Medium for free to get updates fromthiswriter.
 
 Subscribe
 
-1\. **Vault Startup :** On startup, Vault checks if it’s sealed and automatically attempts to unseal using the configured KMS.  
+Subscribe
+
+1\. **Vault Startup :** On startup, Vault checks if its sealed and automatically attempts to unseal using the configured KMS.  
   
 2\. **KMS Interaction** : Vault sends a data encryption key to AWS KMS for decryption, which securely handles the unsealing process.
 
@@ -425,7 +425,7 @@ Press enter or click to view image in full size
 
 ![](Blog%2012.%20Implement%20Unsealing%20HashiCorp%20Vault_%20Key%20Shards,%20Auto-Unseal,%20Transit%20Auto%20Unseal.%20_%20by%20Rakshantha%20M%20_%20Medium_files/1_v4aBYzHLyVK5m59W2pFk4A_003.png)
 
-From UI perspective we don’t see any recovery key provisioning inorder to login, instead sign-in is shown at the first place.
+From UI perspective we dont see any recovery key provisioning inorder to login, instead sign-in is shown at the first place.
 
 Press enter or click to view image in full size
 
@@ -548,7 +548,7 @@ $ sudo systemctl start vault.service
 $ sudo systemctl status vault.service  
   
 \`\`\`  
-● vault.service \- HashiCorp Vault \- A tool for managing secrets  
+ vault.service \- HashiCorp Vault \- A tool for managing secrets  
    Loaded: loaded (/etc/systemd/system/vault.service; enabled; vendor preset: disabled)  
    Active: active (running) since Fri 2024-10-18 10:15:00 UTC; 5s ago  
      Docs: https://developer.hashicorp.com/vault/docs  
@@ -556,7 +556,7 @@ $ sudo systemctl status vault.service
     Tasks: 8 (limit: 4915)  
    Memory: 5.6M  
    CGroup: /system.slice/vault.service  
-           └─1234 /usr/bin/vault server \-config=/etc/vault.d/vault.hcl  
+           1234 /usr/bin/vault server \-config=/etc/vault.d/vault.hcl  
   
 Oct 18 10:15:00 your-hostname vault\[1234\]: 2024-10-18T10:15:00.000Z \[INFO\]  core: unsealing vault  
 Oct 18 10:15:00 your-hostname vault\[1234\]: 2024-10-18T10:15:00.000Z \[INFO\]  seal: unseal process completed  
@@ -765,10 +765,10 @@ Press enter or click to view image in full size
 
 > Summary:
 
-Incorporating HashiCorp Vault’s transit auto-unseal mechanism enhances security and efficiency in secret management. By designating a primary Vault as a Key Management Service (KMS), organizations can automate the unsealing of secondary instances, minimizing manual intervention and associated risks — especially crucial in dynamic environments requiring high availability.
+Incorporating HashiCorp Vaults transit auto-unseal mechanism enhances security and efficiency in secret management. By designating a primary Vault as a Key Management Service (KMS), organizations can automate the unsealing of secondary instances, minimizing manual intervention and associated risks  especially crucial in dynamic environments requiring high availability.
 
 This blog explored various unsealing methods, including manual unseal with key shards for collaborative security and auto-unseal with AWS KMS for seamless integration into automated workflows. Each approach offers distinct advantages: manual unseal provides robust security, while auto-unseal emphasizes efficiency and resilience.
 
-The transit auto-unseal mechanism exemplifies Vault’s flexibility, allowing organizations to choose an unsealing strategy that aligns with their operational needs and security policies. By implementing strict access policies for the Transit Secrets Engine, we can ensure authorized actions and reinforce Vault’s position as a reliable solution for secret management.
+The transit auto-unseal mechanism exemplifies Vaults flexibility, allowing organizations to choose an unsealing strategy that aligns with their operational needs and security policies. By implementing strict access policies for the Transit Secrets Engine, we can ensure authorized actions and reinforce Vaults position as a reliable solution for secret management.
 
 Ultimately, the choice between manual and auto-unseal methods depends on your specific use cases and risk tolerance. Whether prioritizing enhanced security or streamlined operations, HashiCorp Vault equips you with the necessary tools to meet your needs while maintaining high security standards.

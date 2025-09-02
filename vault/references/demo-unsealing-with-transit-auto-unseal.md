@@ -1,6 +1,6 @@
 # Demo Unsealing with Transit Auto Unseal
 
-In this guide, we’ll show you how to configure one Vault cluster as a centralized Transit auto-unseal backend for another Vault cluster. Using Vault’s Transit Secrets Engine, the target cluster will automatically unseal during initialization, reducing manual intervention.
+In this guide, well show you how to configure one Vault cluster as a centralized Transit auto-unseal backend for another Vault cluster. Using Vaults Transit Secrets Engine, the target cluster will automatically unseal during initialization, reducing manual intervention.
 
 ## Environment Overview
 
@@ -79,7 +79,7 @@ vault token create -policy=unseal
 
 Note
 
-Save the `token` output securely. You will reference it in the target cluster’s configuration (for example, by exporting it as `VAULT_SEAL_TOKEN`).
+Save the `token` output securely. You will reference it in the target clusters configuration (for example, by exporting it as `VAULT_SEAL_TOKEN`).
 
 - - -
 
@@ -190,7 +190,7 @@ vault status
 
 ## Conclusion
 
-You’ve successfully set up a centralized Transit Secrets Engine to auto-unseal a Raft-backed Vault cluster. This setup automates unsealing, streamlines recovery, and maintains best practices for security and operations.
+Youve successfully set up a centralized Transit Secrets Engine to auto-unseal a Raft-backed Vault cluster. This setup automates unsealing, streamlines recovery, and maintains best practices for security and operations.
 
 - - -
 

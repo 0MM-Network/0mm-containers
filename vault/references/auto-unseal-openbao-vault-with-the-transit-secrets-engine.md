@@ -1,6 +1,6 @@
 # [Auto Unseal OpenBao/Vault with the Transit Secrets Engine](https://labs.iximiuz.com/tutorials/openbao-vault-auto-unseal-transit-82d2a212 "Auto Unseal OpenBao/Vault with the Transit Secrets Engine")
 
-Tutorial by [Márk Sági-Kazár](https://sagikazarmark.com/ "Márk Sági-Kazár")
+Tutorial by [Mrk Sgi-Kazr](https://sagikazarmark.com/ "Mrk Sgi-Kazr")
 
 ### Table of contents
 
@@ -226,7 +226,7 @@ vault operator init -recovery-shares=1 -recovery-threshold=1
 
 Copy to clipboard
 
-⚠️ Similarly to key shares and threshold, using `-recovery-shares=1 -recovery-threshold=1` in production is **not recommended**, as it creates a single recovery key with no redundancy. This configuration is used here for simplicity.
+ Similarly to key shares and threshold, using `-recovery-shares=1 -recovery-threshold=1` in production is **not recommended**, as it creates a single recovery key with no redundancy. This configuration is used here for simplicity.
 
 Waiting for the service to be initialized...
 
@@ -332,7 +332,7 @@ Start playground to activate this check
 
 **  Congratulations!**
 
-You’ve learned how automatic unsealing works in OpenBao/Vault.
+Youve learned how automatic unsealing works in OpenBao/Vault.
 
 While this tutorial used the Transit secrets engine, the same concepts apply to other supported unsealing mechanisms. For more details, check out the [References](https://labs.iximiuz.com/tutorials/openbao-vault-auto-unseal-transit-82d2a212#references) section below.
 
