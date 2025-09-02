@@ -48,8 +48,6 @@ Sealing- state provides security, but manual unsealing adds overhead on your ops
 
 This setup covers the Vault Associate exam basicscheck the [Part1 tutorial](https://developer.hashicorp.com/vault/docs/configuration) for the full configuration.
 
-.custom-table { width: 100%; border-collapse: collapse; font-family: Arial, sans-serif; margin-bottom: 20px; } .custom-table thead tr { padding: 12px; background-color: #2c3e50; color: #ffffff; text-align: left; } .custom-table thead th { padding: 12px; border-bottom: 2px solid #34495e; } .custom-table tbody tr:nth-child(even) { padding: 12px; background-color: #f3f3f3; } .custom-table tbody td { padding: 12px; border-bottom: 1px solid #ddd; } .custom-table tbody tr:last-child td { padding: 12px; border-bottom: none; } .custom-table td { padding: 12px; } .custom-table tbody td:nth-child(1) { font-weight: bold; }
-
 | Configuration | Vault 1(WSL instance1) | Transit Vault 2 (WSL instance2) |
 | --- | --- | --- |
 | storage node\_id | node1 | node2 |
@@ -68,8 +66,6 @@ This setup covers the Vault Associate exam basicscheck the [Part1 tutorial](http
 
   Download & Install Vault Binary (Linux)
 
-wget -O vault.zip https://releases.hashicorp.com/vault/1.18.3/vault\_1.18.3\_linux\_amd64.zip unzip vault\*.zip && rm -f vault\*.zip chmod +x vault sudo mv vault /usr/bin/vault ###  Check Installation $ vault version Vault v1.18.3
-
 ```
 wget -O vault.zip https://releases.hashicorp.com/vault/1.18.3/vault_1.18.3_linux_amd64.zip
 unzip vault*.zip && rm -f vault*.zip
@@ -83,8 +79,6 @@ $ vault --version
 
  Enable Autocomplete
 
-vault -autocomplete-install complete -C /usr/bin/vault vault
-
 ```
 vault -autocomplete-install
 complete -C /usr/bin/vault vault
@@ -92,8 +86,6 @@ complete -C /usr/bin/vault vault
 
   
   Create Vault User
-
-sudo groupadd system vault sudo useradd system home /srv/vault shell /bin/false gid vault vault
 
 ```
 sudo groupadd --system vault
@@ -120,8 +112,6 @@ To give WSL1 a dedicated local static IP without affecting your main network con
 
 *   **Find its name** (e.g., Ethernet 4):
 
-Get-NetAdapter | Where InterfaceDescription -eq Microsoft KM-TEST Loopback Adapter Name InterfaceDescription ifIndex Status MacAddress -     Ethernet 4 Microsoft KM-TEST Loopback Adapter 57 Up 2-10-8C-3F-1F-\*
-
 ```
 Get-NetAdapter | Where InterfaceDescription -eq "Microsoft KM-TEST Loopback Adapter"
 Name          InterfaceDescription               ifIndex Status  MacAddress             
@@ -130,8 +120,6 @@ Ethernet 4    Microsoft KM-TEST Loopback Adapter    57     Up    2-10-8C-3F-1F-*
 ```
 
 *   **Add IP as Admin**:(Use your chosen IP/Name).
-
-New-NetIPAddress -InterfaceAlias Ethernet 4 -IPAddress 192.168.57.1 -PrefixLength 24 IPAddress : 192.168.57.1 < Our unique IP for Vault1 instance InterfaceIndex : 57 InterfaceAlias : Ethernet 4 AddressFamily : IPv4 Type : Unicast PrefixLength : 24 
 
 ```
 New-NetIPAddress -InterfaceAlias "Ethernet 4" -IPAddress "192.168.57.1" -PrefixLength 24
@@ -146,8 +134,6 @@ PrefixLength      : 24
 ```
 
 *   **Test the IP connectivity** from a WSL instance (vault1 can now bind to192.168.57.1.)
-
-$ ping 192.168.58.1 -c 1 PING 192.168.58.1 (192.168.58.1) 56(84) bytes of data. 64 bytes from 192.168.58.1: icmp\_seq=1 ttl=128 time=0.281 ms
 
 ```
 $ ping 192.168.58.1 -c 1
@@ -165,15 +151,11 @@ Same as in the [Part1 tutorial](https://developer.hashicorp.com/vault/docs/confi
 
   Create TLS Directory
 
-sudo mkdir -p /opt/vault/tls
-
 ```
 sudo mkdir -p /opt/vault/tls
 ```
 
   Add Opnssl conf file
-
-$ vi vault-openssl1.cnf \[req\] distinguished\_name = req\_distinguished\_name x509\_extensions = v3\_req prompt = no \[req\_distinguished\_name\] C = US ST = State L = City O = Organization OU = Unit CN = 192.168.57.1 # Primary IP (vault1) \[v3\_req\] subjectAltName = @alt\_names \[alt\_names\] IP.1 = 127.0.0.1 IP.2 = 192.168.57.1
 
 ```
 $ vi vault-openssl1.cnf
@@ -200,8 +182,6 @@ IP.2 = 192.168.57.1
 
  Create the **Self-Signed** certificate pair
 
-openssl req -x509 -nodes -days 365 -newkey rsa:2048 \\ -keyout /opt/vault/tls/vault-key.pem \\ -out /opt/vault/tls/vault-cert.pem \\ -config vault-openssl1.cnf
-
 ```
 openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
   -keyout /opt/vault/tls/vault-key.pem \
@@ -210,8 +190,6 @@ openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
 ```
 
   **Set Permissions**
-
-sudo chown -R vault:vault /opt/vault/ sudo chmod 640 /opt/vault/tls/vault-key.pem sudo chmod 644 /opt/vault/tls/vault-cert.pem
 
 ```
 sudo chown -R vault:vault /opt/vault/
@@ -223,15 +201,11 @@ sudo chmod 644 /opt/vault/tls/vault-cert.pem
 
   Create TLS Directory
 
-sudo mkdir -p /opt/vault/tls
-
 ```
 sudo mkdir -p /opt/vault/tls
 ```
 
   Add Opnssl conf file
-
-$ vi vault-openssl2.cnf \[req\] distinguished\_name = req\_distinguished\_name x509\_extensions = v3\_req prompt = no \[req\_distinguished\_name\] C = US ST = State L = City O = Organization OU = Unit CN = 192.168.56.1 # Primary IP (vault2) \[v3\_req\] subjectAltName = @alt\_names \[alt\_names\] IP.1 = 127.0.0.1 IP.2 = 192.168.56.1
 
 ```
 $ vi vault-openssl2.cnf
@@ -259,8 +233,6 @@ IP.2 = 192.168.56.1
   
  Create the **Self-Signed** certificate pair
 
-openssl req -x509 -nodes -days 365 -newkey rsa:2048 \\ -keyout /opt/vault/tls/vault-key.pem \\ -out /opt/vault/tls/vault-cert.pem \\ -config vault-openssl2.cnf
-
 ```
 openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
   -keyout /opt/vault/tls/vault-key.pem \
@@ -269,8 +241,6 @@ openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
 ```
 
   **Set Permissions**
-
-sudo chown -R vault:vault /opt/vault/ sudo chmod 640 /opt/vault/tls/vault-key.pem sudo chmod 644 /opt/vault/tls/vault-cert.pem
 
 ```
 sudo chown -R vault:vault /opt/vault/
@@ -281,8 +251,6 @@ sudo chmod 644 /opt/vault/tls/vault-cert.pem
 **Note:** In production, **`root:root`** ownership is more secure, with Vault user only having read access.
 
 Add Certificate to the Trusted Store (both servers)
-
-sudo cp /opt/vault/tls/vault-cert.pem /usr/local/share/ca-certificates/vault-cert.crt sudo update-ca-certificates
 
 ```
 sudo cp /opt/vault/tls/vault-cert.pem /usr/local/share/ca-certificates/vault-cert.crt
@@ -298,8 +266,6 @@ If youre on Systemd friendly WSL, please refer to [Part1 tutorial](https://devel
 *   [**Create the Vault Startup Script**](#tab-strongcreatethevaultstartupscriptstrong)
 
   Create transit vault server Configuration file
-
-\### 1. Create Config Directory sudo mkdir -p /etc/vault.d ### 2. Create the hcl config file vi /etc/vault.d/vault.hcl # Full configuration options can be found # Here https://developer.hashicorp.com/vault/docs/configuration storage raft { path = /opt/vault/data node\_id = node2 } # Cluster cluster\_addr = https://192.168.56.1:8201 api\_addr = https://192.168.56.1:8200 # HTTPS listener listener tcp { address = 192.168.56.1:8200 cluster\_address = 192.168.56.1:8201 tls\_cert\_file = /opt/vault/tls/vault-cert.pem tls\_key\_file = /opt/vault/tls/vault-key.pem } #Other ui = true disable\_mlock = true
 
 ```
 ### 1. Create Config Directory
@@ -334,8 +300,6 @@ disable_mlock = true
   
  Validate & Set Permissions
 
-vault operator diagnose -config=/etc/vault.d/vault.hcl sudo chown -R vault:vault /etc/vault.d sudo chmod 640 /etc/vault.d/vault.hcl
-
 ```
 vault operator diagnose -config=/etc/vault.d/vault.hcl
 sudo chown -R vault:vault /etc/vault.d
@@ -343,8 +307,6 @@ sudo chmod 640 /etc/vault.d/vault.hcl
 ```
 
   Set Vault Environment Variable
-
-export VAULT\_ADDR=https://192.168.56.1:8200 echo export VAULT\_ADDR=https://192.168.56.1:8200 >> ~/.bashrc #   Check Vault Status vault status ### check via API curl -k https://192.168.56.1:8200/v1/sys/seal-status
 
 ```
 export VAULT_ADDR='https://192.168.56.1:8200'
@@ -358,8 +320,6 @@ curl -k https://192.168.56.1:8200/v1/sys/seal-status
 
 1\. Initialize vault cluster
 
-vault operator init -key-shares=3 -key-threshold=2 > key.txt ### output Unseal Key 1: xxxxxxxxxxxxxxxx Unseal Key 2: xxxxxxxxxxxxxxxx Unseal Key 3: xxxxxxxxxxxxxxxx Initial Root Token: hvs.xxxxxxxxxxxxxxxx
-
 ```
 vault operator init -key-shares=3 -key-threshold=2 > key.txt
 ### output 
@@ -372,8 +332,6 @@ Initial Root Token: hvs.xxxxxxxxxxxxxxxx
 **Note:**   Store your key.txt file securely. Without enough unseal keys, youll lose access to your Vault.
 
 2\. Use 2 keys at least to unseal **Vault2**:
-
-vault operator unseal # Enter at least 2 of the 3 unseal keys Unseal Key (will be hidden): \*\*\*\*\*\*\*\*\*\*\*\*\*\*\*\*\*\*\*\*\*\*\*\*\*\* Key Value   Seal Type shamir Initialized true Sealed false Total Shares 3 Threshold 2 Unseal Progress 0/2 Unseal Nonce n/a Version 1.15.0 Storage Type file Cluster Name vault-cluster-1234 Cluster ID 01234567-89ab-cdef-0123-456789abcdef HA Enabled false
 
 ```
 vault operator unseal
@@ -397,8 +355,6 @@ HA Enabled      false
 
 1.  **Create** and add permissions to the file `start_services.sh`
 
-$ vi ~/.config/vault/start\_service.sh #!/bin/bash # Replace this with your WSL nodes static IP (e.g. 192.168.56.1) export VAULT\_ADDR=https://192.168.56.1:8200 ##  Vault2 # Start Vault as a background process vault server -config=/etc/vault.d/vault.hcl >> /var/log/vault.log 2>&1 & $ chmod +x ~/.config/vault/start\_services.sh
-
 ```
 $ vi ~/.config/vault/start_service.sh
 #!/bin/bash
@@ -413,8 +369,6 @@ $ chmod +x ~/.config/vault/start_services.sh
 ```
 
 2\. **Configure `wsl.conf` to Run the Script on Launch**
-
-$ vi /etc/wsl.conf \[boot\] command=sudo bash /home/<your\_user>/.config/vault/start\_service.sh \[user\] default=<your\_username> \[network\] hostname = <Your\_WSLhostname>
 
 ```
 $ vi /etc/wsl.conf 
@@ -431,23 +385,17 @@ hostname = <Your_WSLhostname>
 
 #### 1\. **Enable the Transit Secrets Engine** on Vault 2 (your trusted cluster):
 
-vault secrets enable transit
-
 ```
 vault secrets enable transit
 ```
 
 #### 2\. **Create the encryption key** for unsealing:
 
-vault write -f transit/keys/autounseal
-
 ```
 vault write -f transit/keys/autounseal
 ```
 
 #### 3\. **Create** and apply the `auto-unseal-policy` that allows encrypt/decrypt operations on the autounseal key
-
-vault policy write auto-unseal-policy  <<EOF path transit/keys/autounseal { capabilities = \[update, create, read\] } path transit/encrypt/autounseal { capabilities = \[update\] } path transit/decrypt/autounseal { capabilities = \[update\] } EOF
 
 ```
 vault policy write auto-unseal-policy - <<EOF
@@ -467,8 +415,6 @@ EOF
 
 This token has the right permissions and is the one Vault 1 will use in its seal transit stanza.  
 
-vault token create -orphan -period=24h -policy=auto-unseal-policy Key Value   token hvs.CAESICTtxxx token\_accessor vhr3t7vGlEtAFbJe8P7RHAF0 token\_duration 24h token\_renewable true token\_policies \[auto-unseal-policy default\]
-
 ```
 vault token create -orphan -period=24h -policy=auto-unseal-policy
 Key                  Value
@@ -485,8 +431,6 @@ token_policies       ["auto-unseal-policy" "default"]
 ## 6  Use Transit to Auto-Unseal Vault 1
 
 In the `configuration file`, use the token **directly** (i.e `config-autounseal.hcl`)
-
-$ vi /etc/vault.d/config-autounseal.hcl storage raft { path = /opt/vault/data node\_id = node1 } cluster\_addr = https://192.168.57.1:8301 api\_addr = https://192.168.57.1:8300 ui = true disable\_mlock = true # HTTPS listener listener tcp { address = 192.168.57.1:8300 cluster\_address = 0.0.0.0:8301 tls\_cert\_file = /opt/vault/tls/vault-cert.pem tls\_key\_file = /opt/vault/tls/vault-key.pem } ui = true #mlock = true disable\_mlock = true seal transit { #    seal transit stanza. address = https://192.168.56.1:8200 key\_name = autounseal mount\_path = transit/ disable\_renewal = false token = hvs.CAESICTtxxx #  Token from Transit Vault2
 
 ```
 $ vi  /etc/vault.d/config-autounseal.hcl
@@ -523,15 +467,11 @@ seal "transit" {    #    seal "transit" stanza.
 
 ###  **Start and initialize** **Vault 2**:
 
-vault server -config=config-autounseal.hcl
-
 ```
 vault server -config=config-autounseal.hcl
 ```
 
 Open another terminal and initialize your second Vault server (**Vault 2**). Save the token for later use.
-
-$ VAULT\_ADDR=http://192.168.57.1:8300 vault operator init Recovery Key 1: BOEVB5Q0/xxx Recovery Key 2: gE9BhsJSBxxx Recovery Key 3: WoUxp1F3xxxx Recovery Key 4: Xj55tUDrxxxx Recovery Key 5: Yn1kOKxxxxxx Initial Root Token: hvs.k8Z4E47GExxxx Success! Vault is initialized (unseal transit configuration from node ubuntu22) june 5 7:53AM Recovery key initialized with 5 key shares and a key threshold of 3. Please securely distribute the key shares printed above.
 
 ```
 $ VAULT_ADDR=http://192.168.57.1:8300 vault operator init
@@ -551,8 +491,6 @@ securely distribute the key shares printed above.
 
 Check the Vault 2 server status. It is now successfully initialized and unsealed.
 
-$ VAULT\_ADDR=http://192.168.57.1:8300 vault status Key Value   Recovery Seal Type shamir Initialized true Sealed false <    Auto-Unsealed Total Recovery Shares 5 Threshold 3
-
 ```
 $ VAULT_ADDR=http://192.168.57.1:8300 vault status
 Key                      Value
@@ -567,8 +505,6 @@ Threshold                3
 # II. Vault1 Auto-Startup in WSL
 
 Finally to auto-start Vault on WSL boot, use a startup script + `wsl.conf`:
-
-\# vi ~/.config/vault/start\_service.sh #!/bin/bash nohup vault server -config=/etc/vault.d/config-autounseal.hcl >> /var/log/vault.log 2>&1 &
 
 ```
 # vi  ~/.config/vault/start_service.sh

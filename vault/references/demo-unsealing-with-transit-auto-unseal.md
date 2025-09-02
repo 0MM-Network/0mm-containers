@@ -26,9 +26,7 @@ Warning
 
 Ensure that both nodes can communicate over port `8200` and that the Vault CLI is installed and in your `PATH`.
 
-- - -
-
-## 1\. Configure the Transit Cluster
+## 1. Configure the Transit Cluster
 
 ### 1.1 Enable the Transit Secrets Engine
 
@@ -81,9 +79,8 @@ Note
 
 Save the `token` output securely. You will reference it in the target clusters configuration (for example, by exporting it as `VAULT_SEAL_TOKEN`).
 
-- - -
 
-## 2\. Configure the Target Cluster
+## 2 Configure the Target Cluster
 
 ### 2.1 Verify Vault Status
 
@@ -140,9 +137,7 @@ sudo systemctl restart vault
 vault status
 ```
 
-- - -
-
-## 3\. Initialize and Verify Auto Unseal
+## 3 Initialize and Verify Auto Unseal
 
 Initialize the target cluster:
 
@@ -158,9 +153,7 @@ vault status
 
 The `Sealed` field should read `false`, and `Recovery Seal Type` will switch to `shamir`.
 
-- - -
-
-## 4\. Post-Unseal Operations
+## 4. Post-Unseal Operations
 
 Log in with the initial root token:
 
@@ -186,13 +179,9 @@ sudo systemctl restart vault
 vault status
 ```
 
-- - -
-
 ## Conclusion
 
 Youve successfully set up a centralized Transit Secrets Engine to auto-unseal a Raft-backed Vault cluster. This setup automates unsealing, streamlines recovery, and maintains best practices for security and operations.
-
-- - -
 
 ## Links and References
 
