@@ -26,8 +26,9 @@
 !aws/
 
 !goose-ai/
+!goose-ai/artifacts/
 
-!python/
+ !python/
 
 !salt/
 

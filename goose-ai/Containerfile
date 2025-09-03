@@ -1,26 +1,26 @@
-# Build stage
-FROM rust:bullseye AS builder
-
-SHELL ["/bin/bash", "-c"]
-
-# Install Node.js and any missing dependencies
-RUN curl -fsSL https://deb.nodesource.com/setup_lts.x | bash - && \
-    apt-get update && apt-get install -y \
-    nodejs \
-    libdbus-1-dev \
-    && rm -rf /var/lib/apt/lists/*
-
-# Create a new directory for the app
-WORKDIR /usr/src/goose
-
-# Copy the entire project
-COPY . .
-
-RUN apt-get update && apt-get install -y protobuf-compiler
-
-# Build the project
-RUN cargo build --release
-
+# # Build stage
+# FROM rust:bullseye AS builder
+# 
+# SHELL ["/bin/bash", "-c"]
+# 
+# # Install Node.js and any missing dependencies
+# RUN curl -fsSL https://deb.nodesource.com/setup_lts.x | bash - && \
+#     apt-get update && apt-get install -y \
+#     nodejs \
+#     libdbus-1-dev \
+#     && rm -rf /var/lib/apt/lists/*
+# 
+# # Create a new directory for the app
+# WORKDIR /usr/src/goose
+# 
+# # Copy the entire project
+# COPY . .
+# 
+# RUN apt-get update && apt-get install -y protobuf-compiler
+# 
+# # Build the project
+# RUN cargo build --release
+# 
 # Runtime stage
 FROM ubuntu:22.04
 
@@ -44,6 +44,11 @@ RUN apt-get update && apt-get install -y \
     libxcb1 \
     dos2unix \
     && rm -rf /var/lib/apt/lists/*
+
+# Create user
+RUN useradd -m -s /bin/bash -u 1001 goose && \
+    mkdir -p /home/goose/.config/goose/recipes/ && \
+    chown -R goose:goose /home/goose
 
 # Install Node.js
 RUN curl -fsSL https://deb.nodesource.com/setup_lts.x | bash - && \
@@ -91,38 +96,34 @@ RUN curl -LsSf https://astral.sh/uv/install.sh | sh
 RUN curl -Ls https://sh.jbang.dev | bash -s - app setup
 
 # Copy the built binaries
-COPY --from=builder /usr/src/goose/target/release/goose /usr/local/bin/goose
+#COPY --from=builder /usr/src/goose/target/release/goose /usr/local/bin/goose
+RUN curl -fsSL https://github.com/block/goose/releases/download/stable/download_cli.sh \
+    | CONFIGURE=false GOOSE_BIN_DIR=/usr/local/bin bash
 
-# Create a wrapper script to initialize DBus and keyring
-# Create the entrypoint script
-#COPY ./../../entrypoint.sh /usr/local/bin/entrypoint.sh
-RUN echo '#!/bin/bash\n\
-# Start DBus session daemon unconditionally\n\
-eval "$(dbus-launch --sh-syntax)"\n\
-export DBUS_SESSION_BUS_ADDRESS\n\
-\n\
-# Initialize keyring if needed\n\
-if [ -z "$GNOME_KEYRING_CONTROL" ]; then\n\
-  eval "$(gnome-keyring-daemon --start)" || echo "Warning: Failed to start gnome-keyring-daemon"\n\
-  export GNOME_KEYRING_CONTROL SSH_AUTH_SOCK\n\
-fi\n\
-\n\
-# Run the actual command\n\
-exec "$@"' > /usr/local/bin/entrypoint.sh && chmod +x /usr/local/bin/entrypoint.sh
-# Debug: Dump line endings BEFORE fix (look for \r in build logs)
-RUN echo "DEBUG: Line endings BEFORE fix:" && od -c /usr/local/bin/entrypoint.sh | grep -E '\\r|\\n' || true
+# Set user's .profile and .bashrc
+COPY artifacts/bashrc /home/goose/.bashrc
+COPY artifacts/profile /home/goose/.profile
+COPY artifacts/entrypoint.sh /usr/local/bin/entrypoint.sh
 
-# Fix line endings with dos2unix
-RUN dos2unix /usr/local/bin/entrypoint.sh
+RUN dbus-uuidgen > /etc/machine-id && \
+    mkdir -p /run/user/1001/systemd/private /run/systemd/system && \
+    chown -R goose:goose /run/user/1001 && \
+    chown goose:goose /home/goose/.bashrc /home/goose/.profile && \
+    chmod 644 /home/goose/.bashrc /home/goose/.profile
 
-# Debug: Dump line endings AFTER fix (should show only \n, no \r)
-RUN echo "DEBUG: Line endings AFTER fix:" && od -c /usr/local/bin/entrypoint.sh | grep -E '\\r|\\n' || true
+# Grant sudo privileges to goose user (optimization: Dedicated sudoers file for safety)
+RUN /bin/bash -c 'mkdir -p /etc/sudoers.d && echo "goose ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/goose && chmod 0440 /etc/sudoers.d/goose && chown root:root /etc/sudoers.d/goose'
+
+# Verify sudo configuration
+RUN su - goose -c "/usr/bin/sudo -n -v"
 
 # Make executable (no need for the old sed)
 RUN chmod +x /usr/local/bin/entrypoint.sh
 # Set up some basic git config
 RUN git config --global init.defaultBranch main && \
     git config --global core.editor "vim"
+
+USER goose
 
 # Add some helpful aliases
 RUN echo 'alias ll="ls -la"' >> ~/.bashrc && \

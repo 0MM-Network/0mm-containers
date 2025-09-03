@@ -125,7 +125,7 @@ sudo chmod 755 /run/dbus || echo "Warning: Failed to create /run/dbus - Continui
     #     # Start LocalStack in background
     #     # https://docs.localstack.cloud/aws/capabilities/config/podman/#rootless-podman
           export XDG_RUNTIME_DIR="/run/user/$(id -u)"
-          export DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/$(id -u)/bus"
+          export DBUS_SESSION_BUS_ADDRESS="unix:path=${XDG_RUNTIME_DIR}/bus"
           dbus-daemon --session --fork --address=$DBUS_SESSION_BUS_ADDRESS &
           sleep 1
     #     # Start D-Bus if not running (automate your manual step)

@@ -31,24 +31,27 @@ if [ -z "$LATEST_TAG" ]; then
 fi
 echo "Latest tag: $LATEST_TAG"
 
-# Download Goose source archive
-echo "Downloading Goose source archive at tag $LATEST_TAG..."
-mkdir -p .scratch
-if [ -f ".scratch/goose.tar.gz" ]; then
-    echo "Warning: Existing archive found at .scratch/goose.tar.gz. Skipping download and using existing archive."
-else
-    curl -L "https://github.com/block/goose/archive/refs/tags/${LATEST_TAG}.tar.gz" -o .scratch/goose.tar.gz || error_exit "Failed to download archive at tag $LATEST_TAG"
-fi
+# # Download Goose source archive
+# echo "Downloading Goose source archive at tag $LATEST_TAG..."
+# mkdir -p .scratch
+# if [ -f ".scratch/goose.tar.gz" ]; then
+#     echo "Warning: Existing archive found at .scratch/goose.tar.gz. Skipping download and using existing archive."
+# else
+#     curl -L "https://github.com/block/goose/archive/refs/tags/${LATEST_TAG}.tar.gz" -o .scratch/goose.tar.gz || error_exit "Failed to download archive at tag $LATEST_TAG"
+# fi
+# 
+# # Extract the archive
+# echo "Extracting Goose source archive..."
+# cd .scratch
+# rm -rf goose
+# tar -xzf goose.tar.gz || error_exit "Failed to extract archive"
+# mv goose-* goose
+# #rm -f goose.tar.gz
+# cd ..
+# 
+#BUILD_CONTEXT="$SCRIPTS_DIR/.scratch/goose"
 
-# Extract the archive
-echo "Extracting Goose source archive..."
-cd .scratch
-rm -rf goose
-tar -xzf goose.tar.gz || error_exit "Failed to extract archive"
-mv goose-* goose
-cd ..
-
-BUILD_CONTEXT="$SCRIPTS_DIR/.scratch/goose"
+BUILD_CONTEXT="$SCRIPTS_DIR"
 
 # Build the container image
 echo "Building Goose container image..."
@@ -58,6 +61,13 @@ podman build -t $GOOSE_IMAGE -f "$SCRIPTS_DIR/Containerfile" "$BUILD_CONTEXT" ||
 VOLUME="goose-config"
 if ! podman volume exists "$VOLUME"; then
     echo "Creating persistent volume for Goose config..."
+    podman volume create "$VOLUME"
+fi
+
+# Create persistent volume if it doesn't exist
+VOLUME="goose-share"
+if ! podman volume exists "$VOLUME"; then
+    echo "Creating persistent volume for Goose share..."
     podman volume create "$VOLUME"
 fi
 
@@ -94,8 +104,22 @@ else
     TTY_FLAG="-i"
 fi
 
+# Create persistent volume if it doesn't exist
+VOLUME="goose-config"
+if ! podman volume exists "$VOLUME"; then
+    echo "Creating persistent volume for Goose config..."
+    podman volume create "$VOLUME"
+fi
+
+# Create persistent volume if it doesn't exist
+VOLUME="goose-share"
+if ! podman volume exists "$VOLUME"; then
+    echo "Creating persistent volume for Goose share..."
+    podman volume create "$VOLUME"
+fi
+
 # Default config path
-DEFAULT_CONFIG="$HOME/.config/zide/config/goose/config.yml"
+DEFAULT_CONFIG="$HOME/.config/goose/config.yml"
 
 # Parse arguments for --config
 CONFIG=""
@@ -126,39 +150,37 @@ declare -a podman_args=(
     "run"
     "--rm"
     "$TTY_FLAG"
-    "-v" "$PWD:/root/workspace:Z"
-    "-v" "goose-config:/root/.config/goose"
-    "-v" "goose-config:/root/.local/share/goose"
+    "-v" "$PWD:/home/goose/workspace:Z"
+    "-v" "goose-config:/home/goose/.config/goose"
+    "-v" "goose-share:/home/goose/.local/share/goose"
 )
 
 # Add config mount if specified or default
 if [ -n "$CONFIG" ]; then
     if [ -f "$CONFIG" ]; then
-        podman_args+=("-v" "$CONFIG:/root/.config/goose/config.yml:Z")
+        podman_args+=("-v" "$CONFIG:/home/goose/.config/goose/config.yml:Z,rw")
     else
         error_exit "Specified config file $CONFIG not found."
     fi
 elif [ -f "$DEFAULT_CONFIG" ]; then
-    podman_args+=("-v" "$DEFAULT_CONFIG:/root/.config/goose/config.yml:Z")
+    podman_args+=("-v" "$DEFAULT_CONFIG:/home/goose/.config/goose/config.yml:Z,rw")
 fi
 
 # Conditionally add gitconfig mount if file exists
 if [ -f "$HOME/.gitconfig" ]; then
-    podman_args+=("-v" "$HOME/.gitconfig:/root/.gitconfig:ro")
+    podman_args+=("-v" "$HOME/.gitconfig:/home/goose/.gitconfig:ro")
 fi
 
 # Conditionally add ssh mount if directory exists
 if [ -d "$HOME/.ssh" ]; then
-    podman_args+=("-v" "$HOME/.ssh:/root/.ssh:ro")
+    podman_args+=("-v" "$HOME/.ssh:/home/goose/.ssh:ro")
 fi
 
 # Add working directory and environment variables
 podman_args+=(
-    "-w" "/root/workspace"
-    "-e" "GOOSE_HOME=/root/.config/goose"
+    "-w" "/home/goose/workspace"
+    "-e" "GOOSE_HOME=/home/goose/.config/goose"
     "-e" "EDITOR=vim"
-    "-e" "GIT_AUTHOR_NAME=${GIT_AUTHOR_NAME:-\"Goose User\"}"
-    "-e" "GIT_AUTHOR_EMAIL=${GIT_AUTHOR_EMAIL:-\"goose@example.com\"}"
     "-e" "GOOSE_DISABLE_KEYRING"
     "-e" "GOOSE_PLANNER_PROVIDER"
     "-e" "GOOSE_PLANNER_MODEL"

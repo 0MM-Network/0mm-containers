@@ -1,47 +1,329 @@
-FROM debian:bookworm
+# Multi-stage build to separate build-time dependencies and minimize final image size
+# Stage 1: Builder stage for installing packages and dependencies
+FROM python:3.11.13-slim-trixie AS builder
 
-# Add repository for latest Podman
-RUN apt-get update && apt-get install -y curl gnupg
-RUN mkdir -p /etc/apt/keyrings
-RUN curl -sL https://download.opensuse.org/repositories/devel:/kubic:/libcontainers:/unstable/Debian_12/Release.key | gpg --dearmor -o /etc/apt/keyrings/devel-kubic-libcontainers-unstable.gpg
-RUN echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/devel-kubic-libcontainers-unstable.gpg] https://download.opensuse.org/repositories/devel:/kubic:/libcontainers:/unstable/Debian_12/ /" > /etc/apt/sources.list.d/devel:kubic:libcontainers:unstable.list
+ARG TARGETARCH
 
-# Install required packages for systemd, podman, and rootless essentials
-RUN apt-get update && \
-    apt-get install -y systemd podman fuse-overlayfs slirp4netns containernetworking-plugins uidmap && \
+# Set environment variables (optimization: set early for cache reuse)
+ENV DEBIAN_FRONTEND=noninteractive
+ENV LANG=C.UTF-8
+ENV PYTHONUNBUFFERED=1
+ENV DNS_ADDRESS=0
+ENV TOFU_IN_AUTOMATION=true
+
+RUN groupadd -g 1001 tofu && \
+    useradd -u 1001 -g 1001 -m -s /bin/bash tofu
+    
+# Install build dependencies with cache mount to avoid persisting apt cache in layers
+RUN --mount=type=cache,target=/var/cache/apt /bin/bash -c 'apt-get update && \
+    apt-get install -y --no-install-recommends \
+    apt-transport-https \
+    build-essential \
+    ca-certificates \
+    curl \
+    gnupg \
+    git \
+    openssh-client \
+    make \
+    openssl \
+    tar \
+    pixz \
+    zip \
+    unzip \
+    groff-base \
+    sudo \
+    iputils-ping \
+    nss-passwords \
+    procps \
+    iproute2 \
+    xz-utils \
+    libatomic1 \
+    binutils \
+    jq \
+    less \
+    pkg-config \
+    libvirt-dev \
+    python3-dev \
+    systemd && \
+    # patch for CVE-2024-45490, CVE-2024-45491, CVE-2024-45492
+    apt-get install --only-upgrade libexpat1 && \
     apt-get clean && \
-    rm -rf /var/lib/apt/lists/*
+    rm -rf /var/lib/apt/lists/* /tmp/* /root/.cache/pip/* /root/.cache/pip/* /var/cache/apt/*'
+# Optimization: Cleanup to reduce layer size, including pip cache
 
-# Ensure newuidmap and newgidmap are setuid
-RUN chmod 4755 /usr/bin/newuidmap /usr/bin/newgidmap
+# Install Node.js (optimization: Install in builder stage, copy to final if needed)
+RUN /bin/bash -c 'ARCH= && dpkgArch="$(dpkg --print-architecture)" \
+  && case "${dpkgArch##*-}" in \
+    amd64) ARCH="x64";; \
+    arm64) ARCH="arm64";; \
+    *) echo "unsupported architecture"; exit 1 ;; \
+  esac \
+  # gpg keys listed at https://github.com/nodejs/node#release-keys
+  && set -ex \
+  && for key in \
+    C0D6248439F1D5604AAFFB4021D900FFDB233756 \
+    DD792F5973C6DE52C432CBDAC77ABFA00DDBF2B7 \
+    CC68F5A3106FF448322E48ED27F5E38D5B0A215F \
+    8FCCA13FEF1D0C2E91008E09770F7A9A5AE15600 \
+    890C08DB8579162FEE0DF9DB8BEAB4DFCF555EF4 \
+    C82FA3AE1CBEDC6BE46B9360C43CEC45C17AB93C \
+    108F52B48DB57BB0CC439B2997B01419BD92F80A \
+    A363A499291CBBC940DD62E41F10027AF002F8B0 \
+  ; do \
+      gpg --batch --keyserver hkps://keys.openpgp.org --recv-keys "$key" || \
+      gpg --batch --keyserver keyserver.ubuntu.com --recv-keys "$key" ; \
+  done \
+  && curl -LO https://nodejs.org/dist/latest-v18.x/SHASUMS256.txt \
+  && LATEST_VERSION_FILENAME=$(cat SHASUMS256.txt | grep -o "node-v.*-linux-$ARCH" | sort | uniq) \
+  && rm SHASUMS256.txt \
+  && curl -fsSLO --compressed "https://nodejs.org/dist/latest-v18.x/$LATEST_VERSION_FILENAME.tar.xz" \
+  && curl -fsSLO --compressed "https://nodejs.org/dist/latest-v18.x/SHASUMS256.txt.asc" \
+  && gpg --batch --decrypt --output SHASUMS256.txt SHASUMS256.txt.asc \
+  && grep " $LATEST_VERSION_FILENAME.tar.xz\$" SHASUMS256.txt | sha256sum -c - \
+  && tar -xJf "$LATEST_VERSION_FILENAME.tar.xz" -C /usr/local --strip-components=1 --no-same-owner \
+  && rm "$LATEST_VERSION_FILENAME.tar.xz" SHASUMS256.txt.asc SHASUMS256.txt \
+  && ln -s /usr/local/bin/node /usr/local/bin/nodejs \
+  # upgrade npm to the latest version
+  && npm upgrade -g npm \
+  # smoke tests
+  && node --version \
+  && npm --version \
+  && test ! $(which python3.9) \
+  && npm install -g aws-cdk aws-cdk-local \
+  && rm -rf /tmp/* /root/.cache/pip/* /root/.cache/pip/* /var/cache/apt/*'
+  # Optimization: Cleanup temp files and pip cache
 
-# Slim down systemd by removing unnecessary services
-RUN (cd /lib/systemd/system/sysinit.target.wants/; for i in *; do [ "$i" = "systemd-tmpfiles-setup.service" ] || rm -f "$i"; done); \
-    rm -f /lib/systemd/system/multi-user.target.wants/*; \
-    rm -f /etc/systemd/system/*.wants/*; \
-    rm -f /lib/systemd/system/local-fs.target.wants/*; \
-    rm -f /lib/systemd/system/sockets.target.wants/*udev*; \
-    rm -f /lib/systemd/system/sockets.target.wants/*initctl*; \
-    rm -f /lib/systemd/system/basic.target.wants/*; \
-    rm -f /lib/systemd/system/anaconda.target.wants/*;
+# Build wheels for LocalStack and related packages
+RUN --mount=type=cache,target=/root/.cache/pip /bin/bash -c 'pip3 wheel --no-cache-dir --wheel-dir /wheels awscli awscli-local requests && \
+    rm -rf /tmp/* /root/.cache/pip/* /root/.cache/pip/* /var/cache/apt/*'
+    # Optimization: Build wheels in builder to avoid compilation in final image
 
-# Create non-root user 'podman' with UID 1000
-RUN useradd -u 1000 -m -s /bin/bash podman
+ RUN /bin/bash -c 'curl --output localstack-cli.tar.gz --location https://github.com/localstack/localstack-cli/releases/download/v4.7.0/localstack-cli-4.7.0-linux-amd64-onefile.tar.gz && \
+    tar xvzf localstack-cli.tar.gz -C /usr/local/bin && \
+    rm -f localstack-cli.tar.gz'
 
-# Setup subuid and subgid for rootless Podman
-RUN echo "podman:100000:65536" > /etc/subuid && \
-    echo "podman:100000:65536" > /etc/subgid
+# Install OpenTofu (optimization: Install after static deps for better cache hits)
+RUN /bin/bash -c 'curl --proto "=https" --tlsv1.2 -fsSL -o install-opentofu.sh \
+    "https://get.opentofu.org/install-opentofu.sh" && \
+    chmod +x install-opentofu.sh && \
+    ./install-opentofu.sh --install-method deb && \
+    rm -rf install-opentofu.sh /tmp/* /root/.cache/pip/* /root/.cache/pip/* /var/cache/apt/*'
+    # Optimization: Cleanup after install and pip cache
 
-# Copy and enable the systemd service for nested Podman
-#COPY nested-podman.service /etc/systemd/system/nested-podman.service
-#RUN ln -s /etc/systemd/system/nested-podman.service /etc/systemd/system/multi-user.target.wants/nested-podman.service
+# Install runtime dependencies (including sudo and curl for LocalStack and health checks)
 
-# Copy and enable the cgroup setup service
-COPY cgroup-setup.service /etc/systemd/system/cgroup-setup.service
-RUN ln -s /etc/systemd/system/cgroup-setup.service /etc/systemd/system/multi-user.target.wants/cgroup-setup.service
+# Install from wheels (optimization: Install pre-built wheels to avoid compilation)
+RUN --mount=type=cache,target=/root/.cache/pip /bin/bash -c 'pip3 install --no-cache-dir /wheels/* && \
+    rm -rf /wheels /tmp/* /root/.cache/pip/* /var/cache/apt/*'
+    # Optimization: Install without cache, cleanup wheels and pip cache
 
-# Set environment for container detection
-ENV container=podman
+# perform some permission fixes (adapted for tofu user)
+RUN /bin/bash -c 'mkdir -p /opt/code/localstack /opt/code/localstack/localstack-core && \
+    mkdir -p /var/lib/localstack && chmod -R 777 /var/lib/localstack && \
+    mkdir -p /usr/lib/localstack && \
+    mkdir /tmp/localstack && chmod -R 777 /tmp/localstack && \
+    touch /tmp/localstack/.marker && \
+    mkdir -p /.npm && chmod -R 777 /.npm && \
+    chmod 755 /root && \
+    chown -R tofu:tofu /opt/code/localstack /var/lib/localstack /usr/lib/localstack /tmp/localstack /.npm'
+    # Optimization: Cleanup temp files and pip cache
 
-# Set ENTRYPOINT to run systemd
-ENTRYPOINT ["/sbin/init"]
+RUN --mount=type=cache,target=/var/cache/apt /bin/bash -c 'apt-get update && \
+    apt-get install -y --no-install-recommends podman cgroup-tools fuse-overlayfs slirp4netns uidmap systemd dbus dbus-user-session libvshadow-utils libcap2-bin ca-certificates && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/* /tmp/* /root/.cache/pip/* /root/.cache/pip/* /var/cache/apt/*'
+    # Optimization: Install minimal runtime packages, cleanup including pip cache
+    # Reference: how_to_run_systemd_in_a_container.md for systemd installation
+
+# Set up subuid and subgid for tofu user with nested ranges (starting at 10000 with 30000 IDs)
+# to avoid mapping overflows in rootless Podman nesting (fits within host ranges starting
+# at 100000 with 65536 IDs)
+RUN echo "tofu:10001:30000" > /etc/subuid && \
+    echo "tofu:165536:65536" >> /etc/subuid && \
+    echo "tofu:10001:30000" > /etc/subgid && \
+    echo "tofu:165536:65536" >> /etc/subgid
+
+# Copy Podman configuration files
+COPY artifacts/containers.conf /etc/containers/containers.conf
+COPY artifacts/registries.conf /etc/containers/registries.conf
+COPY artifacts/seccomp.json /etc/containers/seccomp.json
+COPY artifacts/home-containers.conf /home/tofu/.config/containers/containers.conf
+COPY artifacts/home-storage.conf /home/tofu/.config/containers/storage.conf
+COPY artifacts/registries.conf /home/tofu/.config/containers/registries.conf
+COPY artifacts/seccomp.json /home/tofu/.config/containers/seccomp.json
+COPY artifacts/podman.service artifacts/podman.socket /home/tofu/.config/systemd/user/
+COPY artifacts/policy.json /home/tofu/.config/containers/policy.json
+
+# Create and chown storage directory for Podman
+RUN mkdir -p /home/tofu/.config/containers/registries.d /home/tofu/.local/share/containers /home/tofu/.local/share/containers/storage /run/user/1001/containers /run/user/1001/podman && \
+    chown -R tofu:tofu /home/tofu /run/user/1001 && \
+    chmod -R 0755 /etc/containers && \
+    chmod -R 700 /home/tofu/.local/share/containers /run/user/1001/containers /run/user/1001/podman && \
+    chmod -R 644 /home/tofu/.config/containers
+
+# Set capabilities for newuidmap and newgidmap
+# Replace setuid bits by proper file capabilities for uidmap binaries.
+# See:
+# - https://github.com/containers/podman/discussions/19931
+# - https://github.com/containers/podman/discussions/23838.
+RUN apt-get install -y libcap2-bin && \
+    chmod 0755 /usr/bin/newuidmap /usr/bin/newgidmap && \
+    setcap cap_setuid+ep /usr/bin/newuidmap && \
+    setcap cap_setgid+ep /usr/bin/newgidmap && \
+    chmod -s /usr/bin/newuidmap && \
+    chmod -s /usr/bin/newgidmap
+
+# creating the file /var/lib/systemd/linger/tofu
+# is the equivalent to: `loginctl enable-linger tofu`
+RUN cd /home/tofu/.config/systemd/user/ && \
+    mkdir sockets.target.wants && \
+    ln -s ../podman.socket ./sockets.target.wants/ && \
+    mkdir -p /var/lib/systemd/linger && \
+    touch /var/lib/systemd/linger/tofu && \
+    chown -R tofu:tofu /home/tofu
+
+# Copy user units for stage 2
+COPY artifacts/user-systemd-setup.service /home/tofu/.config/systemd/user/user-systemd-setup.service
+COPY artifacts/user-podman-setup.service /home/tofu/.config/systemd/user/user-podman-setup.service
+COPY artifacts/user-localstack-setup.service /home/tofu/.config/systemd/user/user-localstack-setup.service
+
+# Manually "enable" units by creating symlinks (offline equivalent of systemctl --user enable)
+RUN chown -R tofu:tofu /home/tofu/.config/systemd/user/ && \
+    mkdir -p /home/tofu/.config/systemd/user/default.target.wants && \
+    ln -sf ../user-systemd-setup.service /home/tofu/.config/systemd/user/default.target.wants/user-systemd-setup.service && \
+    ln -sf ../user-podman-setup.service /home/tofu/.config/systemd/user/default.target.wants/user-podman-setup.service && \
+    ln -sf ../user-localstack-setup.service /home/tofu/.config/systemd/user/default.target.wants/user-localstack-setup.service && \
+    chown -R tofu:tofu /home/tofu/.config/systemd/user/
+
+# Chown user-specific config
+RUN chown -R tofu:tofu /home/tofu/
+
+# Set user's .profile and .bashrc
+COPY artifacts/bashrc /home/tofu/.bashrc
+COPY artifacts/profile /home/tofu/.profile
+COPY artifacts/cdk.json /home/tofu/.cdk.json
+
+RUN dbus-uuidgen > /etc/machine-id && \
+    mkdir -p /run/user/1001/systemd/private /run/systemd/system && \
+    chown -R tofu:tofu /run/user/1001 && \
+    chown tofu:tofu /home/tofu/.bashrc /home/tofu/.profile /home/tofu/.cdk.json && \
+    chmod 644 /home/tofu/.bashrc /home/tofu/.profile /home/tofu/.cdk.json
+
+# Grant sudo privileges to tofu user (optimization: Dedicated sudoers file for safety)
+RUN /bin/bash -c 'mkdir -p /etc/sudoers.d && echo "tofu ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/tofu && chmod 0440 /etc/sudoers.d/tofu && chown root:root /etc/sudoers.d/tofu'
+
+# Verify sudo configuration
+RUN su - tofu -c "/usr/bin/sudo -n -v"
+
+# add the shipped hosts file to prevent performance degradation in windows container mode on windows
+# (where hosts file is not mounted) See https://github.com/localstack/localstack/issues/5178
+RUN /bin/bash -c 'echo "127.0.0.1 localhost" > /etc/hosts'
+
+# Set up bash completion for OpenTofu (see artifacts/bashrc)
+RUN /bin/bash -c 'mkdir -p /home/tofu/.config/tofu/plugins && \
+    chown -R tofu:tofu /home/tofu/.config && rm -rf /tmp/* /root/.cache/pip/*'
+    # Optimization: Cleanup temp files and pip cache
+
+# Copy default localstack AWS config and credentials (optimization: Copy static files early in final stage for cache)
+COPY artifacts/aws_config /home/tofu/.aws/config
+COPY artifacts/aws_credentials /home/tofu/.aws/credentials
+COPY artifacts/user@.service /etc/systemd/system/user@.service
+
+# Set ownership and permissions for AWS files
+RUN /bin/bash -c 'chown -R tofu:tofu /home/tofu/.aws && \
+    chmod 600 /home/tofu/.aws/config /home/tofu/.aws/credentials && rm -rf /tmp/* /root/.cache/pip/*'
+    # Optimization: Cleanup temp files and pip cache
+
+# Copy entrypoint script for LocalStack integration (optimization: Copy static script)
+COPY artifacts/entrypoint.sh /usr/local/bin/entrypoint.sh
+
+# Make entrypoint executable
+RUN /bin/bash -c 'chmod +x /usr/local/bin/entrypoint.sh && \
+    rm -rf /tmp/* /root/.cache/pip/* /var/cache/apt/*'
+    # Optimization: Cleanup temp files and pip cache
+
+# Setup directories for systemd (reference: how_to_run_systemd_in_a_container.md)
+RUN mkdir -p /var/lib/journal && chmod -R 777 /var/lib/journal && chown -R tofu:tofu /var/lib/journal
+
+# Install qemu dependencies
+RUN apt update -y && \
+    apt install -y libvirt-clients qemu-system-x86 libvirt-daemon libvirt-daemon-system
+
+# Manually enable services via symlinks (bypasses need for running systemd during build)
+RUN mkdir -p /etc/systemd/system/multi-user.target.wants && \
+   ln -sf /usr/lib/systemd/system/libvirtd.service /etc/systemd/system/multi-user.target.wants/libvirtd.service && \
+   ln -sf /usr/lib/systemd/system/virtlockd.service /etc/systemd/system/multi-user.target.wants/virtlockd.service && \
+   ln -sf /usr/lib/systemd/system/libvirtd.socket /etc/systemd/system/sockets.target.wants/libvirtd.socket
+
+# Change qemu to run as root
+RUN printf 'user = "root"\ngroup = "root"\nremember_owner = 0\n' | tee -a /etc/libvirt/qemu.conf 
+
+# Enable automatic login as root once systemd is started
+COPY artifacts/root-autologin.service /etc/systemd/system/root-autologin.service
+# Enable automatic login as tofu once systemd is started
+COPY artifacts/tofu-autologin.service /etc/systemd/system/tofu-autologin.service
+# Manually enable autologin services via symlinks
+RUN mkdir -p /etc/systemd/system/multi-user.target.wants && \
+   ln -sf /etc/systemd/system/root-autologin.service /etc/systemd/system/multi-user.target.wants/root-autologin.service && \
+   ln -sf /etc/systemd/system/tofu-autologin.service /etc/systemd/system/multi-user.target.wants/tofu-autologin.service
+
+RUN chown tofu:tofu -R /home/tofu
+
+RUN mkdir -p /var/lib/shared/overlay-images /var/lib/shared/overlay-layers /var/lib/shared/vfs-images /var/lib/shared/vfs-layers && \
+    touch /var/lib/shared/overlay-images/images.lock && \
+    touch /var/lib/shared/overlay-layers/layers.lock && \
+    touch /var/lib/shared/vfs-images/images.lock && \
+    touch /var/lib/shared/vfs-layers/layers.lock
+
+# Configure journald for persistent storage
+RUN mkdir -p /etc/systemd/journald.conf.d && \
+    echo '[Journal]' >> /etc/systemd/journald.conf.d/persist.conf && \
+    echo 'Storage=persistent' >> /etc/systemd/journald.conf.d/persist.conf && \
+    echo 'SyncIntervalSec=1s' >> /etc/systemd/journald.conf.d/persist.conf && \ 
+    mkdir -p /var/log/journal && chmod -R 777 /var/log/journal
+
+RUN chown -R tofu:tofu /home/tofu/.config /home/tofu/.local/share/containers /run/user/1001 && \
+    chmod -R 755 /home/tofu/.config/containers && \
+    chmod -R 644 /home/tofu/.config/containers/*.conf
+        
+# Volume for systemd
+VOLUME ["/sys/fs/cgroup"]
+
+USER tofu
+WORKDIR /infra
+
+# Setup tofu plugin cache
+ENV XDG_RUNTIME_DIR=/run/user/1001
+ENV DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1001/bus
+ENV TOFU_PLUGIN_CACHE_DIR=/home/tofu/.config/tofu/plugins
+ENV LANG="C.UTF-8" LC_ALL="C.UTF-8"
+ENV LOCALSTACK_DNS_ADDRESS=0
+ENV LOCALSTACK_HOST=localhost
+ENV LOCALSTACK_DEBUG=1
+ENV DOCKER_CMD=podman
+ENV DOCKER_SOCK=/run/user/1001/podman/podman.sock
+ENV DOCKER_HOST=unix:///run/user/1001/podman/podman.sock
+ENV TOFU_IN_AUTOMATION=true
+ENV CONTAINERS_CONF=/home/tofu/.config/containers/containers.conf
+ENV _CONTAINERS_USERNS_CONFIGURED=""
+
+# Declare volume for Podman storage
+VOLUME ["/home/tofu/.local/share/containers"]
+
+RUN sudo apt -y reinstall uidmap
+
+# Verify installations
+RUN localstack --version
+
+# Verify systemd as root and tofu (reference: how_to_run_systemd_in_a_container.md)
+RUN /bin/bash -c 'sudo systemctl --version' && systemctl --version
+
+# Install OpenTofu plugins for commonly used providers
+RUN /bin/bash -c 'mkdir -p ~/.terraform.d/plugin-cache && rm -rf /tmp/*'
+                 # Optimization: Cleanup
+
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
+
+# Set entrypoint
+#CMD ["/sbin/init"]
+# Reference: how_to_run_systemd_in_a_container.md - Use /sbin/init for systemd mode; Podman handles tmpfs mounts with --systemd=true and stop signal SIGRTMIN+3
