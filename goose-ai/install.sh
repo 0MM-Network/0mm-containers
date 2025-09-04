@@ -297,16 +297,24 @@ GOOSE_TESTS=(
     "info"
 )
 
-for test_cmd in "${GOOSE_TESTS[@]}"; do
-    echo -n "Testing ./goose $test_cmd... "
-    if "$SCRIPTS_DIR/goose" $test_cmd &>/dev/null; then
-        echo "✅ Success"
-        SUCCESS_COUNT=$((SUCCESS_COUNT + 1))
-    else
-        echo "❌ Failed"
-        FAILED_COMMANDS+=("$SCRIPTS_DIR/goose $test_cmd")
-    fi
-done
+# Create temp config for smoke tests since --config is mandatory; this is a test-only workaround for security.
+TEMP_CONFIG=$(mktemp)
+if [ $? -ne 0 ] || ! echo "provider: dummy" > "$TEMP_CONFIG" || [ ! -f "$TEMP_CONFIG" ]; then
+    echo "Failed to create temp config for tests"
+    SUCCESS_COUNT=0
+else
+    for test_cmd in "${GOOSE_TESTS[@]}"; do
+        echo -n "Testing ./goose --config $TEMP_CONFIG $test_cmd... "
+        if "$SCRIPTS_DIR/goose" --config "$TEMP_CONFIG" $test_cmd &>/dev/null; then
+            echo "✅ Success"
+            SUCCESS_COUNT=$((SUCCESS_COUNT + 1))
+        else
+            echo "❌ Failed"
+            FAILED_COMMANDS+=("$SCRIPTS_DIR/goose --config $TEMP_CONFIG $test_cmd")
+        fi
+    done
+    rm -f "$TEMP_CONFIG"
+fi
 
 # Print summary
 echo "============================"
