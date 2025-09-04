@@ -130,9 +130,6 @@ if ! podman volume exists "$VOLUME"; then
     podman volume create "$VOLUME"
 fi
 
-# Default config path
-#DEFAULT_CONFIG="$HOME/.config/goose/config.yaml"
-
 # Parse arguments for --config
 declare -a POSITIONAL=()
 while [[ $# -gt 0 ]]; do
@@ -156,10 +153,22 @@ done
 # Restore positional parameters without --config
 set -- "${POSITIONAL[@]}"
 
+# Make --config mandatory
+if [ -z "$CONFIG" ]; then
+    error_exit "Error: --config <file/path.yaml> is required."
+fi
+
+# Require that the --config file exists
+if [ ! -f "$CONFIG" ]; then
+    error_exit "Error: Specified config file $CONFIG not found."
+fi
+
 # Function for bidirectional sync
+# Note: --config is mandatory; its contents are copied into the persistent volume at startup
+# (and synced back on exit) to avoid bind mount issues in rootless Podman contexts.
 sync_config() {
     DIRECTION=$1
-    HOST_CONFIG="$HOME/.config/goose/config.yaml"  # Adjust to your host path
+    HOST_CONFIG="$CONFIG"
     CONTAINER_CONFIG="/home/goose/.config/goose/config.yaml"
 
     if [ "$DIRECTION" = "host_to_volume" ]; then
@@ -185,19 +194,8 @@ declare -a podman_args=(
     "-v" "$PWD:/home/goose/workspace:Z"
     )
 
-# Add config mount if specified or default
-if [ -n "$CONFIG" ]; then
-    if [ -f "$CONFIG" ]; then
-        podman_args+=("-v" "$CONFIG:/home/goose/.config/goose/config.yaml:Z,rw")
-    else
-        error_exit "Specified config file $CONFIG not found."
-    fi
-fi
-if [ -f "$DEFAULT_CONFIG" ]; then
-    podman_args+=("-v" "$DEFAULT_CONFIG:/root/.config/goose/config.yaml:Z,rw")
-else
-    podman_args+=("-v" "goose-config:/home/goose/.config/goose:Z,rw")
-fi
+# Always mount the goose-config volume
+podman_args+=("-v" "goose-config:/home/goose/.config/goose:Z,rw")
 
 # Add share mount if specified or default
 if [ -n "$SHARE" ]; then
