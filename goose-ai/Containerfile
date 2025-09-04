@@ -5,7 +5,7 @@
 # 
 # # Install Node.js and any missing dependencies
 # RUN curl -fsSL https://deb.nodesource.com/setup_lts.x | bash - && \
-#     apt-get update && apt-get install -y \
+    # apt-get update && apt-get install -y \
 #     nodejs \
 #     libdbus-1-dev \
 #     && rm -rf /var/lib/apt/lists/*
@@ -42,6 +42,7 @@ RUN apt-get update && apt-get install -y \
     # Other dependencies
     libssl3 \
     libxcb1 \
+    libdbus-1-3 \
     dos2unix \
     && rm -rf /var/lib/apt/lists/*
 
@@ -106,10 +107,13 @@ COPY artifacts/profile /home/goose/.profile
 COPY artifacts/entrypoint.sh /usr/local/bin/entrypoint.sh
 
 RUN dbus-uuidgen > /etc/machine-id && \
-    mkdir -p /run/user/1001/systemd/private /run/systemd/system && \
+    mkdir -p /run/user/1001/systemd/private /run/user/1001/keyring run/systemd/system && \
     chown -R goose:goose /run/user/1001 && \
     chown goose:goose /home/goose/.bashrc /home/goose/.profile && \
-    chmod 644 /home/goose/.bashrc /home/goose/.profile
+    chmod 644 /home/goose/.bashrc /home/goose/.profile && \
+    mkdir -p /run/dbus && \
+    chown root:messagebus /run/dbus && \
+    chmod 755 /run/dbus 
 
 # Grant sudo privileges to goose user (optimization: Dedicated sudoers file for safety)
 RUN /bin/bash -c 'mkdir -p /etc/sudoers.d && echo "goose ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/goose && chmod 0440 /etc/sudoers.d/goose && chown root:root /etc/sudoers.d/goose'
@@ -123,7 +127,25 @@ RUN chmod +x /usr/local/bin/entrypoint.sh
 RUN git config --global init.defaultBranch main && \
     git config --global core.editor "vim"
 
+# Install Node.js and any missing dependencies
+RUN curl -fsSL https://deb.nodesource.com/setup_lts.x | bash - && \
+    apt-get update && apt-get install -y \
+    nodejs \
+    libdbus-1-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# AI: fix this ...
+RUN npm upgrade -g npm \
+    # smoke tests
+    && node --version \
+    && npm --version \ # unknown. ok ai!
+    && test ! $(which python3.9)
+   # && npm install -g
+   # && pip install 
 USER goose
+
+# Install Goose extensions:
+RUN   
 
 # Add some helpful aliases
 RUN echo 'alias ll="ls -la"' >> ~/.bashrc && \
