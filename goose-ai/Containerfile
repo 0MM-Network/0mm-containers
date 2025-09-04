@@ -1,166 +1,26 @@
-# # Build stage
-# FROM rust:bullseye AS builder
-# 
-# SHELL ["/bin/bash", "-c"]
-# 
-# # Install Node.js and any missing dependencies
-# RUN curl -fsSL https://deb.nodesource.com/setup_lts.x | bash - && \
-    # apt-get update && apt-get install -y \
-#     nodejs \
-#     libdbus-1-dev \
-#     && rm -rf /var/lib/apt/lists/*
-# 
-# # Create a new directory for the app
-# WORKDIR /usr/src/goose
-# 
-# # Copy the entire project
-# COPY . .
-# 
-# RUN apt-get update && apt-get install -y protobuf-compiler
-# 
-# # Build the project
-# RUN cargo build --release
-# 
-# Runtime stage
-FROM ubuntu:22.04
+# Runtime stage for minimal Debian 13 rootfs compatible with Firecracker
+FROM debian:13
 
 # Configure non-interactive installation
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Install runtime libraries with DBus and keyring support
+# Install minimal dependencies for Podman rootless and cloud-init
 RUN apt-get update && apt-get install -y \
-    # Runtime dependencies
+    podman \
+    fuse-overlayfs \
+    slirp4netns \
+    cloud-init \
     ca-certificates \
     curl \
-    gnupg \
-    # DBus and keyring
-    dbus \
-    dbus-x11 \
-    gnome-keyring \
-    libsecret-1-0 \
-    libsecret-tools \
-    # Other dependencies
-    libssl3 \
-    libxcb1 \
-    libdbus-1-3 \
-    dos2unix \
     && rm -rf /var/lib/apt/lists/*
 
-# Create user
-RUN groupadd -g 1001 goose && useradd -u 1001 -g 1001 -m -s /bin/bash goose && \
-    mkdir -p /home/goose/.config/goose/recipes/ && \
-    chown -R goose:goose /home/goose
+# User setup for rootless
+RUN useradd -m -s /bin/bash goose
 
-# Install Node.js
-RUN curl -fsSL https://deb.nodesource.com/setup_lts.x | bash - && \
-    apt-get update && apt-get install -y nodejs && \
-    rm -rf /var/lib/apt/lists/*
+# Configure cloud-init
+COPY cloud_init.yaml /etc/cloud/cloud.cfg.d/custom.cfg
 
-# Install common development tools
-RUN apt-get update && apt-get install -y \
-    # Version control
-    git \
-    # Text processing and search
-    ripgrep \
-    fd-find \
-    fzf \
-    # File manipulation
-    jq \
-    # Network tools
-    wget \
-    # Process management
-    htop \
-    # System utilities
-    sudo \
-    # Text editors
-    nano \
-    vim \
-    # Archive tools
-    zip \
-    unzip \
-    # Build essentials
-    build-essential \
-    # Python
-    python3 \
-    python3-pip \
-    # Java
-    openjdk-17-jdk \
-    # Additional tools
-    tree \
-    tmux \
-    && rm -rf /var/lib/apt/lists/*
-
-# Install uv using curl
-RUN curl -LsSf https://astral.sh/uv/install.sh | sh
-
-# Install JBang using curl
-RUN curl -Ls https://sh.jbang.dev | bash -s - app setup
-
-# Copy the built binaries
-#COPY --from=builder /usr/src/goose/target/release/goose /usr/local/bin/goose
-RUN curl -fsSL https://github.com/block/goose/releases/download/stable/download_cli.sh \
-    | CONFIGURE=false GOOSE_BIN_DIR=/usr/local/bin bash
-
-# Set user's .profile and .bashrc
-COPY artifacts/bashrc /home/goose/.bashrc
-COPY artifacts/profile /home/goose/.profile
-COPY artifacts/entrypoint.sh /usr/local/bin/entrypoint.sh
-
-# Pre-create and secure keyring directory to fix "invalid permissions" and "no such file" errors.
-RUN dbus-uuidgen > /etc/machine-id && \
-    mkdir -p /run/user/1001/systemd/private /run/systemd/system && \
-    chown -R goose:goose /run/user/1001 && \
-    chown goose:goose /home/goose/.bashrc /home/goose/.profile && \
-    chmod 644 /home/goose/.bashrc /home/goose/.profile && \
-    mkdir -p /run/dbus && \
-    chown root:messagebus /run/dbus && \
-    chmod 755 /run/dbus 
-
-# Grant sudo privileges to goose user (optimization: Dedicated sudoers file for safety)
-RUN /bin/bash -c 'mkdir -p /etc/sudoers.d && echo "goose ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/goose && chmod 0440 /etc/sudoers.d/goose && chown root:root /etc/sudoers.d/goose'
-
-# Verify sudo configuration
-RUN su - goose -c "/usr/bin/sudo -n -v"
-
-# Make executable (no need for the old sed)
-RUN chmod +x /usr/local/bin/entrypoint.sh
-# Set up some basic git config
-RUN git config --global init.defaultBranch main && \
-    git config --global core.editor "vim"
-
-# Install Node.js and any missing dependencies
-RUN curl -fsSL https://deb.nodesource.com/setup_lts.x | bash - && \
-    apt-get update && apt-get install -y \
-    nodejs \
-    libdbus-1-dev \
-    && rm -rf /var/lib/apt/lists/*
-
-RUN npm install -g npm \
-    # smoke tests
-    && node --version \
-    && npm --version \
-    && test ! $(which python3.9)
-   # && npm install -g
-   # && pip install 
 USER goose
 
-# Install Goose extensions:
-
-# Add some helpful aliases
-RUN echo 'alias ll="ls -la"' >> ~/.bashrc && \
-    echo 'alias fd=fdfind' >> ~/.bashrc
-
-# Add JBang to PATH
-RUN echo 'export PATH="$HOME/.jbang/bin:$PATH"' >> ~/.bashrc
-
-ENV CONTAINERS_CONF=/home/tofu/.config/containers/containers.conf
-ENV LOCALSTACK_VOLUME_DIR=/home/goose/.cache/localstack/volume
-ENV LOCALSTACK_DEBUG=1
-ENV SERENA_DOCKER=1
-ENV SERENA_PORT=9121
-ENV SERENA_DASHBOARD_PORT=24282
-ENV DOCKER_CMD="podman"
-ENV DOCKER_SOCK=/run/user/1001/podman/podman.sock
-ENV DOCKER_HOST=unix:///run/user/1001/podman/podman.sock
-
-ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
+# Entry point for VM boot
+ENTRYPOINT ["/bin/bash"]
