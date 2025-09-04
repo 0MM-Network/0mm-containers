@@ -134,18 +134,16 @@ RUN curl -fsSL https://deb.nodesource.com/setup_lts.x | bash - && \
     libdbus-1-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# AI: fix this ...
-RUN npm upgrade -g npm \
+RUN npm install -g npm \
     # smoke tests
     && node --version \
-    && npm --version \ # unknown. ok ai!
+    && npm --version \
     && test ! $(which python3.9)
    # && npm install -g
    # && pip install 
 USER goose
 
 # Install Goose extensions:
-RUN   
 
 # Add some helpful aliases
 RUN echo 'alias ll="ls -la"' >> ~/.bashrc && \
