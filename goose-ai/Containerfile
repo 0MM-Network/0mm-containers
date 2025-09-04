@@ -106,9 +106,12 @@ COPY artifacts/bashrc /home/goose/.bashrc
 COPY artifacts/profile /home/goose/.profile
 COPY artifacts/entrypoint.sh /usr/local/bin/entrypoint.sh
 
+# Pre-create and secure keyring directory to fix "invalid permissions" and "no such file" errors.
 RUN dbus-uuidgen > /etc/machine-id && \
-    mkdir -p /run/user/1001/systemd/private /run/user/1001/keyring run/systemd/system && \
+    mkdir -p /run/user/1001/systemd/private /run/user/1001/keyring /run/systemd/system && \
     chown -R goose:goose /run/user/1001 && \
+    chown goose:goose /run/user/1001/keyring && \
+    chmod 700 /run/user/1001/keyring && \
     chown goose:goose /home/goose/.bashrc /home/goose/.profile && \
     chmod 644 /home/goose/.bashrc /home/goose/.profile && \
     mkdir -p /run/dbus && \
@@ -151,5 +154,15 @@ RUN echo 'alias ll="ls -la"' >> ~/.bashrc && \
 
 # Add JBang to PATH
 RUN echo 'export PATH="$HOME/.jbang/bin:$PATH"' >> ~/.bashrc
+
+ENV CONTAINERS_CONF=/home/tofu/.config/containers/containers.conf
+ENV LOCALSTACK_VOLUME_DIR=/home/goose/.cache/localstack/volume
+ENV LOCALSTACK_DEBUG=1
+ENV SERENA_DOCKER=1
+ENV SERENA_PORT=9121
+ENV SERENA_DASHBOARD_PORT=24282
+ENV DOCKER_CMD="podman"
+ENV DOCKER_SOCK=/run/user/1001/podman/podman.sock
+ENV DOCKER_HOST=unix:///run/user/1001/podman/podman.sock
 
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
