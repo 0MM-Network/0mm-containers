@@ -21,7 +21,7 @@ if ! command -v curl &> /dev/null; then
 fi
 
 SCRIPTS_DIR="$PWD"
-GOOSE_IMAGE="localhost/goose"
+GOOSE_IMAGE="localhost/goose:latest"
 
 # Fetch the latest release tag using GitHub API
 echo "Fetching latest release tag..."
@@ -68,6 +68,13 @@ fi
 VOLUME="goose-share"
 if ! podman volume exists "$VOLUME"; then
     echo "Creating persistent volume for Goose share..."
+    podman volume create "$VOLUME"
+fi
+
+# Create persistent volume if it doesn't exist
+VOLUME="goose-log"
+if ! podman volume exists "$VOLUME"; then
+    echo "Creating persistent volume for Goose logs..."
     podman volume create "$VOLUME"
 fi
 
@@ -149,6 +156,27 @@ done
 # Restore positional parameters without --config
 set -- "${POSITIONAL[@]}"
 
+# Function for bidirectional sync
+sync_config() {
+    DIRECTION=$1
+    HOST_CONFIG="$HOME/.config/goose/config.yaml"  # Adjust to your host path
+    CONTAINER_CONFIG="/home/goose/.config/goose/config.yaml"
+
+    if [ "$DIRECTION" = "host_to_volume" ]; then
+        # Create a temp container to copy host to volume
+        podman run --rm -v goose-config:/data -v "$HOST_CONFIG":/host.yaml busybox cp /host.yaml /data/config.yaml
+    elif [ "$DIRECTION" = "volume_to_host" ]; then
+        # Create a temp container to copy volume to host
+        podman run --rm -v goose-config:/data busybox cat /data/config.yaml > "$HOST_CONFIG"
+    fi
+}
+
+# Sync host to volume before starting
+sync_config "host_to_volume"
+
+# Trap to sync on all exits (normal, error, interrupt)
+trap 'sync_config "volume_to_host"; echo "Synced config on exit"' EXIT ERR INT TERM
+
 # Build podman command arguments as an array
 declare -a podman_args=(
     "run"
@@ -193,6 +221,12 @@ if [ -d "$HOME/.ssh" ]; then
 fi
 
 # Add working directory and environment variables
+# See:
+# - https://github.com/moby/moby/issues/15793
+# - https://github.com/containers/podman/issues/24934
+#   - Especially:
+#     - https://github.com/containers/podman/issues/24934#issuecomment-2571562455
+#     - https://github.com/containers/podman/issues/24934#issuecomment-2572522406
 podman_args+=(
     "-w" "/home/goose/workspace"
     "-e" "GOOSE_HOME=/home/goose/.config/goose"
