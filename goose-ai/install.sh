@@ -25,7 +25,7 @@ GOOSE_IMAGE="localhost/goose:latest"
 
 # Install and configure Firecracker before building image
 echo "Installing Firecracker..."
-bash "$SCRIPTS_DIR/firecracker_setup.sh" || error_exit "Failed to install Firecracker."
+bash "$SCRIPTS_DIR/artifacts/firecracker_setup.sh" || error_exit "Failed to install Firecracker."
 
 # Fetch the latest release tag using GitHub API
 echo "Fetching latest release tag..."
@@ -196,11 +196,11 @@ trap 'sync_config "volume_to_host"; echo "Synced config on exit"' EXIT ERR INT T
 
 # Integrate Firecracker launch instead of direct podman run
 # Launch VM which runs Goose and Serena inside
-bash "$SCRIPTS_DIR/firecracker_launch.sh" || error_exit "Failed to launch Firecracker VM."
+bash "$SCRIPTS_DIR/artifacts/firecracker_launch.sh" || error_exit "Failed to launch Firecracker VM."
 
 # For REPL access, connect to VM serial (using vm_utils.sh)
 if [[ "$1" == "repl" ]]; then
-    bash "$SCRIPTS_DIR/vm_utils.sh" attach_serial
+    bash "$SCRIPTS_DIR/artifacts/vm_utils.sh" attach_serial
 fi
 
 # Note: Config syncing uses virtiofs; mount host config to VM, then to containers rootlessly.
