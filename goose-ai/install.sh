@@ -20,6 +20,14 @@ if ! command -v curl &> /dev/null; then
     error_exit "curl is not installed. Please install curl first."
 fi
 
+# Check and install additional dependencies for Firecracker (assuming Debian-based host)
+for tool in cloud-localds qemu-img socat; do
+    if ! command -v $tool &> /dev/null; then
+        echo "Installing $tool..."
+        sudo apt update && sudo apt install -y cloud-utils qemu-utils socat || error_exit "Failed to install $tool. Ensure you are on a Debian-based system and have sudo access."
+    fi
+done
+
 SCRIPTS_DIR="$PWD"
 GOOSE_IMAGE="localhost/goose:latest"
 
