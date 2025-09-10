@@ -1,0 +1,19 @@
+#cloud-config
+
+package_update: true
+package_upgrade: true
+
+packages:
+  - podman
+  - fuse-overlayfs
+  - slirp4netns
+  - agetty
+
+runcmd:
+  - systemctl --user start podman.socket
+  - podman pull ghcr.io/oraios/serena:latest
+  - podman pull localhost/goose:latest
+  - podman run --userns=keep-id -d -p 9121:9121 -p 24282:24282 --name serena ghcr.io/oraios/serena:latest serena start-mcp-server --transport stdio
+  - podman run --userns=keep-id -d --name goose -v /vm/workspaces:/home/goose/workspace localhost/goose:latest goose session
+  - agetty -s ttyS0  # Enable serial console for REPL
+
