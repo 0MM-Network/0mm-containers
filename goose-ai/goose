@@ -47,14 +47,15 @@ if ! podman volume exists "$VOLUME"; then
     podman volume create "$VOLUME"
 fi
 
-# Default config path
-#DEFAULT_CONFIG="$HOME/.config/goose/config.yaml"
-
 # Parse arguments for --config
 declare -a POSITIONAL=()
 while [[ $# -gt 0 ]]; do
     key="$1"
     case $key in
+        --config=*)
+            CONFIG="${key#*=}"  # Extract value after '='
+            shift
+            ;;
         --config)
             if [[ $# -gt 1 ]] && [[ "${2:0:1}" != "-" ]]; then
                 CONFIG="$2"
@@ -73,104 +74,47 @@ done
 # Restore positional parameters without --config
 set -- "${POSITIONAL[@]}"
 
-# Build podman command arguments as an array
-declare -a podman_args=(
-    "run"
-    "--rm"
-    "$TTY_FLAG"
-    "-v" "$PWD:/home/goose/workspace:Z"
-    )
+# Make --config mandatory
+if [ -z "$CONFIG" ]; then
+    error_exit "Error: --config <file/path.yaml> is required."
+fi
 
-# Add config mount if specified or default
-if [ -n "$CONFIG" ]; then
-    if [ -f "$CONFIG" ]; then
-        podman_args+=("-v" "$CONFIG:/home/goose/.config/goose/config.yaml:Z,rw")
-    else
-        error_exit "Specified config file $CONFIG not found."
+# Require that the --config file exists
+if [ ! -f "$CONFIG" ]; then
+    error_exit "Error: Specified config file $CONFIG not found."
+fi
+
+# Function for bidirectional sync
+# Note: --config is mandatory; its contents are copied into the persistent volume at startup
+# (and synced back on exit) to avoid bind mount issues in rootless Podman contexts.
+sync_config() {
+    DIRECTION=$1
+    HOST_CONFIG="$CONFIG"
+    CONTAINER_CONFIG="/home/goose/.config/goose/config.yaml"
+
+    if [ "$DIRECTION" = "host_to_volume" ]; then
+        # Create a temp container to copy host to volume
+        podman run --rm -v goose-config:/data -v "$HOST_CONFIG":/host.yaml busybox cp /host.yaml /data/config.yaml
+    elif [ "$DIRECTION" = "volume_to_host" ]; then
+        # Create a temp container to copy volume to host
+        podman run --rm -v goose-config:/data busybox cat /data/config.yaml > "$HOST_CONFIG"
     fi
-fi
-if [ -f "$DEFAULT_CONFIG" ]; then
-    podman_args+=("-v" "$DEFAULT_CONFIG:/root/.config/goose/config.yaml:Z,rw")
-else
-    podman_args+=("-v" "goose-config:/home/goose/.config/goose:Z,rw")
-fi
+}
 
-# Add share mount if specified or default
-if [ -n "$SHARE" ]; then
-    if [ -d "$SHARE" ]; then
-        podman_args+=("-v" "$SHARE:/home/goose/.local/share/goose:Z,rw")
-    else
-        error_exit "Specified config file $CONFIG not found."
-    fi
-else
-    podman_args+=("-v" "goose-share:/home/goose/.local/share/goose")
-fi
+# Sync host to volume before starting
+sync_config "host_to_volume"
 
-# Conditionally add gitconfig mount if file exists
-if [ -f "$HOME/.gitconfig" ]; then
-    podman_args+=("-v" "$HOME/.gitconfig:/home/goose/.gitconfig:ro")
+# Trap to sync on all exits (normal, error, interrupt)
+trap 'sync_config "volume_to_host"; echo "Synced config on exit"' EXIT ERR INT TERM
+
+# Integrate Firecracker launch instead of direct podman run
+# Launch VM which runs Goose and Serena inside
+bash "$SCRIPTS_DIR/firecracker_launch.sh" || error_exit "Failed to launch Firecracker VM."
+
+# For REPL access, connect to VM serial (using vm_utils.sh)
+if [[ "$1" == "repl" ]]; then
+    bash "$SCRIPTS_DIR/vm_utils.sh" attach_serial
 fi
 
-# Conditionally add ssh mount if directory exists
-if [ -d "$HOME/.ssh" ]; then
-    podman_args+=("-v" "$HOME/.ssh:/home/goose/.ssh:ro")
-fi
+# Note: Config syncing uses virtiofs; mount host config to VM, then to containers rootlessly.
 
-# Add working directory and environment variables
-podman_args+=(
-    "-w" "/home/goose/workspace"
-    "-e" "GOOSE_HOME=/home/goose/.config/goose"
-    "-e" "EDITOR=vim"
-    "-e" "GOOSE_PROVIDER=xai"
-    "-e" "GOOSE_MODEL=grok-4-latest"
-    "-e" "GOOSE_TEMPERATURE"
-    "-e" "GOOSE_PROVIDER__TYPE=xai"
-    "-e" "GOOSE_PROVIDER__HOST=https://api.x.ai"
-    "-e" "GOOSE_PROVIDER__API_KEY=${XAI_API_KEY:-aikey}"
-    "-e" "GOOSE_LEAD_MODEL"
-    "-e" "GOOSE_LEAD_PROVIDER"
-    "-e" "GOOSE_LEAD_TURNS"
-    "-e" "GOOSE_LEAD_FAILURE_THRESHOLD"
-    "-e" "GOOSE_LEAD_FALLBACK_TURNS"
-    "-e" "GOOSE_PLANNER_PROVIDER"
-    "-e" "GOOSE_PLANNER_MODEL"
-    "-e" "GOOSE_CONTEXT_STRATEGY"
-    "-e" "GOOSE_MAX_TURNS"
-    "-e" "CONTEXT_FILE_NAMES"
-    "-e" "GOOSE_CLI_THEME"
-    "-e" "GOOSE_SCHEDULER_TYPE"
-    "-e" "GOOSE_TEMPORAL_BIN"
-    "-e" "GOOSE_RANDOM_THINKING_MESSAGES"
-    "-e" "GOOSE_CLI_SHOW_COST=true"
-    "-e" "GOOSE_AUTO_COMPACT_THRESHOLD"
-    "-e" "GOOSE_CONTEXT_LIMIT"
-    "-e" "GOOSE_LEAD_CONTEXT_LIMIT"
-    "-e" "GOOSE_WORKER_CONTEXT_LIMIT"
-    "-e" "GOOSE_PLANNER_CONTEXT_LIMIT"
-    "-e" "GOOSE_MODE"
-    "-e" "GOOSE_ENABLE_ROUTER"
-    "-e" "GOOSE_TOOLSHIM"
-    "-e" "GOOSE_TOOLSHIM_OLLAMA_MODEL"
-    "-e" "GOOSE_CLI_MIN_PRIORITY"
-    "-e" "GOOSE_CLI_TOOL_PARAMS_TRUNCATION_MAX_LENGTH"
-    "-e" "GOOSE_EDITOR_API_KEY"
-    "-e" "GOOSE_EDITOR_HOST"
-    "-e" "GOOSE_EDITOR_MODEL"
-    "-e" "GOOSE_ALLOWLIST"
-    "-e" "GOOSE_DISABLE_KEYRING"
-    "-e" "LANGFUSE_PUBLIC_KEY"
-    "-e" "LANGFUSE_SECRET_KEY"
-    "-e" "LANGFUSE_URL"
-    "-e" "LANGFUSE_INIT_PROJECT_PUBLIC_KEY"
-    "-e" "LANGFUSE_INIT_PROJECT_SECRET_KEY"
-    "-e" "ALPHA_FEATURES"
-    "-e" "DBUS_SESSION_BUS_ADDRESS"
-    "-e" "SSH_AUTH_SOCK"
-    "--userns=keep-id:uid=${CUID}"
-    "$IMAGE"
-    "goose"
-    "$@"
-)
-
-# Execute the podman command
-podman "${podman_args[@]}"

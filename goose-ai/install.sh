@@ -139,6 +139,10 @@ declare -a POSITIONAL=()
 while [[ $# -gt 0 ]]; do
     key="$1"
     case $key in
+        --config=*)
+            CONFIG="${key#*=}"  # Extract value after '='
+            shift
+            ;;
         --config)
             if [[ $# -gt 1 ]] && [[ "${2:0:1}" != "-" ]]; then
                 CONFIG="$2"
