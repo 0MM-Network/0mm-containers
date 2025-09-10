@@ -4,8 +4,7 @@
 
 # Includes cloud-init as a drive, port forwarding with socat for 9121/24282.
 
-# Documentation: Replaces nested Podman with Firecracker VM for isolation. Runs as non-root, uses NAT for Fargate-like
-networking (outbound, forwarded inbound).
+# Documentation: Replaces nested Podman with Firecracker VM for isolation. Runs as non-root, uses NAT for Fargate-like networking (outbound, forwarded inbound).
 
 
 
