@@ -18,7 +18,7 @@ RUN apt-get update && apt-get install -y \
 RUN useradd -m -s /bin/bash goose
 
 # Configure cloud-init
-COPY cloud_init.yaml /etc/cloud/cloud.cfg.d/custom.cfg
+COPY artifacts/cloud_init.yaml /etc/cloud/cloud.cfg.d/custom.cfg
 
 USER goose
 
