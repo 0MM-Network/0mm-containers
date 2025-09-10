@@ -87,6 +87,8 @@ echo "Creating wrapper script..."
 cat > "$SCRIPTS_DIR/goose" << 'EOF'
 #!/bin/bash
 
+SCRIPTS_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
+
 # Define variables
 IMAGE="localhost/goose:latest"
 HUID=$(id -u)
