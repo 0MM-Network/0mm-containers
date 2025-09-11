@@ -33,8 +33,8 @@ curl -fL "$DOWNLOAD_URL" -o "$TEMP_TGZ" || error_exit "Failed to download Firecr
 
 # Extract the binary
 tar -xzf "$TEMP_TGZ" -C /tmp || error_exit "Failed to extract tarball."
-mv /tmp/firecracker-${LATEST_TAG}-${ARCH} "$FIRECRACKER_BIN" || error_exit "Failed to move binary."
-rm -rf "$TEMP_TGZ"
+mv /tmp/release-${LATEST_TAG}-${ARCH}/firecracker-${LATEST_TAG}-${ARCH} "$FIRECRACKER_BIN" || error_exit "Failed to move binary."
+rm -rf "$TEMP_TGZ" /tmp/release-${LATEST_TAG}-${ARCH}
 
 # Make executable
 chmod +x "$FIRECRACKER_BIN"
