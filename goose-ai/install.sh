@@ -152,6 +152,13 @@ if ! podman volume exists "$VOLUME"; then
     podman volume create "$VOLUME"
 fi
 
+# Create or reuse utility container for config syncing (to minimize keyring consumption)
+UTILITY_CONTAINER="goose-utility"
+if ! podman ps -a --filter name="$UTILITY_CONTAINER" --format "{{.Names}}" | grep -q "$UTILITY_CONTAINER"; then
+    echo "Creating persistent utility container for config syncing..."
+    podman run -d --name "$UTILITY_CONTAINER" -v goose-config:/data -v goose-share:/share busybox sleep infinity || error_exit "Failed to create utility container."
+fi
+
 # Create wrapper script
 echo "Creating wrapper script..."
 cat > "$SCRIPTS_DIR/goose" << 'EOF'
@@ -166,6 +173,7 @@ HGID=$(id -g)
 CUID=$(podman run --rm --entrypoint /usr/bin/id $IMAGE -u)
 CGID=$(podman run --rm --entrypoint /usr/bin/id $IMAGE -g)
 CONTAINER_NAME="goose-container"  # Added for singleton pattern
+UTILITY_CONTAINER="goose-utility"  # Persistent utility container for syncing
 
 # Error handling
 set -e
@@ -243,19 +251,36 @@ if [ ! -f "$CONFIG" ]; then
     error_exit "Error: Specified config file $CONFIG not found."
 fi
 
-# Function for bidirectional sync
-# Note: --config is mandatory; its contents are copied into the persistent volume at startup
-# (and synced back on exit) to avoid bind mount issues in rootless Podman contexts.
+# Function for bidirectional sync using persistent utility container
+# This reuses a single container to minimize kernel keyring consumption in rootless Podman.
+# The container is created once (if not exists) and runs persistently (sleep infinity) between script invocations.
+# Do not stop/remove it automatically; it's designed for reuse to avoid quota exhaustion from repeated creations.
+# Fallback to original method if reuse fails. Manual cleanup: podman stop/rm goose-utility if needed.
 sync_config() {
     DIRECTION=$1
     HOST_CONFIG="$CONFIG"
-    CONTAINER_CONFIG="config.yaml"
-    VOLUME_MOUNTPOINT=$(podman volume inspect goose-config --format '{{ .Mountpoint }}')
+    CONTAINER_CONFIG="/data/config.yaml"
+
+    # Ensure utility container exists and is running
+    if ! podman ps -a --filter name="$UTILITY_CONTAINER" --format "{{.Names}}" | grep -q "$UTILITY_CONTAINER"; then
+        echo "Creating persistent utility container for config syncing..."
+        podman run -d --name "$UTILITY_CONTAINER" -v goose-config:/data busybox sleep infinity || error_exit "Failed to create utility container."
+    elif ! podman ps --filter name="$UTILITY_CONTAINER" --filter status=running --format "{{.Names}}" | grep -q "$UTILITY_CONTAINER"; then
+        podman start "$UTILITY_CONTAINER" || error_exit "Failed to start utility container."
+    fi
 
     if [ "$DIRECTION" = "host_to_volume" ]; then
-        cp "$HOST_CONFIG" "$VOLUME_MOUNTPOINT/$CONTAINER_CONFIG" || { if [[ $? -eq 122 ]]; then echo "Error: Kernel keyring quota exceeded. Increase limits with: sudo sysctl -w kernel.keys.maxkeys=1000 && sudo sysctl -w kernel.keys.maxbytes=100000 and add to /etc/sysctl.conf for persistence."; fi; error_exit "Failed to sync config."; }
+        # Use podman cp to copy from host to container's volume mount
+        podman cp "$HOST_CONFIG" "$UTILITY_CONTAINER:$CONTAINER_CONFIG" || {
+            echo "Warning: podman cp failed; falling back to original method."
+            podman run --rm -v goose-config:/data -v "$HOST_CONFIG":/host.yaml busybox cp /host.yaml /data/config.yaml || error_exit "Failed to sync config.";
+        }
     elif [ "$DIRECTION" = "volume_to_host" ]; then
-        cp "$VOLUME_MOUNTPOINT/$CONTAINER_CONFIG" "$HOST_CONFIG" || { if [[ $? -eq 122 ]]; then echo "Error: Kernel keyring quota exceeded. Increase limits with: sudo sysctl -w kernel.keys.maxkeys=1000 && sudo sysctl -w kernel.keys.maxbytes=100000 and add to /etc/sysctl.conf for persistence."; fi; error_exit "Failed to sync config."; }
+        # Use podman cp to copy from container's volume mount to host
+        podman cp "$UTILITY_CONTAINER:$CONTAINER_CONFIG" "$HOST_CONFIG" || {
+            echo "Warning: podman cp failed; falling back to original method."
+            podman run --rm -v goose-config:/data busybox cat /data/config.yaml > "$HOST_CONFIG" || error_exit "Failed to sync config.";
+        }
     fi
 }
 
@@ -293,6 +318,13 @@ fi
 EOF
 chmod +x "$SCRIPTS_DIR/goose"
 echo "Created wrapper script for goose"
+
+# Ensure utility container for install.sh operations (e.g., tests will use goose which handles it, but create here for consistency)
+UTILITY_CONTAINER="goose-utility"
+if ! podman ps -a --filter name="$UTILITY_CONTAINER" --format "{{.Names}}" | grep -q "$UTILITY_CONTAINER"; then
+    echo "Creating persistent utility container for config syncing during installation..."
+    podman run -d --name "$UTILITY_CONTAINER" -v goose-config:/data busybox sleep infinity || error_exit "Failed to create utility container."
+fi
 
 # Test commands
 echo "Testing goose commands..."
