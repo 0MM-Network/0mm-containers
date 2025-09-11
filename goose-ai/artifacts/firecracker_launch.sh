@@ -31,6 +31,7 @@ CONFIG="$PWD/vm_config.json"
 BASE_DIR="/tmp/firecracker"
 mkdir -p "$BASE_DIR"
 mkdir -p /tmp/firecracker/logs
+touch "$LOG"
 
 KERNEL_PATH="$BASE_DIR/vmlinux"
 if [ ! -f "$KERNEL_PATH" ]; then
@@ -52,24 +53,24 @@ CLOUD_INIT_IMG="$BASE_DIR/cloud-init.img"
 cloud-localds -d raw "$CLOUD_INIT_IMG" "$PWD/artifacts/cloud_init.yaml" || error_exit "Failed to create cloud-init image."
 
 # Start Firecracker
-$FC_BIN --api-sock "$SOCK" --log-path "$LOG" &
+$FC_BIN --api-sock "$SOCK" --log-path "$LOG" --level "Debug" &
 FIRECRACKER_PID=$!
 
 sleep 1  # Wait for socket
 
 # Configure via API (using curl PUT)
-curl -s -X PUT "http://localhost/$SOCK/machine-config" -H "Content-Type: application/json" -d '{"vcpu_count": 2, "mem_size_mib": 4096}' || error_exit "Failed to set machine-config."
+curl --unix-socket "$SOCK" -s -X PUT "http://localhost/machine-config" -H "Content-Type: application/json" -d '{"vcpu_count": 2, "mem_size_mib": 4096}' || error_exit "Failed to set machine-config."
 
-curl -s -X PUT "http://localhost/$SOCK/boot-source" -H "Content-Type: application/json" -d "{\"kernel_image_path\": \"$KERNEL_PATH\", \"boot_args\": \"console=ttyS0 reboot=k panic=1 pci=off\"}" || error_exit "Failed to set boot-source."
+curl --unix-socket "$SOCK" -s -X PUT "http://localhost/boot-source" -H "Content-Type: application/json" -d "{\"kernel_image_path\": \"$KERNEL_PATH\", \"boot_args\": \"console=ttyS0 reboot=k panic=1 pci=off\"}" || error_exit "Failed to set boot-source."
 
-curl -s -X PUT "http://localhost/$SOCK/drives/rootfs" -H "Content-Type: application/json" -d "{\"drive_id\": \"rootfs\", \"path_on_host\": \"$RAW_ROOTFS\", \"is_root_device\": true, \"is_read_only\": false}" || error_exit "Failed to set rootfs drive."
+curl --unix-socket "$SOCK" -s -X PUT "http://localhost/drives/rootfs" -H "Content-Type: application/json" -d "{\"drive_id\": \"rootfs\", \"path_on_host\": \"$RAW_ROOTFS\", \"is_root_device\": true, \"is_read_only\": false}" || error_exit "Failed to set rootfs drive."
 
-curl -s -X PUT "http://localhost/$SOCK/drives/cloudinit" -H "Content-Type: application/json" -d "{\"drive_id\": \"cloudinit\", \"path_on_host\": \"$CLOUD_INIT_IMG\", \"is_root_device\": false, \"is_read_only\": false}" || error_exit "Failed to set cloudinit drive."
+curl --unix-socket "$SOCK" -s -X PUT "http://localhost/drives/cloudinit" -H "Content-Type: application/json" -d "{\"drive_id\": \"cloudinit\", \"path_on_host\": \"$CLOUD_INIT_IMG\", \"is_root_device\": false, \"is_read_only\": false}" || error_exit "Failed to set cloudinit drive."
 
-curl -s -X PUT "http://localhost/$SOCK/network-interfaces/eth0" -H "Content-Type: application/json" -d '{"iface_id": "eth0", "guest_mac": "AA:FC:00:00:00:01", "host_dev_name": "tap0"}' || error_exit "Failed to set network."
+curl --unix-socket "$SOCK" -s -X PUT "http://localhost/network-interfaces/eth0" -H "Content-Type: application/json" -d '{"iface_id": "eth0", "guest_mac": "AA:FC:00:00:00:01", "host_dev_name": "tap0"}' || error_exit "Failed to set network."
 
 # Start instance
-curl -s -X PUT "http://localhost/$SOCK/actions" -H "Content-Type: application/json" -d '{"action_type": "InstanceStart"}' || error_exit "Failed to start instance."
+curl --unix-socket "$SOCK" -s -X PUT "http://localhost/actions" -H "Content-Type: application/json" -d '{"action_type": "InstanceStart"}' || error_exit "Failed to start instance."
 
 # Port forwarding (e.g., host:9121 -> VM:9121 using socat)
 socat TCP-LISTEN:9121,fork TCP:VM_IP:9121 &  # Assume VM_IP known or use vsock
