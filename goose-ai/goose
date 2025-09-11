@@ -1,5 +1,7 @@
 #!/bin/bash
 
+SCRIPTS_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
+
 # Define variables
 IMAGE="localhost/goose:latest"
 HUID=$(id -u)
@@ -109,11 +111,11 @@ trap 'sync_config "volume_to_host"; echo "Synced config on exit"' EXIT ERR INT T
 
 # Integrate Firecracker launch instead of direct podman run
 # Launch VM which runs Goose and Serena inside
-bash "$SCRIPTS_DIR/firecracker_launch.sh" || error_exit "Failed to launch Firecracker VM."
+bash "$SCRIPTS_DIR/artifacts/firecracker_launch.sh" || error_exit "Failed to launch Firecracker VM."
 
 # For REPL access, connect to VM serial (using vm_utils.sh)
 if [[ "$1" == "repl" ]]; then
-    bash "$SCRIPTS_DIR/vm_utils.sh" attach_serial
+    bash "$SCRIPTS_DIR/artifacts/vm_utils.sh" attach_serial
 fi
 
 # Note: Config syncing uses virtiofs; mount host config to VM, then to containers rootlessly.
