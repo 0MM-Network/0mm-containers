@@ -19,6 +19,9 @@ cleanup() {
     echo "Cleaning up..."
     rm -f /tmp/firecracker/sockets/firecracker.sock
     kill $FIRECRACKER_PID 2>/dev/null || true
+    # Explicitly kill socat processes
+    kill $SOCAT1_PID 2>/dev/null || true
+    kill $SOCAT2_PID 2>/dev/null || true
 }
 
 trap cleanup EXIT ERR INT TERM
@@ -73,8 +76,40 @@ curl --unix-socket "$SOCK" -s -X PUT "http://localhost/network-interfaces/eth0" 
 curl --unix-socket "$SOCK" -s -X PUT "http://localhost/actions" -H "Content-Type: application/json" -d '{"action_type": "InstanceStart"}' || error_exit "Failed to start instance."
 
 # Port forwarding (e.g., host:9121 -> VM:9121 using socat)
-socat TCP-LISTEN:9121,fork TCP:VM_IP:9121 &  # Assume VM_IP known or use vsock
-socat TCP-LISTEN:24282,fork TCP:VM_IP:24282 &
+VM_IP="172.16.0.2"
+PORT1=9121
+PORT2=24282
+
+# Check and kill existing processes on ports to avoid "Address already in use"
+for port in $PORT1 $PORT2; do
+    if lsof -i :$port > /dev/null; then
+        echo "Warning: Port $port is in use. Killing processes..."
+        fuser -k $port/tcp || true
+    fi
+done
+
+# Run socat with error handling and retry
+function run_socat() {
+    local listen_port=$1
+    local target="TCP:$VM_IP:$listen_port"
+    socat TCP-LISTEN:$listen_port,reuseaddr,fork $target &
+    local pid=$!
+    sleep 1  # Give it a moment to bind
+    if ! kill -0 $pid 2>/dev/null; then
+        echo "Error: Failed to bind socat on port $listen_port. Retrying once..."
+        fuser -k $listen_port/tcp || true
+        socat TCP-LISTEN:$listen_port,reuseaddr,fork $target &
+        pid=$!
+        sleep 1
+        if ! kill -0 $pid 2>/dev/null; then
+            error_exit "Failed to bind socat on port $listen_port after retry. Check with 'lsof -i :$listen_port' and kill conflicting processes."
+        fi
+    fi
+    echo $pid
+}
+
+SOCAT1_PID=$(run_socat $PORT1)
+SOCAT2_PID=$(run_socat $PORT2)
 
 echo "Firecracker VM launched successfully."
 
