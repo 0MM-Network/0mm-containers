@@ -4,7 +4,7 @@ FROM debian:13
 # Configure non-interactive installation
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Install minimal dependencies for Podman rootless and cloud-init
+# Install minimal dependencies for Podman rootless and cloud-init, plus wget for downloading deb
 RUN apt-get update && apt-get install -y \
     podman \
     fuse-overlayfs \
@@ -12,7 +12,13 @@ RUN apt-get update && apt-get install -y \
     cloud-init \
     ca-certificates \
     curl \
+    wget \
     && rm -rf /var/lib/apt/lists/*
+
+# Download and install Goose from deb release
+RUN wget https://github.com/block/goose/releases/download/v1.7.0/goose_1.7.0_amd64.deb -O /tmp/goose.deb && \
+    dpkg -i /tmp/goose.deb && \
+    rm /tmp/goose.deb
 
 # User setup for rootless
 RUN useradd -m -s /bin/bash goose
@@ -20,7 +26,10 @@ RUN useradd -m -s /bin/bash goose
 # Configure cloud-init
 COPY artifacts/cloud_init.yaml /etc/cloud/cloud.cfg.d/custom.cfg
 
+COPY artifacts/entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
 USER goose
 
 # Entry point for VM boot
-ENTRYPOINT ["/bin/bash"]
+ENTRYPOINT ["/entrypoint.sh"]
