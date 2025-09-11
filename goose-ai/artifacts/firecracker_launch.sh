@@ -29,6 +29,7 @@ LOG="/tmp/firecracker/logs/firecracker.log"
 CONFIG="$PWD/vm_config.json"
 BASE_DIR="/tmp/firecracker"
 mkdir -p "$BASE_DIR"
+mkdir -p /tmp/firecracker/logs
 
 KERNEL_PATH="$BASE_DIR/vmlinux"
 if [ ! -f "$KERNEL_PATH" ]; then
