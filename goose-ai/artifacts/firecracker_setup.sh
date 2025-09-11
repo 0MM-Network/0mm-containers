@@ -29,7 +29,7 @@ fi
 ARCH="x86_64"
 DOWNLOAD_URL="https://github.com/firecracker-microvm/firecracker/releases/download/${LATEST_TAG}/release-${LATEST_TAG}-${ARCH}.tgz"
 TEMP_TGZ="/tmp/firecracker.tgz"
-curl -L "$DOWNLOAD_URL" -o "$TEMP_TGZ" || error_exit "Failed to download Firecracker tarball."
+curl -fL "$DOWNLOAD_URL" -o "$TEMP_TGZ" || error_exit "Failed to download Firecracker tarball."
 
 # Extract the binary
 tar -xzf "$TEMP_TGZ" -C /tmp || error_exit "Failed to extract tarball."
@@ -47,10 +47,4 @@ chmod 700 /tmp/firecracker
 if [ -r /dev/kvm ]; then
     echo "KVM access available. Firecracker will use hardware acceleration."
 else
-    echo "Warning: No KVM access (/dev/kvm not readable). Falling back to non-accelerated mode."
-fi
-
-# Comment: Run Firecracker as non-root user for near-rootless setup. Ensure user has access to /dev/kvm if available.
-echo "Firecracker installed successfully. Run as non-root: $FIRECRACKER_BIN --api-sock /tmp/firecracker/sockets/firecracker.sock"
-
-exit 0
+    echo "Warning: No KVM access (/dev/kvm not readable). Falling
