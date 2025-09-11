@@ -13,12 +13,10 @@ RUN apt-get update && apt-get install -y \
     ca-certificates \
     curl \
     wget \
-    && rm -rf /var/lib/apt/lists/*
-
-# Download and install Goose from deb release
-RUN wget https://github.com/block/goose/releases/download/v1.7.0/goose_1.7.0_amd64.deb -O /tmp/goose.deb && \
-    dpkg -i /tmp/goose.deb && \
-    rm /tmp/goose.deb
+    && wget https://github.com/block/goose/releases/download/v1.7.0/goose_1.7.0_amd64.deb -O /tmp/goose.deb && \
+    apt-get install -y /tmp/goose.deb && \
+    rm /tmp/goose.deb && \
+    rm -rf /var/lib/apt/lists/*
 
 # User setup for rootless
 RUN useradd -m -s /bin/bash goose
