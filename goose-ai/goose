@@ -92,14 +92,13 @@ fi
 sync_config() {
     DIRECTION=$1
     HOST_CONFIG="$CONFIG"
-    CONTAINER_CONFIG="/home/goose/.config/goose/config.yaml"
+    CONTAINER_CONFIG="config.yaml"
+    VOLUME_MOUNTPOINT=$(podman volume inspect goose-config --format '{{ .Mountpoint }}')
 
     if [ "$DIRECTION" = "host_to_volume" ]; then
-        # Create a temp container to copy host to volume
-        podman run --rm -v goose-config:/data -v "$HOST_CONFIG":/host.yaml busybox cp /host.yaml /data/config.yaml
+        cp "$HOST_CONFIG" "$VOLUME_MOUNTPOINT/$CONTAINER_CONFIG" || { if [[ $? -eq 122 ]]; then echo "Error: Kernel keyring quota exceeded. Increase limits with: sudo sysctl -w kernel.keys.maxkeys=1000 && sudo sysctl -w kernel.keys.maxbytes=100000 and add to /etc/sysctl.conf for persistence."; fi; error_exit "Failed to sync config."; }
     elif [ "$DIRECTION" = "volume_to_host" ]; then
-        # Create a temp container to copy volume to host
-        podman run --rm -v goose-config:/data busybox cat /data/config.yaml > "$HOST_CONFIG"
+        cp "$VOLUME_MOUNTPOINT/$CONTAINER_CONFIG" "$HOST_CONFIG" || { if [[ $? -eq 122 ]]; then echo "Error: Kernel keyring quota exceeded. Increase limits with: sudo sysctl -w kernel.keys.maxkeys=1000 && sudo sysctl -w kernel.keys.maxbytes=100000 and add to /etc/sysctl.conf for persistence."; fi; error_exit "Failed to sync config."; }
     fi
 }
 
@@ -108,6 +107,20 @@ sync_config "host_to_volume"
 
 # Trap to sync on all exits (normal, error, interrupt)
 trap 'sync_config "volume_to_host"; echo "Synced config on exit"' EXIT ERR INT TERM
+
+# Pre-create TAP device for Firecracker networking (requires sudo for creation, but sets user ownership for rootless access)
+TAP_DEV="tap0"
+if ! ip link show "$TAP_DEV" &> /dev/null; then
+    echo "Creating TAP device $TAP_DEV (requires sudo)..."
+    sudo ip tuntap add dev "$TAP_DEV" mode tap user $(whoami)
+    sudo ip addr add 172.16.0.1/24 dev "$TAP_DEV"
+    sudo ip link set dev "$TAP_DEV" up
+    sudo sysctl -w net.ipv4.ip_forward=1
+    sudo iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE  # Assume eth0; adjust if needed
+fi
+
+# Trap for TAP cleanup on exit (requires sudo)
+trap 'sync_config "volume_to_host"; echo "Synced config on exit"; sudo ip tuntap del dev "$TAP_DEV" mode tap' EXIT ERR INT TERM
 
 # Integrate Firecracker launch instead of direct podman run
 # Launch VM which runs Goose and Serena inside

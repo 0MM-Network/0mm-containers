@@ -42,7 +42,7 @@ if [ ! -f "$KERNEL_PATH" ]; then
 fi
 
 # Use pre-built Debian rootfs (ext4) from current directory for better boot compatibility
-RAW_ROOTFS="$PWD/debian.rootfs.ext4"
+RAW_ROOTFS="$PWD/rootfs.ext4"
 if [ ! -f "$RAW_ROOTFS" ]; then
     error_exit "Rootfs file $RAW_ROOTFS not found. Run install.sh to download it."
 fi
