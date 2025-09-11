@@ -79,6 +79,24 @@ else
     file "$KERNEL_PATH" | grep -q "ELF" || error_exit "Invalid kernel file: not a valid ELF binary."
 fi
 
+# Download pre-built Debian rootfs image (debian.rootfs.ext4) from Firecracker S3 bucket
+# For better boot compatibility; detect architecture and download to current working directory
+echo "Downloading pre-built Debian rootfs image..."
+ROOTFS_PATH="$PWD/debian.rootfs.ext4"
+if [ -f "$ROOTFS_PATH" ]; then
+    echo "Rootfs already exists at $ROOTFS_PATH. Skipping download."
+else
+    HOST_ARCH=$(uname -m)
+    if [ "$HOST_ARCH" = "x86_64" ]; then
+        ROOTFS_URL="https://s3.amazonaws.com/spec.ccfc.min/ci-artifacts-dev/disks/x86_64/debian.rootfs.ext4"
+    elif [ "$HOST_ARCH" = "aarch64" ]; then
+        ROOTFS_URL="https://s3.amazonaws.com/spec.ccfc.min/ci-artifacts-dev/disks/aarch64/debian.rootfs.ext4"
+    else
+        error_exit "Unsupported architecture for rootfs: $HOST_ARCH"
+    fi
+    wget "$ROOTFS_URL" -O "$ROOTFS_PATH" || error_exit "Failed to download rootfs image."
+fi
+
 # Fetch the latest release tag using GitHub API
 echo "Fetching latest release tag..."
 LATEST_TAG=$(curl -s https://api.github.com/repos/block/goose/releases/latest | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')

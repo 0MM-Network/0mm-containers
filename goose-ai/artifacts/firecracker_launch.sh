@@ -41,14 +41,10 @@ if [ ! -f "$KERNEL_PATH" ]; then
     curl -L "https://s3.amazonaws.com/spec.ccfc.min/img/quickstart_guide/x86_64/kernels/vmlinux.bin" -o "$KERNEL_PATH" || error_exit "Failed to download kernel."
 fi
 
-# Download and prepare raw rootfs if not exists (idempotent)
-RAW_ROOTFS="$BASE_DIR/rootfs.raw"
+# Use pre-built Debian rootfs (ext4) from current directory for better boot compatibility
+RAW_ROOTFS="$PWD/debian.rootfs.ext4"
 if [ ! -f "$RAW_ROOTFS" ]; then
-    QCOW2_TEMP="$BASE_DIR/debian-13-generic-amd64.qcow2"
-    curl -L "https://cdimage.debian.org/images/cloud/trixie/daily/latest/debian-13-generic-amd64-daily.qcow2" -o "$QCOW2_TEMP" || error_exit "Failed to download qcow2."
-    qemu-img resize "$QCOW2_TEMP" 12G || error_exit "Failed to resize qcow2."
-    qemu-img convert -f qcow2 -O raw "$QCOW2_TEMP" "$RAW_ROOTFS" || error_exit "Failed to convert to raw."
-    rm -f "$QCOW2_TEMP"
+    error_exit "Rootfs file $RAW_ROOTFS not found. Run install.sh to download it."
 fi
 
 # Prepare cloud-init image (e.g., using cloud-localds)
