@@ -25,10 +25,16 @@ if [ -z "$LATEST_TAG" ]; then
     error_exit "Failed to fetch latest Firecracker tag."
 fi
 
-# Download latest Firecracker binary (x86_64)
+# Download latest Firecracker release tarball (x86_64)
 ARCH="x86_64"
-DOWNLOAD_URL="https://github.com/firecracker-microvm/firecracker/releases/download/${LATEST_TAG}/firecracker-${LATEST_TAG}-${ARCH}"
-curl -L "$DOWNLOAD_URL" -o "$FIRECRACKER_BIN" || error_exit "Failed to download Firecracker binary."
+DOWNLOAD_URL="https://github.com/firecracker-microvm/firecracker/releases/download/${LATEST_TAG}/release-${LATEST_TAG}-${ARCH}.tgz"
+TEMP_TGZ="/tmp/firecracker.tgz"
+curl -L "$DOWNLOAD_URL" -o "$TEMP_TGZ" || error_exit "Failed to download Firecracker tarball."
+
+# Extract the binary
+tar -xzf "$TEMP_TGZ" -C /tmp || error_exit "Failed to extract tarball."
+mv /tmp/release-${LATEST_TAG}-${ARCH}/firecracker-${LATEST_TAG}-${ARCH} "$FIRECRACKER_BIN" || error_exit "Failed to move binary."
+rm -rf "$TEMP_TGZ" /tmp/release-${LATEST_TAG}-${ARCH}
 
 # Make executable
 chmod +x "$FIRECRACKER_BIN"
