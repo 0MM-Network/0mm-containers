@@ -39,18 +39,45 @@ bash "$SCRIPTS_DIR/artifacts/firecracker_setup.sh" || error_exit "Failed to inst
 echo "Downloading latest vmlinux kernel..."
 BASE_DIR="/tmp/firecracker"
 mkdir -p "$BASE_DIR"
-XML_URL="http://spec.ccfc.min.s3.amazonaws.com/?prefix=firecracker-ci/v1.12-secret-hiding/aarch64/debug/vmlinux-6.1&list-type=2"
-XML_CONTENT=$(wget "$XML_URL" -O - 2>/dev/null) || error_exit "Failed to fetch XML listing."
+KERNEL_PATH="$BASE_DIR/vmlinux"
 
-# Parse XML to find matching keys and extract the highest version
-LATEST_KEY=$(echo "$XML_CONTENT" | grep -oP '(?<=<Key>)firecracker-ci/v1\.12-secret-hiding/aarch64/debug/vmlinux-6\.1\.[0-9]+(?=</Key>)' | sed -E 's/.*vmlinux-6\.1\.([0-9]+)/\1 &/' | sort -k1 -n -r | head -1 | cut -d' ' -f2)
+# Check if kernel already exists in BASE_DIR
+if [ -f "$KERNEL_PATH" ]; then
+    echo "Kernel already exists at $KERNEL_PATH. Skipping download."
+else
+    # Detect host architecture
+    HOST_ARCH=$(uname -m)
+    if [ "$HOST_ARCH" = "x86_64" ]; then
+        PREFIX="firecracker-ci/v1.12-secret-hiding/x86_64/debug/vmlinux-6.1"
+    elif [ "$HOST_ARCH" = "aarch64" ]; then
+        PREFIX="firecracker-ci/v1.12-secret-hiding/aarch64/debug/vmlinux-6.1"
+    else
+        error_exit "Unsupported architecture: $HOST_ARCH"
+    fi
 
-if [ -z "$LATEST_KEY" ]; then
-    error_exit "No matching kernel key found in XML listing."
+    XML_URL="http://spec.ccfc.min.s3.amazonaws.com/?prefix=$PREFIX&list-type=2"
+    XML_CONTENT=$(wget "$XML_URL" -O - 2>/dev/null) || error_exit "Failed to fetch XML listing."
+
+    # Parse XML to find matching keys and extract the highest version
+    LATEST_SUFFIX=$(echo "$XML_CONTENT" | grep -oP '(?<=<Key>)'"$PREFIX"'\.\K[0-9]+(?=</Key>)' | sort -n -r | head -1)
+
+    if [ -z "$LATEST_SUFFIX" ]; then
+        echo "No matching kernel key found. Falling back to stable kernel."
+        if [ "$HOST_ARCH" = "x86_64" ]; then
+            FALLBACK_URL="https://s3.amazonaws.com/spec.ccfc.min/img/quickstart_guide/x86_64/kernels/vmlinux.bin"
+        else
+            FALLBACK_URL="https://s3.amazonaws.com/spec.ccfc.min/img/quickstart_guide/aarch64/kernels/vmlinux.bin"  # Adjust if needed for aarch64 fallback
+        fi
+        wget "$FALLBACK_URL" -O "$KERNEL_PATH" || error_exit "Failed to download fallback kernel."
+    else
+        LATEST_KEY="$PREFIX.$LATEST_SUFFIX"
+        KERNEL_DOWNLOAD_URL="https://s3.amazonaws.com/spec.ccfc.min/${LATEST_KEY}"
+        wget "$KERNEL_DOWNLOAD_URL" -O "$KERNEL_PATH" || error_exit "Failed to download latest vmlinux kernel."
+    fi
+
+    # Verify it's a valid ELF file
+    file "$KERNEL_PATH" | grep -q "ELF" || error_exit "Invalid kernel file: not a valid ELF binary."
 fi
-
-KERNEL_DOWNLOAD_URL="https://s3.amazonaws.com/spec.ccfc.min/${LATEST_KEY}"
-wget "$KERNEL_DOWNLOAD_URL" -O "$BASE_DIR/vmlinux" || error_exit "Failed to download latest vmlinux kernel."
 
 # Fetch the latest release tag using GitHub API
 echo "Fetching latest release tag..."
