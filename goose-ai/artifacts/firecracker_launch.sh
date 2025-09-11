@@ -7,6 +7,7 @@
 # Documentation: Replaces nested Podman with Firecracker VM for isolation. Runs as non-root, uses NAT for Fargate-like networking (outbound, forwarded inbound).
 
 set -e
+set -x
 
 # Error handling and cleanup
 error_exit() {
