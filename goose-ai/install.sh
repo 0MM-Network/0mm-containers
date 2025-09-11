@@ -204,14 +204,13 @@ fi
 sync_config() {
     DIRECTION=$1
     HOST_CONFIG="$CONFIG"
-    CONTAINER_CONFIG="/home/goose/.config/goose/config.yaml"
+    CONTAINER_CONFIG="config.yaml"
+    VOLUME_MOUNTPOINT=$(podman volume inspect goose-config --format '{{ .Mountpoint }}')
 
     if [ "$DIRECTION" = "host_to_volume" ]; then
-        # Create a temp container to copy host to volume
-        podman run --rm -v goose-config:/data -v "$HOST_CONFIG":/host.yaml busybox cp /host.yaml /data/config.yaml
+        cp "$HOST_CONFIG" "$VOLUME_MOUNTPOINT/$CONTAINER_CONFIG" || { if [[ $? -eq 122 ]]; then echo "Error: Kernel keyring quota exceeded. Increase limits with: sudo sysctl -w kernel.keys.maxkeys=1000 && sudo sysctl -w kernel.keys.maxbytes=100000 and add to /etc/sysctl.conf for persistence."; fi; error_exit "Failed to sync config."; }
     elif [ "$DIRECTION" = "volume_to_host" ]; then
-        # Create a temp container to copy volume to host
-        podman run --rm -v goose-config:/data busybox cat /data/config.yaml > "$HOST_CONFIG"
+        cp "$VOLUME_MOUNTPOINT/$CONTAINER_CONFIG" "$HOST_CONFIG" || { if [[ $? -eq 122 ]]; then echo "Error: Kernel keyring quota exceeded. Increase limits with: sudo sysctl -w kernel.keys.maxkeys=1000 && sudo sysctl -w kernel.keys.maxbytes=100000 and add to /etc/sysctl.conf for persistence."; fi; error_exit "Failed to sync config."; }
     fi
 }
 
