@@ -47,4 +47,10 @@ chmod 700 /tmp/firecracker
 if [ -r /dev/kvm ]; then
     echo "KVM access available. Firecracker will use hardware acceleration."
 else
-    echo "Warning: No KVM access (/dev/kvm not readable). Falling
+    echo "Warning: No KVM access (/dev/kvm not readable). Falling back to non-accelerated mode."
+fi
+
+# Comment: Run Firecracker as non-root user for near-rootless setup. Ensure user has access to /dev/kvm if available.
+echo "Firecracker installed successfully. Run as non-root: $FIRECRACKER_BIN --api-sock /tmp/firecracker/sockets/firecracker.sock"
+
+exit 0
