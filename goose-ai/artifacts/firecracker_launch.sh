@@ -17,32 +17,32 @@ error_exit() {
 
 cleanup() {
     echo "Cleaning up..."
-    rm -f /tmp/firecracker/sockets/firecracker.sock
+    rm -f "$SOCK"
     kill $FIRECRACKER_PID 2>/dev/null || true
     # Explicitly kill socat processes
     kill $SOCAT1_PID 2>/dev/null || true
     kill $SOCAT2_PID 2>/dev/null || true
+    rmdir --ignore-fail-on-non-empty "$BASE_DIR/sockets"
 }
 
 trap cleanup EXIT ERR INT TERM
 
 # Paths
 FC_BIN="$HOME/.local/bin/firecracker"
-SOCK="/tmp/firecracker/sockets/firecracker.sock"
-LOG="/tmp/firecracker/logs/firecracker.log"
-CONFIG="$PWD/vm_config.json"
-BASE_DIR="/tmp/firecracker"
+BASE_DIR="$PWD"
 mkdir -p "$BASE_DIR"
-mkdir -p /tmp/firecracker/logs
+mkdir -p "$BASE_DIR/logs"
+SOCK="$BASE_DIR/sockets/firecracker.sock"
+LOG="$BASE_DIR/logs/firecracker.log"
 touch "$LOG"
 
-KERNEL_PATH="$BASE_DIR/vmlinux"
+KERNEL_PATH="./vmlinux"
 if [ ! -f "$KERNEL_PATH" ]; then
     curl -L "https://s3.amazonaws.com/spec.ccfc.min/img/quickstart_guide/x86_64/kernels/vmlinux.bin" -o "$KERNEL_PATH" || error_exit "Failed to download kernel."
 fi
 
 # Use pre-built Debian rootfs (ext4) from current directory for better boot compatibility
-RAW_ROOTFS="$PWD/rootfs.ext4"
+RAW_ROOTFS="./rootfs.ext4"
 if [ ! -f "$RAW_ROOTFS" ]; then
     error_exit "Rootfs file $RAW_ROOTFS not found. Run install.sh to download it."
 fi
@@ -52,6 +52,7 @@ CLOUD_INIT_IMG="$BASE_DIR/cloud-init.img"
 cloud-localds -d raw "$CLOUD_INIT_IMG" "$PWD/artifacts/cloud_init.yaml" || error_exit "Failed to create cloud-init image."
 
 # Start Firecracker
+mkdir -p "$BASE_DIR/sockets"
 $FC_BIN --api-sock "$SOCK" --log-path "$LOG" --level "Debug" &
 FIRECRACKER_PID=$!
 
