@@ -77,17 +77,6 @@ else
     file "$KERNEL_PATH" | grep -q "ELF" || error_exit "Invalid kernel file: not a valid ELF binary."
 fi
 
-# Build rootfs image
-echo "Building rootfs image..."
-ROOTFS_PATH="./rootfs.ext4"
-if [ -f "$ROOTFS_PATH" ]; then
-    echo "Rootfs already exists at $ROOTFS_PATH. Skipping build."
-else
-    sudo $(which buildfs) run -o rootfs.ext4 ./artifacts/build_rootfs.toml || error_exit "Failed to build rootfs."
-    sudo chown $USER:$USER rootfs.ext4 || error_exit "Failed to chown rootfs."
-    sudo mount -o loop rootfs.ext4 /mnt && ls /mnt && sudo umount /mnt || error_exit "Failed to mount or umount rootfs."
-fi
-
 # Fetch the latest release tag using GitHub API
 echo "Fetching latest release tag..."
 LATEST_TAG=$(curl -s https://api.github.com/repos/block/goose/releases/latest | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
@@ -121,6 +110,27 @@ BUILD_CONTEXT="$SCRIPTS_DIR"
 # Build the container image
 echo "Building Goose container image..."
 podman build -t $GOOSE_IMAGE -f "$SCRIPTS_DIR/Containerfile" "$BUILD_CONTEXT" || error_exit "Failed to build Goose container image"
+
+# Save the built Goose image as tar for pre-baking into rootfs
+echo "Saving Goose image as tar..."
+podman save $GOOSE_IMAGE -o goose.tar || error_exit "Failed to save Goose image as tar."
+
+# Build rootfs image
+echo "Building rootfs image..."
+ROOTFS_PATH="./rootfs.ext4"
+if [ -f "$ROOTFS_PATH" ]; then
+    echo "Rootfs already exists at $ROOTFS_PATH. Skipping build."
+else
+    sudo $(which buildfs) run -o rootfs.ext4 ./artifacts/build_rootfs.toml || error_exit "Failed to build rootfs."
+    sudo chown $USER:$USER rootfs.ext4 || error_exit "Failed to chown rootfs."
+
+    # Mount rootfs and copy goose.tar into /images for pre-loading
+    sudo mkdir -p /mnt/images
+    sudo mount -o loop rootfs.ext4 /mnt || error_exit "Failed to mount rootfs."
+    sudo cp goose.tar /mnt/images/goose.tar || error_exit "Failed to copy goose.tar into rootfs."
+    ls /mnt || error_exit "Failed to list mounted rootfs contents."
+    sudo umount /mnt || error_exit "Failed to umount rootfs."
+fi
 
 # Create persistent volume if it doesn't exist
 VOLUME="goose-config"
