@@ -37,11 +37,9 @@ bash "$SCRIPTS_DIR/artifacts/firecracker_setup.sh" || error_exit "Failed to inst
 
 # Download latest vmlinux kernel from Firecracker CI S3 bucket
 echo "Downloading latest vmlinux kernel..."
-BASE_DIR="/tmp/firecracker"
-mkdir -p "$BASE_DIR"
-KERNEL_PATH="$BASE_DIR/vmlinux"
+KERNEL_PATH="./vmlinux"
 
-# Check if kernel already exists in BASE_DIR
+# Check if kernel already exists
 if [ -f "$KERNEL_PATH" ]; then
     echo "Kernel already exists at $KERNEL_PATH. Skipping download."
 else
@@ -79,22 +77,15 @@ else
     file "$KERNEL_PATH" | grep -q "ELF" || error_exit "Invalid kernel file: not a valid ELF binary."
 fi
 
-# Download pre-built Debian rootfs image (debian.rootfs.ext4) from Firecracker S3 bucket
-# For better boot compatibility; detect architecture and download to current working directory
-echo "Downloading pre-built Debian rootfs image..."
-ROOTFS_PATH="$PWD/debian.rootfs.ext4"
+# Build rootfs image
+echo "Building rootfs image..."
+ROOTFS_PATH="./rootfs.ext4"
 if [ -f "$ROOTFS_PATH" ]; then
-    echo "Rootfs already exists at $ROOTFS_PATH. Skipping download."
+    echo "Rootfs already exists at $ROOTFS_PATH. Skipping build."
 else
-    HOST_ARCH=$(uname -m)
-    if [ "$HOST_ARCH" = "x86_64" ]; then
-        ROOTFS_URL="https://s3.amazonaws.com/spec.ccfc.min/ci-artifacts-dev/disks/x86_64/debian.rootfs.ext4"
-    elif [ "$HOST_ARCH" = "aarch64" ]; then
-        ROOTFS_URL="https://s3.amazonaws.com/spec.ccfc.min/ci-artifacts-dev/disks/aarch64/debian.rootfs.ext4"
-    else
-        error_exit "Unsupported architecture for rootfs: $HOST_ARCH"
-    fi
-    wget "$ROOTFS_URL" -O "$ROOTFS_PATH" || error_exit "Failed to download rootfs image."
+    sudo $(which buildfs) run -o rootfs.ext4 ./artifacts/build_rootfs.toml || error_exit "Failed to build rootfs."
+    sudo chown $USER:$USER rootfs.ext4 || error_exit "Failed to chown rootfs."
+    sudo mount -o loop rootfs.ext4 /mnt && ls /mnt && sudo umount /mnt || error_exit "Failed to mount or umount rootfs."
 fi
 
 # Fetch the latest release tag using GitHub API
