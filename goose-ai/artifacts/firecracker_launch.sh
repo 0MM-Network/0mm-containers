@@ -64,27 +64,84 @@ SERIAL_SOCK="$BASE_DIR/serial.sock"
 socat UNIX-LISTEN:"$SERIAL_SOCK",fork,mode=0666 EXEC:"$FC_BIN --api-sock \"$SOCK\" --log-path \"$LOG\" --level \"Debug\"",pty,raw,echo=0 &
 SOCAT_PID=$!
 
-sleep 10  # Increased wait for socket to address timing races
+# Poll loop for socket with error checking
+for i in {1..60}; do
+    if [ -S "$SOCK" ]; then
+        break
+    fi
+    if grep -q "error\|failed" "$LOG"; then
+        error_exit "Firecracker startup error: $(tail -n 5 $LOG)"
+    fi
+    sleep 1
+done
+if [ ! -S "$SOCK" ]; then
+    error_exit "API socket timeout after 60s: $SOCK not created"
+fi
 
-# Configure via API (using curl PUT)
-curl --unix-socket "$SOCK" -s -X PUT "http://localhost/machine-config" -H "Content-Type: application/json" -d '{"vcpu_count": 2, "mem_size_mib": 4096}' || error_exit "Failed to set machine-config."
+# Debug echo and ls -l
+echo "Launching Firecracker; checking socket: $SOCK" && ls -l "$SOCK"
 
+# Configure via API (using curl PUT with retries)
+ENDPOINT="machine-config"
+for j in {1..5}; do
+    curl --unix-socket "$SOCK" -s -X PUT "http://localhost/machine-config" -H "Content-Type: application/json" -d '{"vcpu_count": 2, "mem_size_mib": 4096}' && break || sleep 2
+done
+if [ $j -eq 5 ]; then
+    error_exit "API call retry failed for $ENDPOINT"
+fi
+
+ENDPOINT="boot-source"
 BOOT_ARGS="console=ttyS0 reboot=k panic=1 pci=off"
 if [ -n "$SIMPLIFIED_MODE" ]; then
     BOOT_ARGS+=" simplified_mode=$SIMPLIFIED_MODE"
 fi
-curl --unix-socket "$SOCK" -s -X PUT "http://localhost/boot-source" -H "Content-Type: application/json" -d "{\"kernel_image_path\": \"$KERNEL_PATH\", \"boot_args\": \"$BOOT_ARGS\"}" || error_exit "Failed to set boot-source."
+for j in {1..5}; do
+    curl --unix-socket "$SOCK" -s -X PUT "http://localhost/boot-source" -H "Content-Type: application/json" -d "{\"kernel_image_path\": \"$KERNEL_PATH\", \"boot_args\": \"$BOOT_ARGS\"}" && break || sleep 2
+done
+if [ $j -eq 5 ]; then
+    error_exit "API call retry failed for $ENDPOINT"
+fi
 
-curl --unix-socket "$SOCK" -s -X PUT "http://localhost/drives/rootfs" -H "Content-Type: application/json" -d "{\"drive_id\": \"rootfs\", \"path_on_host\": \"$RAW_ROOTFS\", \"is_root_device\": true, \"is_read_only\": false}" || error_exit "Failed to set rootfs drive."
+ENDPOINT="drives/rootfs"
+for j in {1..5}; do
+    curl --unix-socket "$SOCK" -s -X PUT "http://localhost/drives/rootfs" -H "Content-Type: application/json" -d "{\"drive_id\": \"rootfs\", \"path_on_host\": \"$RAW_ROOTFS\", \"is_root_device\": true, \"is_read_only\": false}" && break || sleep 2
+done
+if [ $j -eq 5 ]; then
+    error_exit "API call retry failed for $ENDPOINT"
+fi
 
-curl --unix-socket "$SOCK" -s -X PUT "http://localhost/drives/cloudinit" -H "Content-Type: application/json" -d "{\"drive_id\": \"cloudinit\", \"path_on_host\": \"$CLOUD_INIT_IMG\", \"is_root_device\": false, \"is_read_only\": false}" || error_exit "Failed to set cloudinit drive."
+ENDPOINT="drives/cloudinit"
+for j in {1..5}; do
+    curl --unix-socket "$SOCK" -s -X PUT "http://localhost/drives/cloudinit" -H "Content-Type: application/json" -d "{\"drive_id\": \"cloudinit\", \"path_on_host\": \"$CLOUD_INIT_IMG\", \"is_root_device\": false, \"is_read_only\": false}" && break || sleep 2
+done
+if [ $j -eq 5 ]; then
+    error_exit "API call retry failed for $ENDPOINT"
+fi
 
-curl --unix-socket "$SOCK" -s -X PUT "http://localhost/drives/share" -H "Content-Type: application/json" -d "{\"drive_id\": \"share\", \"path_on_host\": \"./\", \"is_root_device\": false, \"is_read_only\": false}" || error_exit "Failed to set share drive."
+ENDPOINT="drives/share"
+for j in {1..5}; do
+    curl --unix-socket "$SOCK" -s -X PUT "http://localhost/drives/share" -H "Content-Type: application/json" -d "{\"drive_id\": \"share\", \"path_on_host\": \"./\", \"is_root_device\": false, \"is_read_only\": false}" && break || sleep 2
+done
+if [ $j -eq 5 ]; then
+    error_exit "API call retry failed for $ENDPOINT"
+fi
 
-curl --unix-socket "$SOCK" -s -X PUT "http://localhost/network-interfaces/eth0" -H "Content-Type: application/json" -d '{"iface_id": "eth0", "guest_mac": "AA:FC:00:00:00:01", "host_dev_name": "tap0"}' || error_exit "Failed to set network."
+ENDPOINT="network-interfaces/eth0"
+for j in {1..5}; do
+    curl --unix-socket "$SOCK" -s -X PUT "http://localhost/network-interfaces/eth0" -H "Content-Type: application/json" -d '{"iface_id": "eth0", "guest_mac": "AA:FC:00:00:00:01", "host_dev_name": "tap0"}' && break || sleep 2
+done
+if [ $j -eq 5 ]; then
+    error_exit "API call retry failed for $ENDPOINT"
+fi
 
 # Start instance
-curl --unix-socket "$SOCK" -s -X PUT "http://localhost/actions" -H "Content-Type: application/json" -d '{"action_type": "InstanceStart"}' || error_exit "Failed to start instance."
+ENDPOINT="actions"
+for j in {1..5}; do
+    curl --unix-socket "$SOCK" -s -X PUT "http://localhost/actions" -H "Content-Type: application/json" -d '{"action_type": "InstanceStart"}' && break || sleep 2
+done
+if [ $j -eq 5 ]; then
+    error_exit "API call retry failed for $ENDPOINT"
+fi
 
 # Redirect serial to log file
 socat UNIX-CONNECT:"$SERIAL_SOCK" OPEN:"$SERIAL_LOG",creat,append &
