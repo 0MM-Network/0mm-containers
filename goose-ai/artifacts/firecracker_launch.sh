@@ -20,10 +20,15 @@ cleanup() {
     rm -f "$SOCK"
     rm -f "$SERIAL_SOCK"
     kill $SOCAT_PID 2>/dev/null || true
+    kill $SERIAL_LOG_PID 2>/dev/null || true
     # Explicitly kill socat processes
     kill $SOCAT1_PID 2>/dev/null || true
     kill $SOCAT2_PID 2>/dev/null || true
     rmdir --ignore-fail-on-non-empty "$BASE_DIR/sockets"
+    # Archive logs if they exist
+    if [ -d "$BASE_DIR/logs" ] && [ "$(ls -A "$BASE_DIR/logs")" ]; then
+        tar -czf "$BASE_DIR/logs.tar.gz" -C "$BASE_DIR" logs/ || echo "Warning: Failed to archive logs."
+    fi
 }
 
 trap cleanup EXIT ERR INT TERM
@@ -35,6 +40,7 @@ mkdir -p "$BASE_DIR"
 mkdir -p "$BASE_DIR/logs"
 SOCK="$BASE_DIR/sockets/firecracker.sock"
 LOG="$BASE_DIR/logs/firecracker.log"
+SERIAL_LOG="$BASE_DIR/logs/vm_serial.log"
 touch "$LOG"
 
 KERNEL_PATH="./vmlinux"
@@ -76,6 +82,10 @@ curl --unix-socket "$SOCK" -s -X PUT "http://localhost/network-interfaces/eth0" 
 # Start instance
 curl --unix-socket "$SOCK" -s -X PUT "http://localhost/actions" -H "Content-Type: application/json" -d '{"action_type": "InstanceStart"}' || error_exit "Failed to start instance."
 
+# Redirect serial to log file
+socat UNIX-CONNECT:"$SERIAL_SOCK" OPEN:"$SERIAL_LOG",creat,append &
+SERIAL_LOG_PID=$!
+
 # Poll for readiness using expect
 expect <<EOF || error_exit "VM boot timeout"
 set timeout 60
@@ -83,6 +93,21 @@ spawn socat - UNIX-CONNECT:"$SERIAL_SOCK"
 expect "root@vm:~#"
 exit 0
 EOF
+
+# Poll metrics for uptime readiness
+echo "Polling metrics for readiness..."
+for i in {1..30}; do
+    METRICS=$(curl --unix-socket "$SOCK" -s http://localhost/metrics) || continue
+    UPTIME=$(echo "$METRICS" | grep uptime | awk '{print $2}')
+    if [ -n "$UPTIME" ] && [ "$UPTIME" -gt 0 ]; then
+        echo "VM ready with uptime: $UPTIME"
+        break
+    fi
+    sleep 2
+done
+if [ -z "$UPTIME" ] || [ "$UPTIME" -eq 0 ]; then
+    error_exit "VM metrics readiness timeout"
+fi
 
 # Check mount success via serial poll
 expect <<EOF || error_exit "Virtiofs mount failed in VM"
@@ -136,3 +161,8 @@ echo "Firecracker VM launched successfully."
 
 # Wait for VM to be ready (poll or something)
 sleep 10
+
+# Check serial log for errors (for non-interactive integration)
+if grep -qi "failed" "$SERIAL_LOG"; then
+    error_exit "Errors detected in VM serial log"
+fi
