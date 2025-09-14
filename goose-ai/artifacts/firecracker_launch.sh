@@ -19,9 +19,7 @@ cleanup() {
     echo "Cleaning up..."
     rm -f "$SOCK"
     rm -f "$SERIAL_SOCK"
-    rm -f "$BASE_DIR/tmp_pty"
-    kill $FC_PID 2>/dev/null || true
-    kill $SOCAT_SERIAL_PID 2>/dev/null || true
+    kill $SOCAT_PID 2>/dev/null || true
     kill $SERIAL_LOG_PID 2>/dev/null || true
     # Explicitly kill socat processes
     kill $SOCAT1_PID 2>/dev/null || true
@@ -62,38 +60,28 @@ fi
 CLOUD_INIT_IMG="$BASE_DIR/cloud-init.img"
 cloud-localds -d raw "$CLOUD_INIT_IMG" "$PWD/artifacts/cloud_init.yaml" || error_exit "Failed to create cloud-init image."
 
-# Start Firecracker directly
+# Start Firecracker via socat for serial access
 mkdir -p "$BASE_DIR/sockets"
 SERIAL_SOCK="$BASE_DIR/serial.sock"
-$FC_BIN --api-sock "$SOCK" --log-path "$LOG" --level "Debug" &
-FC_PID=$!
+socat UNIX-LISTEN:"$SERIAL_SOCK",fork,mode=0666 EXEC:"$FC_BIN --api-sock \"$SOCK\" --log-path \"$LOG\" --level \"Debug\"",pty,raw,echo=0 &
+SOCAT_PID=$!
 
-# Poll loop for socket with enhanced checking
-# Check for Firecracker startup message; update regex if version changes (e.g., matches 'Running Firecracker v1.2.3')
+# Poll loop for socket with error checking
 for i in {1..60}; do
-    echo "Waiting for startup (iteration $i)"
-    if [ -S "$SOCK" ] && grep -q 'Running Firecracker v' "$LOG"; then
+    if [ -S "$SOCK" ]; then
         break
     fi
-    if grep -q "error\|failed\|bus_error" "$LOG"; then
-        kill $FC_PID 2>/dev/null || true
+    if grep -q "error\|failed" "$LOG"; then
         error_exit "Firecracker startup error: $(tail -n 5 $LOG)"
     fi
     sleep 1
 done
 if [ ! -S "$SOCK" ]; then
-    kill $FC_PID 2>/dev/null || true
     error_exit "API socket timeout after 60s: $SOCK not created"
 fi
 
 # Debug echo and ls -l
 echo "Launching Firecracker; checking socket: $SOCK" && ls -l "$SOCK"
-
-# Add separate socat for serial bridging
-echo "Starting serial bridge with socat"
-socat PTY,link="$BASE_DIR/tmp_pty",raw,echo=0 UNIX-LISTEN:"$SERIAL_SOCK",fork,mode=0666 &
-SOCAT_SERIAL_PID=$!
-kill -0 $SOCAT_SERIAL_PID || error_exit "Socat serial bridge failed"
 
 # Configure via API (using curl PUT with retries)
 ENDPOINT="machine-config"

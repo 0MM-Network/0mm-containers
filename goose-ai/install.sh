@@ -20,7 +20,7 @@ if ! command -v curl &> /dev/null; then
     error_exit "curl is not installed. Please install curl first."
 fi
 
-# Check and install additional dependencies for Firecracker (assuming Debian-based host)
+# Check and install additional dependencies for Cloud Hypervisor (assuming Debian-based host)
 for tool in cloud-localds qemu-img socat; do
     if ! command -v $tool &> /dev/null; then
         echo "Installing $tool..."
@@ -28,54 +28,16 @@ for tool in cloud-localds qemu-img socat; do
     fi
 done
 
+# Check for Cloud Hypervisor binary and firmware
+if [ ! -x /usr/local/bin/cloud-hypervisor ]; then
+    error_exit "Install Cloud Hypervisor at /usr/local/bin"
+fi
+if [ ! -f /usr/share/cloud-hypervisor/hypervisor-fw ]; then
+    error_exit "Firmware missing"
+fi
+
 SCRIPTS_DIR="$PWD"
 GOOSE_IMAGE="localhost/goose:latest"
-
-# Install and configure Firecracker before building image
-echo "Installing Firecracker..."
-bash "$SCRIPTS_DIR/artifacts/firecracker_setup.sh" || error_exit "Failed to install Firecracker."
-
-# Download latest vmlinux kernel from Firecracker CI S3 bucket
-echo "Downloading latest vmlinux kernel..."
-KERNEL_PATH="./vmlinux"
-
-# Check if kernel already exists
-if [ -f "$KERNEL_PATH" ]; then
-    echo "Kernel already exists at $KERNEL_PATH. Skipping download."
-else
-    # Detect host architecture
-    HOST_ARCH=$(uname -m)
-    if [ "$HOST_ARCH" = "x86_64" ]; then
-        PREFIX="firecracker-ci/v1.12-secret-hiding/x86_64/debug/vmlinux-6.1"
-    elif [ "$HOST_ARCH" = "aarch64" ]; then
-        PREFIX="firecracker-ci/v1.12-secret-hiding/aarch64/debug/vmlinux-6.1"
-    else
-        error_exit "Unsupported architecture: $HOST_ARCH"
-    fi
-
-    XML_URL="http://spec.ccfc.min.s3.amazonaws.com/?prefix=$PREFIX&list-type=2"
-    XML_CONTENT=$(wget "$XML_URL" -O - 2>/dev/null) || error_exit "Failed to fetch XML listing."
-
-    # Parse XML to find matching keys and extract the highest version
-    LATEST_SUFFIX=$(echo "$XML_CONTENT" | grep -oP '(?<=<Key>)'"$PREFIX"'\.\K[0-9]+(?=</Key>)' | sort -n -r | head -1)
-
-    if [ -z "$LATEST_SUFFIX" ]; then
-        echo "No matching kernel key found. Falling back to stable kernel."
-        if [ "$HOST_ARCH" = "x86_64" ]; then
-            FALLBACK_URL="https://s3.amazonaws.com/spec.ccfc.min/img/quickstart_guide/x86_64/kernels/vmlinux.bin"
-        else
-            FALLBACK_URL="https://s3.amazonaws.com/spec.ccfc.min/img/quickstart_guide/aarch64/kernels/vmlinux.bin"  # Adjust if needed for aarch64 fallback
-        fi
-        wget "$FALLBACK_URL" -O "$KERNEL_PATH" || error_exit "Failed to download fallback kernel."
-    else
-        LATEST_KEY="$PREFIX.$LATEST_SUFFIX"
-        KERNEL_DOWNLOAD_URL="https://s3.amazonaws.com/spec.ccfc.min/${LATEST_KEY}"
-        wget "$KERNEL_DOWNLOAD_URL" -O "$KERNEL_PATH" || error_exit "Failed to download latest vmlinux kernel."
-    fi
-
-    # Verify it's a valid ELF file
-    file "$KERNEL_PATH" | grep -q "ELF" || error_exit "Invalid kernel file: not a valid ELF binary."
-fi
 
 # Fetch the latest release tag using GitHub API
 echo "Fetching latest release tag..."
