@@ -19,7 +19,8 @@ cleanup() {
     echo "Cleaning up..."
     rm -f "$SOCK"
     rm -f "$SERIAL_SOCK"
-    kill $SOCAT_PID 2>/dev/null || true
+    kill $FC_PID 2>/dev/null || true
+    kill $SOCAT_SERIAL_PID 2>/dev/null || true
     kill $SERIAL_LOG_PID 2>/dev/null || true
     # Explicitly kill socat processes
     kill $SOCAT1_PID 2>/dev/null || true
@@ -60,28 +61,34 @@ fi
 CLOUD_INIT_IMG="$BASE_DIR/cloud-init.img"
 cloud-localds -d raw "$CLOUD_INIT_IMG" "$PWD/artifacts/cloud_init.yaml" || error_exit "Failed to create cloud-init image."
 
-# Start Firecracker via socat for serial access
+# Start Firecracker directly
 mkdir -p "$BASE_DIR/sockets"
 SERIAL_SOCK="$BASE_DIR/serial.sock"
-socat UNIX-LISTEN:"$SERIAL_SOCK",fork,mode=0666 EXEC:"$FC_BIN --api-sock \"$SOCK\" --log-path \"$LOG\" --level \"Debug\"",pty,raw,echo=0 &
-SOCAT_PID=$!
+$FC_BIN --api-sock "$SOCK" --log-path "$LOG" --level "Debug" &
+FC_PID=$!
 
-# Poll loop for socket with error checking
+# Poll loop for socket with enhanced checking
 for i in {1..60}; do
-    if [ -S "$SOCK" ]; then
+    if [ -S "$SOCK" ] && grep -q "Firecracker ready" "$LOG"; then
         break
     fi
-    if grep -q "error\|failed" "$LOG"; then
+    if grep -q "error\|failed\|bus_error" "$LOG"; then
+        kill $FC_PID 2>/dev/null || true
         error_exit "Firecracker startup error: $(tail -n 5 $LOG)"
     fi
     sleep 1
 done
 if [ ! -S "$SOCK" ]; then
+    kill $FC_PID 2>/dev/null || true
     error_exit "API socket timeout after 60s: $SOCK not created"
 fi
 
 # Debug echo and ls -l
 echo "Launching Firecracker; checking socket: $SOCK" && ls -l "$SOCK"
+
+# Add separate socat for serial bridging
+socat - UNIX-CONNECT:"$SERIAL_SOCK" PTY,link=/dev/ttyS0,raw,echo=0 &
+SOCAT_SERIAL_PID=$!
 
 # Configure via API (using curl PUT with retries)
 ENDPOINT="machine-config"
