@@ -41,7 +41,7 @@ fi
 # Adapted create-cloud-init.sh logic inline to create cloud-init disk
 # Linking to firmware-booting and create-cloud-init.sh docs: Uses fat disk with user-data and meta-data for cloud-init configuration.
 rm -f "$CLOUD_INIT_IMG"
-mkdosfs -n CIDATA -C "$CLOUD_INIT_IMG" 8192 || error_exit "Failed to create cloud-init disk."
+/sbin/mkdosfs -n CIDATA -C "$CLOUD_INIT_IMG" 8192 || error_exit "Failed to create cloud-init disk."
 # Assuming user-data is cloud_init.yaml and meta-data is empty or basic
 mkdir -p "$BASE_DIR/cloud-init-temp"
 cp "$BASE_DIR/artifacts/cloud_init.yaml" "$BASE_DIR/cloud-init-temp/user-data"
