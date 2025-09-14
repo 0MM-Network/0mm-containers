@@ -146,9 +146,20 @@ bash "$SCRIPTS_DIR/artifacts/firecracker_launch.sh" || error_exit "Failed to lau
 
 SERIAL_SOCK="$SCRIPTS_DIR/serial.sock"
 
-# For REPL access, connect to VM serial (using vm_utils.sh)
-if [[ "${POSITIONAL[0]}" == "repl" ]]; then
-    bash "$SCRIPTS_DIR/artifacts/vm_utils.sh" attach_serial
+# Check for interactive mode: if "repl" or host has TTY
+if [[ "${POSITIONAL[0]}" == "repl" ]] || [[ "$TTY_FLAG" == "-it" ]]; then
+    # Interactive attachment with socat (escape with CTRL+])
+    socat -,raw,echo=0,escape=0x1f UNIX-CONNECT:"$SERIAL_SOCK"
+
+    # After detach, send poweroff using expect
+    expect <<EOF || error_exit "Failed to poweroff VM after detach"
+    set timeout 60
+    spawn socat - UNIX-CONNECT:"$SERIAL_SOCK"
+    expect "root@vm:~#"
+    send "poweroff\r"
+    expect eof
+    exit 0
+EOF
 else
     # Non-interactive mode
     NON_INTERACTIVE=true
