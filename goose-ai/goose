@@ -87,11 +87,44 @@ if [ ! -f "$CONFIG" ]; then
     error_exit "Error: Specified config file $CONFIG not found."
 fi
 
-# Copy config to shared dir for virtiofs
-cp "$CONFIG" "$SCRIPTS_DIR/config.yaml" || error_exit "Failed to copy config to shared dir."
+# Function for bidirectional sync using persistent utility container
+# This reuses a single container to minimize kernel keyring consumption in rootless Podman.
+# The container is created once (if not exists) and runs persistently (sleep infinity) between script invocations.
+# Do not stop/remove it automatically; it's designed for reuse to avoid quota exhaustion from repeated creations.
+# Fallback to original method if reuse fails. Manual cleanup: podman stop/rm goose-utility if needed.
+sync_config() {
+    DIRECTION=$1
+    HOST_CONFIG="$CONFIG"
+    CONTAINER_CONFIG="/data/config.yaml"
 
-# Trap to sync back on exit
-trap 'cp "$SCRIPTS_DIR/config.yaml" "$CONFIG"; echo "Synced config on exit"' EXIT ERR INT TERM
+    # Ensure utility container exists and is running
+    if ! podman ps -a --filter name="$UTILITY_CONTAINER" --format "{{.Names}}" | grep -q "$UTILITY_CONTAINER"; then
+        echo "Creating persistent utility container for config syncing..."
+        podman run -d --name "$UTILITY_CONTAINER" -v goose-config:/data busybox sleep infinity || error_exit "Failed to create utility container."
+    elif ! podman ps --filter name="$UTILITY_CONTAINER" --filter status=running --format "{{.Names}}" | grep -q "$UTILITY_CONTAINER"; then
+        podman start "$UTILITY_CONTAINER" || error_exit "Failed to start utility container."
+    fi
+
+    if [ "$DIRECTION" = "host_to_volume" ]; then
+        # Use podman cp to copy from host to container's volume mount
+        podman cp "$HOST_CONFIG" "$UTILITY_CONTAINER:$CONTAINER_CONFIG" || {
+            echo "Warning: podman cp failed; falling back to original method."
+            podman run --rm -v goose-config:/data -v "$HOST_CONFIG":/host.yaml busybox cp /host.yaml /data/config.yaml || error_exit "Failed to sync config.";
+        }
+    elif [ "$DIRECTION" = "volume_to_host" ]; then
+        # Use podman cp to copy from container's volume mount to host
+        podman cp "$UTILITY_CONTAINER:$CONTAINER_CONFIG" "$HOST_CONFIG" || {
+            echo "Warning: podman cp failed; falling back to original method."
+            podman run --rm -v goose-config:/data busybox cat /data/config.yaml > "$HOST_CONFIG" || error_exit "Failed to sync config.";
+        }
+    fi
+}
+
+# Sync host to volume before starting
+sync_config "host_to_volume"
+
+# Trap to sync on all exits (normal, error, interrupt)
+trap 'sync_config "volume_to_host"; echo "Synced config on exit"' EXIT ERR INT TERM
 
 # Pre-create TAP device for Firecracker networking (requires sudo for creation, but sets user ownership for rootless access)
 TAP_DEV="tap0"
@@ -105,7 +138,7 @@ if ! ip link show "$TAP_DEV" &> /dev/null; then
 fi
 
 # Trap for TAP cleanup on exit (requires sudo)
-trap 'cp "$SCRIPTS_DIR/config.yaml" "$CONFIG"; echo "Synced config on exit"; sudo ip tuntap del dev "$TAP_DEV" mode tap' EXIT ERR INT TERM
+trap 'sync_config "volume_to_host"; echo "Synced config on exit"; sudo ip tuntap del dev "$TAP_DEV" mode tap' EXIT ERR INT TERM
 
 # Set simplified mode (can be overridden via env var)
 SIMPLIFIED_MODE=${SIMPLIFIED_MODE:-true}
