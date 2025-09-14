@@ -111,6 +111,26 @@ trap 'cp "$SCRIPTS_DIR/config.yaml" "$CONFIG"; echo "Synced config on exit"; sud
 # Launch VM which runs Goose and Serena inside
 bash "$SCRIPTS_DIR/artifacts/firecracker_launch.sh" || error_exit "Failed to launch Firecracker VM."
 
+# Add robustness checks after launch
+SOCK="$SCRIPTS_DIR/sockets/firecracker.sock"
+LOG="$SCRIPTS_DIR/logs/firecracker.log"
+
+# Poll for API socket
+for i in {1..30}; do
+    if [ -S "$SOCK" ]; then
+        break
+    fi
+    sleep 1
+done
+if [ ! -S "$SOCK" ]; then
+    error_exit "API socket timeout: $SOCK not created"
+fi
+
+# Check log for errors
+if grep -q "error" "$LOG"; then
+    error_exit "Firecracker launch error: $(tail -n 5 $LOG)"
+fi
+
 SERIAL_SOCK="$SCRIPTS_DIR/serial.sock"
 
 # Check for interactive mode: if "repl" or host has TTY
