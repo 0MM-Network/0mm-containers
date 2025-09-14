@@ -89,8 +89,10 @@ fi
 echo "Launching Firecracker; checking socket: $SOCK" && ls -l "$SOCK"
 
 # Add separate socat for serial bridging
-socat - UNIX-CONNECT:"$SERIAL_SOCK" PTY,link=/dev/ttyS0,raw,echo=0 &
+echo "Starting serial bridge with socat"
+socat UNIX-CONNECT:"$SERIAL_SOCK" PTY,link=/dev/ttyS0,raw,echo=0 &
 SOCAT_SERIAL_PID=$!
+kill -0 $SOCAT_SERIAL_PID || error_exit "Socat serial bridge failed"
 
 # Configure via API (using curl PUT with retries)
 ENDPOINT="machine-config"
