@@ -107,6 +107,10 @@ fi
 # Trap for TAP cleanup on exit (requires sudo)
 trap 'cp "$SCRIPTS_DIR/config.yaml" "$CONFIG"; echo "Synced config on exit"; sudo ip tuntap del dev "$TAP_DEV" mode tap' EXIT ERR INT TERM
 
+# Set simplified mode (can be overridden via env var)
+SIMPLIFIED_MODE=${SIMPLIFIED_MODE:-true}
+export SIMPLIFIED_MODE
+
 # Integrate Firecracker launch instead of direct podman run
 # Launch VM which runs Goose and Serena inside
 bash "$SCRIPTS_DIR/artifacts/firecracker_launch.sh" || error_exit "Failed to launch Firecracker VM."
@@ -136,7 +140,7 @@ SERIAL_SOCK="$SCRIPTS_DIR/serial.sock"
 # Check for interactive mode: if "repl" or host has TTY
 if [[ "${POSITIONAL[0]}" == "repl" ]] || [[ "$TTY_FLAG" == "-it" ]]; then
     # Interactive attachment with socat (escape with CTRL+])
-    socat -,raw,echo=0,escape=0x1f UNIX-CONNECT:"$SERIAL_SOCK"
+    socat -,raw,echo=0,escape=0x1f UNIX-CONNECT:"$SERIAL_SOCK" || error_exit "Serial attachment failed"
 
     # After detach, send poweroff using expect
     expect <<EOF || error_exit "Failed to poweroff VM after detach"
@@ -150,21 +154,33 @@ EOF
 else
     # Non-interactive mode
     NON_INTERACTIVE=true
-    COMMAND="podman exec -e NON_INTERACTIVE=true goose goose --config /mnt/share/config.yaml ${POSITIONAL[*]}"
+    if [ "$SIMPLIFIED_MODE" = "true" ]; then
+        COMMAND="goose --config /mnt/share/config.yaml ${POSITIONAL[*]}"
+    else
+        COMMAND="podman exec -e NON_INTERACTIVE=true goose goose --config /mnt/share/config.yaml ${POSITIONAL[*]}"
+    fi
 
     expect <<EOF || error_exit "Command execution failed"
-    set timeout 60
+    set timeout 30
     log_user 0
     spawn socat - UNIX-CONNECT:"$SERIAL_SOCK"
-    expect "root@vm:~#"
-    send "$COMMAND\r"
+    expect {
+        "root@vm:~#" {}
+        timeout { send_user "Command hang detected"; exit 1 }
+    }
+    send "$COMMAND\necho DONE\r"
     log_user 1
-    expect "root@vm:~#"
-    set output \$expect_out(buffer)
+    expect {
+        "DONE" { set output \$expect_out(buffer) }
+        timeout { send_user "Command hang detected"; exit 1 }
+    }
     log_user 0
     send "poweroff\r"
     expect eof
-    puts \$output
+    # Filter out prompt/boot noise (assuming output starts after command send)
+    set filtered [regsub {^.*root@vm:~# } \$output ""]
+    set filtered [regsub {echo DONE\r\nDONE\r\nroot@vm:~# } \$filtered ""]
+    puts \$filtered
     if {[string match -nocase "*error*" \$output]} {
         exit 1
     }

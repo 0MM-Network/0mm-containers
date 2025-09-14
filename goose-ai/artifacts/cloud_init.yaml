@@ -406,6 +406,8 @@ write_files:
       complete -C /usr/local/bin/goose goose
 
 runcmd:
+  - SIMPLIFIED_MODE=$(grep -o "simplified_mode=true" /proc/cmdline || echo false)
+  - if [ "$SIMPLIFIED_MODE" = "true" ]; then wget https://github.com/block/goose/releases/download/v1.7.0/goose_1.7.0_amd64.deb -O /tmp/goose.deb; apt install -y /tmp/goose.deb; rm /tmp/goose.deb; fi
   - mount -t virtiofs share_tag /mnt/share
   - mkdir -p /images /home/goose/.config/goose /home/goose/share /home/goose/log
   - mount -t virtiofs images_tag /images
@@ -417,9 +419,9 @@ runcmd:
   - systemctl start ssh
   - su - goose -c "systemctl --user daemon-reload"
   - su - goose -c "systemctl --user start podman.socket"
-  - su - goose -c "podman load -i /images/goose.tar"
+  - if [ "$SIMPLIFIED_MODE" != "true" ]; then su - goose -c "podman load -i /images/goose.tar"; fi
   - su - goose -c "podman pull ghcr.io/oraios/serena:latest"
   - su - goose -c "podman run --userns=keep-id -d -p 9121:9121 -p 24282:24282 --name serena ghcr.io/oraios/serena:latest serena start-mcp-server --transport stdio"
-  - su - goose -c "podman run --userns=keep-id -d --name goose -v /home/goose/share:/home/goose/workspace localhost/goose:latest goose session"
+  - if [ "$SIMPLIFIED_MODE" != "true" ]; then su - goose -c "podman run --userns=keep-id -d --name goose -v /home/goose/share:/home/goose/workspace localhost/goose:latest goose session"; fi
   - agetty -s ttyS0  # Enable serial console for REPL
 

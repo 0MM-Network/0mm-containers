@@ -69,7 +69,11 @@ sleep 5  # Wait for socket
 # Configure via API (using curl PUT)
 curl --unix-socket "$SOCK" -s -X PUT "http://localhost/machine-config" -H "Content-Type: application/json" -d '{"vcpu_count": 2, "mem_size_mib": 4096}' || error_exit "Failed to set machine-config."
 
-curl --unix-socket "$SOCK" -s -X PUT "http://localhost/boot-source" -H "Content-Type: application/json" -d "{\"kernel_image_path\": \"$KERNEL_PATH\", \"boot_args\": \"console=ttyS0 reboot=k panic=1 pci=off\"}" || error_exit "Failed to set boot-source."
+BOOT_ARGS="console=ttyS0 reboot=k panic=1 pci=off"
+if [ -n "$SIMPLIFIED_MODE" ]; then
+    BOOT_ARGS+=" simplified_mode=$SIMPLIFIED_MODE"
+fi
+curl --unix-socket "$SOCK" -s -X PUT "http://localhost/boot-source" -H "Content-Type: application/json" -d "{\"kernel_image_path\": \"$KERNEL_PATH\", \"boot_args\": \"$BOOT_ARGS\"}" || error_exit "Failed to set boot-source."
 
 curl --unix-socket "$SOCK" -s -X PUT "http://localhost/drives/rootfs" -H "Content-Type: application/json" -d "{\"drive_id\": \"rootfs\", \"path_on_host\": \"$RAW_ROOTFS\", \"is_root_device\": true, \"is_read_only\": false}" || error_exit "Failed to set rootfs drive."
 
