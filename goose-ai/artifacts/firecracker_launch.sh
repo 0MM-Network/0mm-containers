@@ -91,7 +91,7 @@ if [ $j -eq 5 ]; then
 fi
 
 ENDPOINT="boot-source"
-BOOT_ARGS="console=ttyS0 reboot=k panic=1 pci=off"
+BOOT_ARGS="console=ttyS0 reboot=k panic=1 pci=off clocksource=kvm-clock noapic nopit noreplacement"
 if [ -n "$SIMPLIFIED_MODE" ]; then
     BOOT_ARGS+=" simplified_mode=$SIMPLIFIED_MODE"
 fi
