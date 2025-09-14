@@ -41,6 +41,8 @@ mkdir -p "$BASE_DIR/logs"
 SOCK="$BASE_DIR/sockets/firecracker.sock"
 LOG="$BASE_DIR/logs/firecracker.log"
 SERIAL_LOG="$BASE_DIR/logs/vm_serial.log"
+# Truncate log file to avoid detecting stale errors; this resets for fresh logs each run
+echo "" > "$LOG" || error_exit "Failed to truncate log"
 touch "$LOG"
 
 KERNEL_PATH="./vmlinux"
