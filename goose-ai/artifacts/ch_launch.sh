@@ -17,6 +17,7 @@ cleanup() {
     echo "Cleaning up..."
     rm -f "$API_SOCKET"
     kill $CH_PID 2>/dev/null || true
+    kill $VIRTIOFSD_PID 2>/dev/null || true
 }
 
 trap cleanup EXIT ERR INT TERM
@@ -28,6 +29,7 @@ API_SOCKET="/tmp/ch-$BASHPID.sock"
 IMAGE_PATH="$BASE_DIR/noble-server-cloudimg-amd64.raw"
 CLOUD_INIT_IMG="$BASE_DIR/cloud-init.img"
 FIRMWARE_PATH="/usr/share/cloud-hypervisor/hypervisor-fw"
+VFS_SOCKET="/tmp/vfs-$BASHPID.sock"
 
 # Download and convert noble Ubuntu cloud image if not present
 if [ ! -f "$IMAGE_PATH" ]; then
@@ -48,8 +50,13 @@ mcopy -oi "$CLOUD_INIT_IMG" "$BASE_DIR/cloud-init-temp/user-data" ::
 mcopy -oi "$CLOUD_INIT_IMG" "$BASE_DIR/cloud-init-temp/meta-data" ::
 rm -rf "$BASE_DIR/cloud-init-temp"
 
+# Start virtiofsd for sharing host PWD (./) with guest
+# Referencing fs.md#how-to-share-directories-with-cloud-hypervisor
+virtiofsd --socket-path="$VFS_SOCKET" --shared-dir ./ --thread-pool-size=4 --cache=never &
+VIRTIOFSD_PID=$!
+
 # Start Cloud Hypervisor with HTTP API, firmware, and disks (no kernel used)
-$CH_BIN --http-api yes --api-socket "$API_SOCKET" --firmware "$FIRMWARE_PATH" --disk path="$IMAGE_PATH" path="$CLOUD_INIT_IMG" &
+$CH_BIN --http-api yes --api-socket "$API_SOCKET" --firmware "$FIRMWARE_PATH" --disk path="$IMAGE_PATH" path="$CLOUD_INIT_IMG" --fs tag=host_share,socket="$VFS_SOCKET",num_queues=1,queue_size=512 &
 CH_PID=$!
 
 # Poll loop for API readiness
