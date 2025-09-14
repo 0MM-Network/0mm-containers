@@ -56,7 +56,7 @@ virtiofsd --socket-path="$VFS_SOCKET" --shared-dir ./ --thread-pool-size=4 --cac
 VIRTIOFSD_PID=$!
 
 # Start Cloud Hypervisor with HTTP API, firmware, and disks (no kernel used)
-$CH_BIN --http-api yes --api-socket "$API_SOCKET" --firmware "$FIRMWARE_PATH" --disk path="$IMAGE_PATH" path="$CLOUD_INIT_IMG" --fs tag=host_share,socket="$VFS_SOCKET",num_queues=1,queue_size=512 &
+$CH_BIN --http-api yes --api-socket "$API_SOCKET" --firmware "$FIRMWARE_PATH" --disk path="$IMAGE_PATH" path="$CLOUD_INIT_IMG" --fs tag=host_share,socket="$VFS_SOCKET",num_queues=1,queue_size=512 --net "fd=3,mac=$MAC" &
 CH_PID=$!
 
 # Poll loop for API readiness
