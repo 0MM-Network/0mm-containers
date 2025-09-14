@@ -133,11 +133,10 @@ if [ $j -eq 5 ]; then
 fi
 
 ENDPOINT="drives/share"
-for j in {1..5}; do
-    curl --unix-socket "$SOCK" -s -X PUT "http://localhost/drives/share" -H "Content-Type: application/json" -d "{\"drive_id\": \"share\", \"path_on_host\": \"./\", \"is_root_device\": false, \"is_read_only\": false}" && break || sleep 2
-done
-if [ $j -eq 5 ]; then
-    error_exit "API call retry failed for $ENDPOINT"
+# This sets up read-write directory sharing via virtiofs, avoiding block device EISDIR errors
+RESPONSE=$(curl --unix-socket "$SOCK" -s -X PUT "http://localhost/drives/share" -H "Content-Type: application/json" -d "{\"drive_id\": \"share\", \"path_on_host\": \"./\", \"is_root_device\": false, \"is_read_only\": false, \"is_virtio_fs\": true}")
+if echo "$RESPONSE" | grep -q "fault_message"; then
+    error_exit "Failed to set share drive: $RESPONSE"
 fi
 
 ENDPOINT="network-interfaces/eth0"

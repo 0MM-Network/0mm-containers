@@ -408,6 +408,9 @@ write_files:
 runcmd:
   - SIMPLIFIED_MODE=$(grep -o "simplified_mode=true" /proc/cmdline || echo false)
   - if [ "$SIMPLIFIED_MODE" = "true" ]; then wget https://github.com/block/goose/releases/download/v1.7.0/goose_1.7.0_amd64.deb -O /tmp/goose.deb; apt install -y /tmp/goose.deb; rm /tmp/goose.deb; fi
+  # This sets up read-write directory sharing via virtiofs, avoiding block device EISDIR errors
+  - mkdir -p /home/goose/src
+  - mount -t virtiofs share /home/goose/src
   - mount -t virtiofs share_tag /mnt/share
   - mkdir -p /images /home/goose/.config/goose /home/goose/share /home/goose/log
   - mount -t virtiofs images_tag /images
