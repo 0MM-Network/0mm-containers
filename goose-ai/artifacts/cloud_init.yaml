@@ -406,6 +406,7 @@ write_files:
       complete -C /usr/local/bin/goose goose
 
 runcmd:
+  - mount -t virtiofs share_tag /mnt/share
   - mkdir -p /images /home/goose/.config/goose /home/goose/share /home/goose/log
   - mount -t virtiofs images_tag /images
   - mount -t virtiofs config_tag /home/goose/.config/goose

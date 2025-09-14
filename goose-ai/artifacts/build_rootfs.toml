@@ -13,7 +13,7 @@ script_inline = """
 #!/bin/bash
 
 apt update
-apt install -y udev systemd-sysv iputils-ping curl
+apt install -y udev systemd-sysv iputils-ping curl fuse
 
 rm -f /etc/systemd/system/multi-user.target.wants/systemd-resolved.service
 rm -f /etc/systemd/system/dbus-org.freedesktop.resolve1.service
@@ -40,6 +40,8 @@ cat >> /etc/sysctl.conf <<EOF
 # This avoids a SPECTRE vuln
 kernel.unprivileged_bpf_disabled=1
 EOF
+
+mkdir -p /mnt/share
 """
 
 [[overlays]]

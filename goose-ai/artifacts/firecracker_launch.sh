@@ -69,6 +69,8 @@ curl --unix-socket "$SOCK" -s -X PUT "http://localhost/drives/rootfs" -H "Conten
 
 curl --unix-socket "$SOCK" -s -X PUT "http://localhost/drives/cloudinit" -H "Content-Type: application/json" -d "{\"drive_id\": \"cloudinit\", \"path_on_host\": \"$CLOUD_INIT_IMG\", \"is_root_device\": false, \"is_read_only\": false}" || error_exit "Failed to set cloudinit drive."
 
+curl --unix-socket "$SOCK" -s -X PUT "http://localhost/drives/share" -H "Content-Type: application/json" -d "{\"drive_id\": \"share\", \"path_on_host\": \"./\", \"is_root_device\": false, \"is_read_only\": false}" || error_exit "Failed to set share drive."
+
 curl --unix-socket "$SOCK" -s -X PUT "http://localhost/network-interfaces/eth0" -H "Content-Type: application/json" -d '{"iface_id": "eth0", "guest_mac": "AA:FC:00:00:00:01", "host_dev_name": "tap0"}' || error_exit "Failed to set network."
 
 # Start instance
@@ -80,6 +82,18 @@ set timeout 60
 spawn socat - UNIX-CONNECT:"$SERIAL_SOCK"
 expect "root@vm:~#"
 exit 0
+EOF
+
+# Check mount success via serial poll
+expect <<EOF || error_exit "Virtiofs mount failed in VM"
+set timeout 60
+spawn socat - UNIX-CONNECT:"$SERIAL_SOCK"
+expect "root@vm:~#"
+send "mount | grep /mnt/share\r"
+expect {
+    "virtiofs on /mnt/share" { exit 0 }
+    default { exit 1 }
+}
 EOF
 
 # Port forwarding (e.g., host:9121 -> VM:9121 using socat)
