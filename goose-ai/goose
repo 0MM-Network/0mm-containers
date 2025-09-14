@@ -119,6 +119,10 @@ bash "$SCRIPTS_DIR/artifacts/firecracker_launch.sh" || error_exit "Failed to lau
 SOCK="$SCRIPTS_DIR/sockets/firecracker.sock"
 LOG="$SCRIPTS_DIR/logs/firecracker.log"
 
+# Debug echo for paths
+echo "SOCK path: $SOCK"
+echo "LOG path: $LOG"
+
 # Poll for API socket
 for i in {1..30}; do
     if [ -S "$SOCK" ]; then
@@ -127,13 +131,15 @@ for i in {1..30}; do
     sleep 1
 done
 if [ ! -S "$SOCK" ]; then
+    grep "error" "$LOG" && error_exit "Firecracker failed: $(tail -n 5 $LOG)"
     error_exit "API socket timeout: $SOCK not created"
 fi
 
-# Check log for errors
-if grep -q "error" "$LOG"; then
-    error_exit "Firecracker launch error: $(tail -n 5 $LOG)"
-fi
+# Test socket with ls -l
+ls -l "$SOCK" || error_exit "Failed to list socket: $SOCK"
+
+# Check log for specific errors before proceeding
+grep -q "bind failed" "$LOG" && error_exit "Socket bind error"
 
 SERIAL_SOCK="$SCRIPTS_DIR/serial.sock"
 

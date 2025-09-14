@@ -64,7 +64,7 @@ SERIAL_SOCK="$BASE_DIR/serial.sock"
 socat UNIX-LISTEN:"$SERIAL_SOCK",fork,mode=0666 EXEC:"$FC_BIN --api-sock \"$SOCK\" --log-path \"$LOG\" --level \"Debug\"",pty,raw,echo=0 &
 SOCAT_PID=$!
 
-sleep 5  # Wait for socket
+sleep 10  # Increased wait for socket to address timing races
 
 # Configure via API (using curl PUT)
 curl --unix-socket "$SOCK" -s -X PUT "http://localhost/machine-config" -H "Content-Type: application/json" -d '{"vcpu_count": 2, "mem_size_mib": 4096}' || error_exit "Failed to set machine-config."
