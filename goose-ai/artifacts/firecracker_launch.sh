@@ -18,7 +18,8 @@ error_exit() {
 cleanup() {
     echo "Cleaning up..."
     rm -f "$SOCK"
-    kill $FIRECRACKER_PID 2>/dev/null || true
+    rm -f "$SERIAL_SOCK"
+    kill $SOCAT_PID 2>/dev/null || true
     # Explicitly kill socat processes
     kill $SOCAT1_PID 2>/dev/null || true
     kill $SOCAT2_PID 2>/dev/null || true
@@ -51,10 +52,11 @@ fi
 CLOUD_INIT_IMG="$BASE_DIR/cloud-init.img"
 cloud-localds -d raw "$CLOUD_INIT_IMG" "$PWD/artifacts/cloud_init.yaml" || error_exit "Failed to create cloud-init image."
 
-# Start Firecracker
+# Start Firecracker via socat for serial access
 mkdir -p "$BASE_DIR/sockets"
-$FC_BIN --api-sock "$SOCK" --log-path "$LOG" --level "Debug" &
-FIRECRACKER_PID=$!
+SERIAL_SOCK="$BASE_DIR/serial.sock"
+socat UNIX-LISTEN:"$SERIAL_SOCK",fork,mode=0666 EXEC:"$FC_BIN --api-sock \"$SOCK\" --log-path \"$LOG\" --level \"Debug\"",pty,raw,echo=0 &
+SOCAT_PID=$!
 
 sleep 1  # Wait for socket
 
@@ -71,6 +73,14 @@ curl --unix-socket "$SOCK" -s -X PUT "http://localhost/network-interfaces/eth0" 
 
 # Start instance
 curl --unix-socket "$SOCK" -s -X PUT "http://localhost/actions" -H "Content-Type: application/json" -d '{"action_type": "InstanceStart"}' || error_exit "Failed to start instance."
+
+# Poll for readiness using expect
+expect <<EOF || error_exit "VM boot timeout"
+set timeout 60
+spawn socat - UNIX-CONNECT:"$SERIAL_SOCK"
+expect "root@vm:~#"
+exit 0
+EOF
 
 # Port forwarding (e.g., host:9121 -> VM:9121 using socat)
 VM_IP="172.16.0.2"
