@@ -19,7 +19,9 @@ cleanup() {
     echo "Cleaning up..."
     rm -f "$SOCK"
     rm -f "$SERIAL_SOCK"
-    kill $SOCAT_PID 2>/dev/null || true
+    rm -f "$BASE_DIR/tmp_pty"
+    kill $FC_PID 2>/dev/null || true
+    kill $SOCAT_SERIAL_PID 2>/dev/null || true
     kill $SERIAL_LOG_PID 2>/dev/null || true
     # Explicitly kill socat processes
     kill $SOCAT1_PID 2>/dev/null || true
@@ -89,7 +91,7 @@ echo "Launching Firecracker; checking socket: $SOCK" && ls -l "$SOCK"
 
 # Add separate socat for serial bridging
 echo "Starting serial bridge with socat"
-socat PTY,link=/dev/ttyS0,raw,echo=0 UNIX-LISTEN:"$SERIAL_SOCK",fork,mode=0666 &
+socat PTY,link="$BASE_DIR/tmp_pty",raw,echo=0 UNIX-LISTEN:"$SERIAL_SOCK",fork,mode=0666 &
 SOCAT_SERIAL_PID=$!
 kill -0 $SOCAT_SERIAL_PID || error_exit "Socat serial bridge failed"
 

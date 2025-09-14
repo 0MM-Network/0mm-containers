@@ -146,7 +146,7 @@ SERIAL_SOCK="$SCRIPTS_DIR/serial.sock"
 # Check for interactive mode: if "repl" or host has TTY
 if [[ "${POSITIONAL[0]}" == "repl" ]] || [[ "$TTY_FLAG" == "-it" ]]; then
     # Interactive attachment with socat (escape with CTRL+])
-    socat -,raw,echo=0,escape=0x1f UNIX-CONNECT:"$SERIAL_SOCK" || error_exit "Serial attachment failed"
+    socat -,raw,echo=0,escape=0x1f FILE:"$SCRIPTS_DIR/tmp_pty",raw || error_exit "Serial attachment failed"
 
     # After detach, send poweroff using expect
     expect <<EOF || error_exit "Failed to poweroff VM after detach"
@@ -166,32 +166,13 @@ else
         COMMAND="podman exec -e NON_INTERACTIVE=true goose goose --config /mnt/share/config.yaml ${POSITIONAL[*]}"
     fi
 
-    expect <<EOF || error_exit "Command execution failed"
-    set timeout 30
-    log_user 0
-    spawn socat - UNIX-CONNECT:"$SERIAL_SOCK"
-    expect {
-        "root@vm:~#" {}
-        timeout { send_user "Command hang detected"; exit 1 }
-    }
-    send "$COMMAND\necho DONE\r"
-    log_user 1
-    expect {
-        "DONE" { set output \$expect_out(buffer) }
-        timeout { send_user "Command hang detected"; exit 1 }
-    }
-    log_user 0
-    send "poweroff\r"
-    expect eof
-    # Filter out prompt/boot noise (assuming output starts after command send)
-    set filtered [regsub {^.*root@vm:~# } \$output ""]
-    set filtered [regsub {echo DONE\r\nDONE\r\nroot@vm:~# } \$filtered ""]
-    puts \$filtered
-    if {[string match -nocase "*error*" \$output]} {
-        exit 1
-    }
-    exit 0
-EOF
+    [ -e "$SCRIPTS_DIR/tmp_pty" ] || error_exit "PTY link failed"
+
+    echo "$COMMAND\necho DONE\npoweroff\n" > "$SCRIPTS_DIR/tmp_pty"
+
+    # Tail serial log until DONE
+    tail -f "$SCRIPTS_DIR/logs/vm_serial.log" | sed '/DONE/q' | grep -v "root@vm:~#"
+
 fi
 
 # Note: Config syncing uses virtiofs; mount host config to VM, then to containers rootlessly.
