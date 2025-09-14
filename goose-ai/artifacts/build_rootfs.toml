@@ -4,7 +4,7 @@ size_mib = 250
 
 [container]
 engine = "Podman"
-rootful = true
+rootful = false
 wait_timeout_s = 1
 image = { name = "docker.io/library/debian", tag = "bookworm-slim" }
 
