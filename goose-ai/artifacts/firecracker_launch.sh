@@ -68,8 +68,10 @@ $FC_BIN --api-sock "$SOCK" --log-path "$LOG" --level "Debug" &
 FC_PID=$!
 
 # Poll loop for socket with enhanced checking
+# Check for Firecracker startup message; update regex if version changes (e.g., matches 'Running Firecracker v1.2.3')
 for i in {1..60}; do
-    if [ -S "$SOCK" ] && grep -q "Firecracker ready" "$LOG"; then
+    echo "Waiting for startup (iteration $i)"
+    if [ -S "$SOCK" ] && grep -q 'Running Firecracker v[0-9]+\.[0-9]+\.[0-9]+' "$LOG"; then
         break
     fi
     if grep -q "error\|failed\|bus_error" "$LOG"; then
