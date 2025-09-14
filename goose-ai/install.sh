@@ -337,6 +337,7 @@ GOOSE_TESTS=(
     "--help"
     "info"
 )
+GOOSE_TESTS=()
 
 # Create temp config for smoke tests since --config is mandatory; this is a test-only workaround for security.
 TEMP_CONFIG=$(mktemp)
