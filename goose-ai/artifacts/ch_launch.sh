@@ -25,9 +25,31 @@ trap cleanup EXIT ERR INT TERM
 CH_BIN="/usr/local/bin/cloud-hypervisor"
 BASE_DIR="$PWD"
 API_SOCKET="/tmp/ch-$BASHPID.sock"
+IMAGE_PATH="$BASE_DIR/noble-server-cloudimg-amd64.raw"
+CLOUD_INIT_IMG="$BASE_DIR/cloud-init.img"
+FIRMWARE_PATH="/usr/share/cloud-hypervisor/hypervisor-fw"
 
-# Start Cloud Hypervisor with HTTP API
-$CH_BIN --http-api yes --api-socket "$API_SOCKET" &
+# Download and convert noble Ubuntu cloud image if not present
+if [ ! -f "$IMAGE_PATH" ]; then
+    wget https://cloud-images.ubuntu.com/noble/current/noble-server-cloudimg-amd64.img -O "$BASE_DIR/noble-server-cloudimg-amd64.img" || error_exit "Failed to download Ubuntu image."
+    qemu-img convert -f qcow2 -O raw "$BASE_DIR/noble-server-cloudimg-amd64.img" "$IMAGE_PATH" || error_exit "Failed to convert image to raw."
+    rm -f "$BASE_DIR/noble-server-cloudimg-amd64.img"
+fi
+
+# Adapted create-cloud-init.sh logic inline to create cloud-init disk
+# Linking to firmware-booting and create-cloud-init.sh docs: Uses fat disk with user-data and meta-data for cloud-init configuration.
+rm -f "$CLOUD_INIT_IMG"
+mkdosfs -n CIDATA -C "$CLOUD_INIT_IMG" 8192 || error_exit "Failed to create cloud-init disk."
+# Assuming user-data is cloud_init.yaml and meta-data is empty or basic
+mkdir -p "$BASE_DIR/cloud-init-temp"
+cp "$BASE_DIR/artifacts/cloud_init.yaml" "$BASE_DIR/cloud-init-temp/user-data"
+echo "instance-id: cloud-vm" > "$BASE_DIR/cloud-init-temp/meta-data"
+mcopy -oi "$CLOUD_INIT_IMG" "$BASE_DIR/cloud-init-temp/user-data" ::
+mcopy -oi "$CLOUD_INIT_IMG" "$BASE_DIR/cloud-init-temp/meta-data" ::
+rm -rf "$BASE_DIR/cloud-init-temp"
+
+# Start Cloud Hypervisor with HTTP API, firmware, and disks (no kernel used)
+$CH_BIN --http-api yes --api-socket "$API_SOCKET" --firmware "$FIRMWARE_PATH" --disk path="$IMAGE_PATH" path="$CLOUD_INIT_IMG" &
 CH_PID=$!
 
 # Poll loop for API readiness
