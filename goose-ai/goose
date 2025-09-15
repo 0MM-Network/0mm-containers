@@ -16,8 +16,8 @@ SERIAL_SOCK="./serial.sock"
 API_SOCK="./api.sock"
 CLOUD_INIT_IMG="cloud-init.img"
 SIMPLIFIED_MODE=${SIMPLIFIED_MODE:-true}
-HOST_IFACE="eth0"  # Adjust if needed
-MAC="02:00:00:00:00:01"  # Default MAC
+HOST_IFACE="eno1"  # Adjust if needed
+MAC="12:34:56:78:90:ab"  # Default MAC from prompt
 
 # Function to check dependencies
 check_deps() {
@@ -44,7 +44,7 @@ create_cloud_init() {
     rm -f "$CLOUD_INIT_IMG"
     mkdosfs -n CIDATA -C "$CLOUD_INIT_IMG" 8192
 
-    # Use content from provided cloud_init.yaml for user-data
+    # User-data with Podman rootless setup, users: goose, mounts, podman pull/run
     cat > user-data <<EOF
 #cloud-config
 
@@ -64,16 +64,6 @@ users:
     plain_text_passwd: goose
     lock_passwd: false
     shell: /bin/bash
-
-network:
-  version: 2
-  ethernets:
-    eth0:
-      dhcp4: false
-      addresses: [172.16.0.2/24]
-      gateway4: 172.16.0.1
-      nameservers:
-        addresses: [8.8.8.8]
 
 write_files:
   - path: /etc/subuid
@@ -108,10 +98,9 @@ runcmd:
   - systemctl start ssh
   - su - goose -c "systemctl --user daemon-reload"
   - su - goose -c "systemctl --user start podman.socket"
-  - if [ "$SIMPLIFIED_MODE" != "true" ]; then su - goose -c "podman load -i /images/goose.tar"; fi
   - su - goose -c "podman pull ghcr.io/oraios/serena:latest"
   - su - goose -c "podman run --userns=keep-id -d -p 9121:9121 -p 24282:24282 --name serena ghcr.io/oraios/serena:latest serena start-mcp-server --transport stdio"
-  - if [ "$SIMPLIFIED_MODE" != "true" ]; then su - goose -c "podman run --userns=keep-id -d --name goose -v /home/goose/share:/home/goose/workspace localhost/goose:latest goose session"; fi
+  - if [ "$SIMPLIFIED_MODE" != "true" ]; then if ! podman image exists localhost/goose:latest; then podman build -t localhost/goose:latest -f /mnt/share/Containerfile; fi; su - goose -c "podman run --userns=keep-id -d --name goose -v /mnt/share:/home/goose/workspace localhost/goose:latest goose session"; fi
   - agetty -s ttyS0  # Enable serial console for REPL
 EOF
 
@@ -119,11 +108,13 @@ EOF
     echo "instance-id: iid-local01" > meta-data
     echo "local-hostname: vm" >> meta-data
 
-    # Provided network-config YAML (extracted or embedded)
+    # Provided network-config for ens4 with MAC match
     cat > network-config <<EOF
 version: 2
 ethernets:
-  eth0:
+  ens4:
+    match:
+      macaddress: '$MAC'
     dhcp4: true
 EOF
 
@@ -158,15 +149,15 @@ launch_vm() {
         --firmware /usr/share/cloud-hypervisor/hypervisor-fw \
         --disk path=$IMAGE_FILE path=$CLOUD_INIT_IMG \
         --fs tag=host_share,socket=virtiofs.sock,num_queues=1,queue_size=512 \
-        --net fd=3,mac=$MAC 3<>"$TAP_DEVICE" \
+        --net fd=3,mac=$MAC 3<>$TAP_DEVICE \
         --serial tty \
         --console off \
         --api-socket "$API_SOCK" &
     VM_PID=$!
 
-    # Wait for API socket
-    for i in {1..30}; do
-        if [ -S "$API_SOCK" ]; then
+    # Poll for API socket with vmm.ping
+    for i in {1..60}; do
+        if [ -S "$API_SOCK" ] && curl --unix-socket "$API_SOCK" -s http://localhost/vmm.ping > /dev/null; then
             break
         fi
         sleep 1
@@ -254,9 +245,10 @@ if [ ! -f "$CONFIG" ]; then
     exit 1
 fi
 
-# Copy config to shared dir
+# Copy config and Containerfile to shared dir
 mkdir -p "$SHARED_DIR"
 cp "$CONFIG" "$SHARED_DIR/config.yaml"
+cp goose-ai/Containerfile "$SHARED_DIR/Containerfile"
 
 # Download image
 download_image
