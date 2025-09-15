@@ -2,6 +2,7 @@
 
 # Error handling
 set -e
+set -x
 
 # Define defaults
 VM_MEMORY="1024M"
@@ -192,6 +193,11 @@ launch_vm() {
     TAP_FD=$(cat /sys/class/net/macvtap0/ifindex)
     TAP_DEVICE="/dev/tap$TAP_FD"
     sudo chown "$UID:$UID" "$TAP_DEVICE"
+
+    # Clean up existing API socket if it exists
+    if [ -S "$API_SOCK" ]; then
+        rm -f "$API_SOCK"
+    fi
 
     # Launch Cloud Hypervisor
     cloud-hypervisor \
