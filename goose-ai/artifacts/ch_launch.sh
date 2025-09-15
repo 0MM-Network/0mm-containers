@@ -74,6 +74,9 @@ VIRTIOFSD_PID=$!
 # This enables vhost-user for virtiofs and references quick-start/fs.md.
 echo "Using --fs, enabling shared memory"
 MEMORY_ARGS="--memory size=1024M,shared=on"
+if [[ "$MEMORY_ARGS" != *"shared=on"* ]]; then
+    error_exit "Shared memory required for virtiofs"
+fi
 
 # Start Cloud Hypervisor with HTTP API, firmware, and disks (no kernel used)
 # Noting CLI for launch efficiency and curl for runtime control, referencing API.md.
