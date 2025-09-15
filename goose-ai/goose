@@ -1,71 +1,238 @@
 #!/bin/bash
 
-SCRIPTS_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
-
-# Define variables
-IMAGE="localhost/goose:latest"
-HUID=$(id -u)
-HGID=$(id -g)
-CUID=$(podman run --rm --entrypoint /usr/bin/id $IMAGE -u)
-CGID=$(podman run --rm --entrypoint /usr/bin/id $IMAGE -g)
-CONTAINER_NAME="goose-container"  # Added for singleton pattern
-UTILITY_CONTAINER="goose-utility"  # Persistent utility container for syncing
-
 # Error handling
 set -e
+set -v  # Verbose logging
 
-# Enable debug tracing
-set -x
+# Define defaults
+VM_MEMORY="1024M"
+VM_CPUS=4
+IMAGE_URL="https://cloud-images.ubuntu.com/noble/current/noble-server-cloudimg-amd64.img"
+IMAGE_FILE="noble-server-cloudimg-amd64.raw"
+SHARED_DIR="./shared"
+CONFIG_MOUNT="/mnt/share"
+GOOSE_CONFIG="$CONFIG_MOUNT/config.yaml"
+SERIAL_SOCK="./serial.sock"
+API_SOCK="./api.sock"
+CLOUD_INIT_IMG="cloud-init.img"
+SIMPLIFIED_MODE=${SIMPLIFIED_MODE:-true}
+HOST_IFACE="eth0"  # Adjust if needed
+MAC="02:00:00:00:00:01"  # Default MAC
 
-# Function to display error messages
-error_exit() {
-    echo "Error: $1" >&2
-    exit 1
+# Function to check dependencies
+check_deps() {
+    local deps=("cloud-hypervisor" "ch-remote" "virtiofsd" "socat" "mkdosfs" "mcopy" "qemu-img" "curl" "expect" "ip" "wget")
+    for dep in "${deps[@]}"; do
+        if ! command -v "$dep" &> /dev/null; then
+            echo "Error: $dep is required but not installed." >&2
+            exit 1
+        fi
+    done
 }
 
-# Check if the container image exists
-if ! podman image exists "$IMAGE"; then
-    error_exit "Goose container image not found. Please run the installation script again."
-fi
+# Function to download and prepare the cloud image
+download_image() {
+    if [ ! -f "$IMAGE_FILE" ]; then
+        wget "$IMAGE_URL" -O noble-server-cloudimg-amd64.img
+        qemu-img convert -f qcow2 -O raw noble-server-cloudimg-amd64.img "$IMAGE_FILE"
+        rm noble-server-cloudimg-amd64.img
+    fi
+}
 
-# Check if stdin is a TTY and set flags accordingly
-TTY_FLAG=""
-if [ -t 0 ] && [ -t 1 ]; then
-    TTY_FLAG="-it"
-else
-    TTY_FLAG="-i"
-fi
+# Function to create cloud-init image (adapt from create-cloud-init.sh, include Podman setup from cloud_init.yaml)
+create_cloud_init() {
+    rm -f "$CLOUD_INIT_IMG"
+    mkdosfs -n CIDATA -C "$CLOUD_INIT_IMG" 8192
 
-# Create persistent volume if it doesn't exist
-VOLUME="goose-config"
-if ! podman volume exists "$VOLUME"; then
-    echo "Creating persistent volume for Goose config..."
-    podman volume create "$VOLUME"
-fi
+    # Use content from provided cloud_init.yaml for user-data
+    cat > user-data <<EOF
+#cloud-config
 
-# Create persistent volume if it doesn't exist
-VOLUME="goose-share"
-if ! podman volume exists "$VOLUME"; then
-    echo "Creating persistent volume for Goose share..."
-    podman volume create "$VOLUME"
-fi
+package_update: true
+package_upgrade: true
 
-# Parse arguments for --config
+packages:
+  - podman
+  - fuse-overlayfs
+  - slirp4netns
+  - agetty
+  - openssh-server
+
+users:
+  - default
+  - name: goose
+    plain_text_passwd: goose
+    lock_passwd: false
+    shell: /bin/bash
+
+network:
+  version: 2
+  ethernets:
+    eth0:
+      dhcp4: false
+      addresses: [172.16.0.2/24]
+      gateway4: 172.16.0.1
+      nameservers:
+        addresses: [8.8.8.8]
+
+write_files:
+  - path: /etc/subuid
+    content: |
+      goose:100000:65536
+  - path: /etc/subgid
+    content: |
+      goose:100000:65536
+  - path: /home/goose/.config/systemd/user/podman.socket
+    content: |
+      [Unit]
+      Description=Podman API Socket
+      Documentation=man:podman-system-service(1)
+
+      [Socket]
+      ListenStream=%h/podman.sock
+      SocketMode=0660
+
+      [Install]
+      WantedBy=sockets.target
+    owner: goose
+    group: goose
+    permissions: '0644'
+
+runcmd:
+  - SIMPLIFIED_MODE=$(grep -o "simplified_mode=true" /proc/cmdline || echo false)
+  - if [ "$SIMPLIFIED_MODE" = "true" ]; then wget https://github.com/block/goose/releases/download/v1.7.0/goose_1.7.0_amd64.deb -O /tmp/goose.deb; apt install -y /tmp/goose.deb; rm /tmp/goose.deb; fi
+  - mkdir -p /home/goose/src
+  - mount -t virtiofs host_share /mnt/share
+  - chown -R goose:goose /home/goose
+  - echo 'goose:goose' | chpasswd
+  - systemctl start ssh
+  - su - goose -c "systemctl --user daemon-reload"
+  - su - goose -c "systemctl --user start podman.socket"
+  - if [ "$SIMPLIFIED_MODE" != "true" ]; then su - goose -c "podman load -i /images/goose.tar"; fi
+  - su - goose -c "podman pull ghcr.io/oraios/serena:latest"
+  - su - goose -c "podman run --userns=keep-id -d -p 9121:9121 -p 24282:24282 --name serena ghcr.io/oraios/serena:latest serena start-mcp-server --transport stdio"
+  - if [ "$SIMPLIFIED_MODE" != "true" ]; then su - goose -c "podman run --userns=keep-id -d --name goose -v /home/goose/share:/home/goose/workspace localhost/goose:latest goose session"; fi
+  - agetty -s ttyS0  # Enable serial console for REPL
+EOF
+
+    # Basic meta-data
+    echo "instance-id: iid-local01" > meta-data
+    echo "local-hostname: vm" >> meta-data
+
+    # Provided network-config YAML (extracted or embedded)
+    cat > network-config <<EOF
+version: 2
+ethernets:
+  eth0:
+    dhcp4: true
+EOF
+
+    # Copy to image (adapt from create-cloud-init.sh)
+    mcopy -oi "$CLOUD_INIT_IMG" user-data ::
+    mcopy -oi "$CLOUD_INIT_IMG" meta-data ::
+    mcopy -oi "$CLOUD_INIT_IMG" network-config ::
+
+    rm user-data meta-data network-config
+}
+
+# Function to setup virtiofs for shared directory (per fs.md)
+setup_virtiofs() {
+    mkdir -p "$SHARED_DIR"
+    virtiofsd --socket-path=virtiofs.sock --shared-dir "$SHARED_DIR" --cache=never --thread-pool-size=4 &
+    VIRTIOFSD_PID=$!
+}
+
+# Function to launch the VM (with --firmware, --disk, --fs, --net using MACVTAP bridge from macvtap-bridge.md)
+launch_vm() {
+    # Setup MACVTAP bridge (from macvtap-bridge.md)
+    sudo ip link add link "$HOST_IFACE" name macvtap0 type macvtap mode bridge
+    sudo ip link set macvtap0 address "$MAC" up
+    TAP_FD=$(cat /sys/class/net/macvtap0/ifindex)
+    TAP_DEVICE="/dev/tap$TAP_FD"
+    sudo chown "$UID:$UID" "$TAP_DEVICE"
+
+    # Launch Cloud Hypervisor
+    cloud-hypervisor \
+        --cpus boot=$VM_CPUS \
+        --memory size=$VM_MEMORY,shared=on \
+        --firmware /usr/share/cloud-hypervisor/hypervisor-fw \
+        --disk path=$IMAGE_FILE path=$CLOUD_INIT_IMG \
+        --fs tag=host_share,socket=virtiofs.sock,num_queues=1,queue_size=512 \
+        --net fd=3,mac=$MAC 3<>"$TAP_DEVICE" \
+        --serial tty \
+        --console off \
+        --api-socket "$API_SOCK" &
+    VM_PID=$!
+
+    # Wait for API socket
+    for i in {1..30}; do
+        if [ -S "$API_SOCK" ]; then
+            break
+        fi
+        sleep 1
+    done
+    if [ ! -S "$API_SOCK" ]; then
+        echo "Error: API socket timeout" >&2
+        exit 1
+    fi
+
+    # Boot the VM using ch-remote
+    ch-remote --api-socket "$API_SOCK" boot
+}
+
+# Function for interactive VM mode
+interact_vm() {
+    socat -,raw,echo=0,escape=0x1f UNIX-CONNECT:"$SERIAL_SOCK" || echo "Serial attachment failed" >&2
+
+    # After detach, send poweroff using expect
+    expect <<EOF
+    set timeout 60
+    spawn socat - UNIX-CONNECT:"$SERIAL_SOCK"
+    expect "goose@vm:~$"
+    send "sudo poweroff\r"
+    expect eof
+EOF
+}
+
+# Function to run command in guest (send 'goose' sub-command via serial or expect)
+run_guest_command() {
+    local command="GOOSE_CONFIG=$GOOSE_CONFIG goose ${POSITIONAL[*]}"
+    if [ "$SIMPLIFIED_MODE" = "true" ]; then
+        command="$command"  # Direct
+    else
+        command="podman exec goose $command"  # Assuming container named goose
+    fi
+
+    # Send command via expect (non-interactive)
+    expect <<EOF
+    set timeout 60
+    spawn socat - UNIX-CONNECT:"$SERIAL_SOCK"
+    expect "goose@vm:~$"
+    send "$command\r"
+    send "echo DONE\r"
+    send "sudo poweroff\r"
+    expect "DONE"
+    expect eof
+EOF
+}
+
+# Main logic
+
+# Check deps
+check_deps
+
+# Parse arguments
 declare -a POSITIONAL=()
 while [[ $# -gt 0 ]]; do
     key="$1"
     case $key in
         --config=*)
-            CONFIG="${key#*=}"  # Extract value after '='
+            CONFIG="${key#*=}"
             shift
             ;;
         --config)
-            if [[ $# -gt 1 ]] && [[ "${2:0:1}" != "-" ]]; then
-                CONFIG="$2"
-                shift 2
-            else
-                error_exit "--config requires a file path"
-            fi
+            CONFIG="$2"
+            shift 2
             ;;
         *)
             POSITIONAL+=("$1")
@@ -73,137 +240,42 @@ while [[ $# -gt 0 ]]; do
             ;;
     esac
 done
-
-# Restore positional parameters without --config
 set -- "${POSITIONAL[@]}"
 
-# Make --config mandatory
+# Require --config
 if [ -z "$CONFIG" ]; then
-    error_exit "Error: --config <file/path.yaml> is required."
+    echo "Error: --config <file/path.yaml> is required." >&2
+    exit 1
 fi
 
-# Require that the --config file exists
+# Check config file exists
 if [ ! -f "$CONFIG" ]; then
-    error_exit "Error: Specified config file $CONFIG not found."
+    echo "Error: Specified config file $CONFIG not found." >&2
+    exit 1
 fi
 
-# Function for bidirectional sync using persistent utility container
-# This reuses a single container to minimize kernel keyring consumption in rootless Podman.
-# The container is created once (if not exists) and runs persistently (sleep infinity) between script invocations.
-# Do not stop/remove it automatically; it's designed for reuse to avoid quota exhaustion from repeated creations.
-# Fallback to original method if reuse fails. Manual cleanup: podman stop/rm goose-utility if needed.
-sync_config() {
-    DIRECTION=$1
-    HOST_CONFIG="$CONFIG"
-    CONTAINER_CONFIG="/data/config.yaml"
+# Copy config to shared dir
+mkdir -p "$SHARED_DIR"
+cp "$CONFIG" "$SHARED_DIR/config.yaml"
 
-    # Ensure utility container exists and is running
-    if ! podman ps -a --filter name="$UTILITY_CONTAINER" --format "{{.Names}}" | grep -q "$UTILITY_CONTAINER"; then
-        echo "Creating persistent utility container for config syncing..."
-        podman run -d --name "$UTILITY_CONTAINER" -v goose-config:/data busybox sleep infinity || error_exit "Failed to create utility container."
-    elif ! podman ps --filter name="$UTILITY_CONTAINER" --filter status=running --format "{{.Names}}" | grep -q "$UTILITY_CONTAINER"; then
-        podman start "$UTILITY_CONTAINER" || error_exit "Failed to start utility container."
-    fi
+# Download image
+download_image
 
-    if [ "$DIRECTION" = "host_to_volume" ]; then
-        # Use podman cp to copy from host to container's volume mount
-        podman cp "$HOST_CONFIG" "$UTILITY_CONTAINER:$CONTAINER_CONFIG" || {
-            echo "Warning: podman cp failed; falling back to original method."
-            podman run --rm -v goose-config:/data -v "$HOST_CONFIG":/host.yaml busybox cp /host.yaml /data/config.yaml || error_exit "Failed to sync config.";
-        }
-    elif [ "$DIRECTION" = "volume_to_host" ]; then
-        # Use podman cp to copy from container's volume mount to host
-        podman cp "$UTILITY_CONTAINER:$CONTAINER_CONFIG" "$HOST_CONFIG" || {
-            echo "Warning: podman cp failed; falling back to original method."
-            podman run --rm -v goose-config:/data busybox cat /data/config.yaml > "$HOST_CONFIG" || error_exit "Failed to sync config.";
-        }
-    fi
-}
+# Create cloud-init
+create_cloud_init
 
-# Sync host to volume before starting
-sync_config "host_to_volume"
+# Setup virtiofs
+setup_virtiofs
 
-# Trap to sync on all exits (normal, error, interrupt)
-trap 'sync_config "volume_to_host"; echo "Synced config on exit"' EXIT ERR INT TERM
+# Launch VM
+launch_vm
 
-# Set simplified mode (can be overridden via env var)
-SIMPLIFIED_MODE=${SIMPLIFIED_MODE:-true}
-export SIMPLIFIED_MODE
+# Trap for cleanup
+trap 'ch-remote --api-socket "$API_SOCK" shutdown; kill $VM_PID $VIRTIOFSD_PID; rm -f "$CLOUD_INIT_IMG" virtiofs.sock "$API_SOCK" "$SERIAL_SOCK"; sudo ip link delete macvtap0' EXIT ERR INT TERM
 
-# Integrate Cloud Hypervisor launch
-# Launch VM which runs Goose and Serena inside
-bash "$SCRIPTS_DIR/artifacts/ch_launch.sh" || error_exit "Failed to launch Cloud Hypervisor VM."
-
-# Add robustness checks after launch
-SOCK="$SCRIPTS_DIR/sockets/firecracker.sock"
-LOG="$SCRIPTS_DIR/logs/firecracker.log"
-
-# Debug echo for paths
-echo "SOCK path: $SOCK"
-echo "LOG path: $LOG"
-
-# Poll for API socket
-for i in {1..30}; do
-    if [ -S "$SOCK" ]; then
-        break
-    fi
-    sleep 1
-done
-if [ ! -S "$SOCK" ]; then
-    grep "error" "$LOG" && error_exit "Firecracker failed: $(tail -n 5 $LOG)"
-    error_exit "API socket timeout: $SOCK not created"
-fi
-
-# Test socket with ls -l
-ls -l "$SOCK" || error_exit "Failed to list socket: $SOCK"
-
-# Check log for specific errors before proceeding
-grep -q "bind failed" "$LOG" && error_exit "Socket bind error"
-
-SERIAL_SOCK="$SCRIPTS_DIR/serial.sock"
-
-# Boot the VM using curl
-RESPONSE=$(curl --unix-socket "$API_SOCKET" -s -X POST 'http://localhost/vm.boot')
-if echo "$RESPONSE" | grep -q "fault_message"; then
-    error_exit "Failed to boot VM: $RESPONSE"
-fi
-
-# Check for interactive mode: if "repl" or host has TTY
-if [[ "${POSITIONAL[0]}" == "repl" ]] || [[ "$TTY_FLAG" == "-it" ]]; then
-    # Interactive attachment with socat (escape with CTRL+])
-    socat -,raw,echo=0,escape=0x1f FILE:"$SCRIPTS_DIR/tmp_pty",raw || error_exit "Serial attachment failed"
-
-    # After detach, send poweroff using expect
-    expect <<EOF || error_exit "Failed to poweroff VM after detach"
-    set timeout 60
-    spawn socat - UNIX-CONNECT:"$SERIAL_SOCK"
-    expect "root@vm:~#"
-    send "poweroff\r"
-    expect eof
-    exit 0
-EOF
+# Check for interactive mode
+if [[ "${POSITIONAL[0]}" == "repl" ]] || [ -t 0 ] && [ -t 1 ]; then
+    interact_vm
 else
-    # Non-interactive mode
-    NON_INTERACTIVE=true
-    if [ "$SIMPLIFIED_MODE" = "true" ]; then
-        COMMAND="goose --config /mnt/share/config.yaml ${POSITIONAL[*]}"
-    else
-        COMMAND="podman exec -e NON_INTERACTIVE=true goose goose --config /mnt/share/config.yaml ${POSITIONAL[*]}"
-    fi
-
-    [ -e "$SCRIPTS_DIR/tmp_pty" ] || error_exit "PTY link failed"
-
-    echo "$COMMAND\necho DONE\npoweroff\n" > "$SCRIPTS_DIR/tmp_pty"
-
-    # Tail serial log until DONE
-    tail -f "$SCRIPTS_DIR/logs/vm_serial.log" | sed '/DONE/q' | grep -v "root@vm:~#"
-
+    run_guest_command
 fi
-
-# Shutdown the VM using curl
-RESPONSE=$(curl --unix-socket "$API_SOCKET" -s -X POST 'http://localhost/vm.shutdown')
-if echo "$RESPONSE" | grep -q "fault_message"; then
-    error_exit "Failed to shutdown VM: $RESPONSE"
-fi
-
-# Note: Config syncing uses virtiofs; mount host config to VM, then to containers rootlessly.
