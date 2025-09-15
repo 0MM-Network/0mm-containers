@@ -163,10 +163,12 @@ ethernets:
 EOF
 
     # Copy to image (adapt from create-cloud-init.sh)
-    mcopy -oi "$CLOUD_INIT_IMG" user-data ::
-    mcopy -oi "$CLOUD_INIT_IMG" meta-data ::
-    mcopy -oi "$CLOUD_INIT_IMG" network-config ::
-
+    for file in user-data meta-data network-config; do
+        if ! mcopy -oi "$CLOUD_INIT_IMG" "$file" ::; then
+            echo "Error: Failed to copy $file to cloud-init image" >&2
+            exit 1
+        fi
+    done
     rm user-data meta-data network-config
 }
 
