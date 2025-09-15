@@ -174,8 +174,7 @@ EOF
 setup_virtiofs() {
     mkdir -p "$SHARED_DIR"
     cp "$CONFIG" "$SHARED_DIR/config.yaml"
-    ulimit -n 1000000
-    /usr/libexec/virtiofsd --pid-file /tmp/virtiofsd.pid.$$ --sandbox none --socket-path=virtiofs.sock --shared-dir "$SHARED_DIR" --cache=never --thread-pool-size=4 &
+    sudo bash -c "ulimit -n 1000000 && /usr/libexec/virtiofsd --pid-file /tmp/virtiofsd.pid.$$ --sandbox none --socket-path=virtiofs.sock --shared-dir \"$SHARED_DIR\" --cache=never --thread-pool-size=4 &"
     VIRTIOFSD_PID=$!
 }
 
