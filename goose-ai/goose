@@ -179,6 +179,19 @@ setup_virtiofs() {
     cp "$CONFIG" "$SHARED_DIR/config.yaml"
     sudo bash -c "ulimit -n 1000000 && /usr/libexec/virtiofsd --sandbox none --socket-path=virtiofs.sock --shared-dir \"$SHARED_DIR\" --cache=never --thread-pool-size=4 &"
     VIRTIOFSD_PID=$!
+
+    # Poll for virtiofs.sock
+    for i in {1..30}; do
+        if [ -S "virtiofs.sock" ]; then
+            break
+        fi
+        sleep 1
+    done
+    if [ ! -S "virtiofs.sock" ]; then
+        echo "Error: virtiofs.sock timeout" >&2
+        exit 1
+    fi
+    sudo chmod 666 virtiofs.sock
 }
 
 # Function to launch the VM (with --firmware, --disk, --fs, --net using MACVTAP bridge from macvtap-bridge.md)
@@ -371,7 +384,7 @@ launch_vm
 trap 'curl --unix-socket "$API_SOCK" -X PUT http://localhost/vm.shutdown; kill $VM_PID $VIRTIOFSD_PID; rm -f "$CLOUD_INIT_IMG" virtiofs.sock "$API_SOCK" "$SERIAL_SOCK"; sudo ip link delete macvtap0; sync_back_config' EXIT ERR INT TERM
 
 # Check for interactive mode
-if $INTERACTIVE || [[ "${POSITIONAL[0]}" == "repl" ]] || [ -t 0 ] && [ -t 1 ]; then
+if $INTERACTIVE || [[ "${POSITIONAL[0]}" == "repl" ]] || ([ ${#POSITIONAL[@]} -eq 0 ] && [ -t 0 ] && [ -t 1 ]); then
     interact_vm
 else
     run_guest_command
