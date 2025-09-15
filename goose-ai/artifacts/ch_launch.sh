@@ -77,7 +77,11 @@ MEMORY_ARGS="--memory size=1024M,shared=on"
 
 # Start Cloud Hypervisor with HTTP API, firmware, and disks (no kernel used)
 # Noting CLI for launch efficiency and curl for runtime control, referencing API.md.
-$CH_BIN --api-socket "$API_SOCKET" --firmware "$FIRMWARE_PATH" $MEMORY_ARGS --disk path="$IMAGE_PATH" path="$CLOUD_INIT_IMG" --fs tag=host_share,socket="$VFS_SOCKET",num_queues=1,queue_size=512 --net "fd=3,mac=$MAC" &
+if [ -n "$FALLBACK_TAP" ]; then
+    $CH_BIN --api-socket "$API_SOCKET" --firmware "$FIRMWARE_PATH" $MEMORY_ARGS --disk path="$IMAGE_PATH" path="$CLOUD_INIT_IMG" --fs tag=host_share,socket="$VFS_SOCKET",num_queues=1,queue_size=512 --net "tap=$FALLBACK_TAP,mac=$MAC" &
+else
+    $CH_BIN --api-socket "$API_SOCKET" --firmware "$FIRMWARE_PATH" $MEMORY_ARGS --disk path="$IMAGE_PATH" path="$CLOUD_INIT_IMG" --fs tag=host_share,socket="$VFS_SOCKET",num_queues=1,queue_size=512 --net "fd=3,mac=$MAC" &
+fi
 CH_PID=$!
 
 # Poll loop for API readiness (enhanced to check vmm.ping)
