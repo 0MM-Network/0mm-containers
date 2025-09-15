@@ -216,6 +216,18 @@ launch_vm() {
 
     # Boot the VM using curl
     curl --unix-socket "$API_SOCK" -X PUT http://localhost/vm.boot
+
+    # Poll for serial socket
+    for i in {1..60}; do
+        if [ -S "$SERIAL_SOCK" ]; then
+            break
+        fi
+        sleep 1
+    done
+    if [ ! -S "$SERIAL_SOCK" ]; then
+        echo "Error: Serial socket timeout" >&2
+        exit 1
+    fi
 }
 
 # Function for interactive VM mode
