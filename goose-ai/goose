@@ -176,13 +176,17 @@ EOF
 setup_virtiofs() {
     mkdir -p "$SHARED_DIR"
     cp "$CONFIG" "$SHARED_DIR/config.yaml"
-    sudo bash -c "ulimit -n 1000000 && /usr/libexec/virtiofsd --pid-file /tmp/virtiofsd.pid.$$ --sandbox none --socket-path=virtiofs.sock --shared-dir \"$SHARED_DIR\" --cache=never --thread-pool-size=4 &"
+    sudo bash -c "ulimit -n 1000000 && /usr/libexec/virtiofsd --sandbox none --socket-path=virtiofs.sock --shared-dir \"$SHARED_DIR\" --cache=never --thread-pool-size=4 &"
     VIRTIOFSD_PID=$!
 }
 
 # Function to launch the VM (with --firmware, --disk, --fs, --net using MACVTAP bridge from macvtap-bridge.md)
 launch_vm() {
     # Setup MACVTAP bridge (from macvtap-bridge.md)
+    # Clean up existing macvtap0 if it exists
+    if ip link show macvtap0 > /dev/null 2>&1; then
+        sudo ip link delete macvtap0
+    fi
     sudo ip link add link "$HOST_IFACE" name macvtap0 type macvtap mode bridge
     sudo ip link set macvtap0 address "$MAC" up
     TAP_FD=$(cat /sys/class/net/macvtap0/ifindex)
