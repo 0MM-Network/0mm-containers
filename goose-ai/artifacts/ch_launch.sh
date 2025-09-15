@@ -70,9 +70,14 @@ fi
 /usr/libexec/virtiofsd --socket-path="$VFS_SOCKET" --shared-dir ./ --thread-pool-size=4 --cache=never &
 VIRTIOFSD_PID=$!
 
+# Check if using --fs and ensure shared=on is set
+# This enables vhost-user for virtiofs and references quick-start/fs.md.
+echo "Using --fs, enabling shared memory"
+MEMORY_ARGS="--memory size=1024M,shared=on"
+
 # Start Cloud Hypervisor with HTTP API, firmware, and disks (no kernel used)
 # Noting CLI for launch efficiency and curl for runtime control, referencing API.md.
-$CH_BIN --api-socket "$API_SOCKET" --firmware "$FIRMWARE_PATH" --disk path="$IMAGE_PATH" path="$CLOUD_INIT_IMG" --fs tag=host_share,socket="$VFS_SOCKET",num_queues=1,queue_size=512 --net "fd=3,mac=$MAC" &
+$CH_BIN --api-socket "$API_SOCKET" --firmware "$FIRMWARE_PATH" $MEMORY_ARGS --disk path="$IMAGE_PATH" path="$CLOUD_INIT_IMG" --fs tag=host_share,socket="$VFS_SOCKET",num_queues=1,queue_size=512 --net "fd=3,mac=$MAC" &
 CH_PID=$!
 
 # Poll loop for API readiness (enhanced to check vmm.ping)
