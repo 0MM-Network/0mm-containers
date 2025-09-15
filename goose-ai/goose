@@ -15,7 +15,7 @@ SERIAL_SOCK="./serial.sock"
 API_SOCK="./api.sock"
 CLOUD_INIT_IMG="cloud-init.img"
 SIMPLIFIED_MODE=${SIMPLIFIED_MODE:-true}
-HOST_IFACE="eno1"  # Adjust if needed
+HOST_IFACE=$(ip route get 8.8.8.8 | awk -- '{printf $5}' | head -n1)  # Detect default interface
 MAC="12:34:56:78:90:ab"  # Default MAC from prompt
 VERBOSE=false
 LOG_FILE=""
@@ -51,6 +51,12 @@ check_deps() {
     # Check image compatibility (simple filename check for Noble)
     if [[ "$IMAGE_URL" != *"noble"* ]]; then
         echo "Warning: Image URL does not appear to be Ubuntu Noble; compatibility not guaranteed." >&2
+    fi
+
+    # Check if detected HOST_IFACE exists
+    if [ -z "$HOST_IFACE" ] || ! ip link show "$HOST_IFACE" > /dev/null 2>&1; then
+        echo "Error: Unable to detect a valid network interface. Please set HOST_IFACE manually." >&2
+        exit 1
     fi
 }
 
