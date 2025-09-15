@@ -195,7 +195,7 @@ launch_vm() {
         --disk path=$IMAGE_FILE path=$CLOUD_INIT_IMG \
         --fs tag=host_share,socket=virtiofs.sock,num_queues=1,queue_size=512 \
         --net fd=3,mac=$MAC 3<>$TAP_DEVICE \
-        --serial tty \
+        --serial socket="$SERIAL_SOCK" \
         --console off \
         --api-socket "$API_SOCK" &
     VM_PID=$!
