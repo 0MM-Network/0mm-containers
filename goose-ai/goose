@@ -176,6 +176,12 @@ grep -q "bind failed" "$LOG" && error_exit "Socket bind error"
 
 SERIAL_SOCK="$SCRIPTS_DIR/serial.sock"
 
+# Boot the VM using curl
+RESPONSE=$(curl --unix-socket "$API_SOCKET" -s -X POST 'http://localhost/vm.boot')
+if echo "$RESPONSE" | grep -q "fault_message"; then
+    error_exit "Failed to boot VM: $RESPONSE"
+fi
+
 # Check for interactive mode: if "repl" or host has TTY
 if [[ "${POSITIONAL[0]}" == "repl" ]] || [[ "$TTY_FLAG" == "-it" ]]; then
     # Interactive attachment with socat (escape with CTRL+])
@@ -206,6 +212,12 @@ else
     # Tail serial log until DONE
     tail -f "$SCRIPTS_DIR/logs/vm_serial.log" | sed '/DONE/q' | grep -v "root@vm:~#"
 
+fi
+
+# Shutdown the VM using curl
+RESPONSE=$(curl --unix-socket "$API_SOCKET" -s -X POST 'http://localhost/vm.shutdown')
+if echo "$RESPONSE" | grep -q "fault_message"; then
+    error_exit "Failed to shutdown VM: $RESPONSE"
 fi
 
 # Note: Config syncing uses virtiofs; mount host config to VM, then to containers rootlessly.

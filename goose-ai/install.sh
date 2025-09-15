@@ -36,6 +36,11 @@ if [ ! -f /usr/share/cloud-hypervisor/hypervisor-fw ]; then
     error_exit "Firmware missing"
 fi
 
+# Dependency install hint for virtiofsd
+if ! command -v virtiofsd &> /dev/null; then
+    echo "Install virtiofsd"
+fi
+
 SCRIPTS_DIR="$PWD"
 GOOSE_IMAGE="localhost/goose:latest"
 
@@ -267,85 +272,72 @@ fi
 # Trap for TAP cleanup on exit (requires sudo)
 trap 'sync_config "volume_to_host"; echo "Synced config on exit"; sudo ip tuntap del dev "$TAP_DEV" mode tap' EXIT ERR INT TERM
 
-# Integrate Firecracker launch instead of direct podman run
-# Launch VM which runs Goose and Serena inside
-bash "$SCRIPTS_DIR/artifacts/firecracker_launch.sh" || error_exit "Failed to launch Firecracker VM."
+# Set simplified mode (can be overridden via env var)
+SIMPLIFIED_MODE=${SIMPLIFIED_MODE:-true}
+export SIMPLIFIED_MODE
 
-# For REPL access, connect to VM serial (using vm_utils.sh)
-if [[ "$1" == "repl" ]]; then
-    bash "$SCRIPTS_DIR/artifacts/vm_utils.sh" attach_serial
+# Integrate Cloud Hypervisor launch
+# Launch VM which runs Goose and Serena inside
+bash "$SCRIPTS_DIR/artifacts/ch_launch.sh" || error_exit "Failed to launch Cloud Hypervisor VM."
+
+# Add robustness checks after launch
+SOCK="$SCRIPTS_DIR/sockets/firecracker.sock"
+LOG="$SCRIPTS_DIR/logs/firecracker.log"
+
+# Debug echo for paths
+echo "SOCK path: $SOCK"
+echo "LOG path: $LOG"
+
+# Poll for API socket
+for i in {1..30}; do
+    if [ -S "$SOCK" ]; then
+        break
+    fi
+    sleep 1
+done
+if [ ! -S "$SOCK" ]; then
+    grep "error" "$LOG" && error_exit "Firecracker failed: $(tail -n 5 $LOG)"
+    error_exit "API socket timeout: $SOCK not created"
+fi
+
+# Test socket with ls -l
+ls -l "$SOCK" || error_exit "Failed to list socket: $SOCK"
+
+# Check log for specific errors before proceeding
+grep -q "bind failed" "$LOG" && error_exit "Socket bind error"
+
+SERIAL_SOCK="$SCRIPTS_DIR/serial.sock"
+
+# Check for interactive mode: if "repl" or host has TTY
+if [[ "${POSITIONAL[0]}" == "repl" ]] || [[ "$TTY_FLAG" == "-it" ]]; then
+    # Interactive attachment with socat (escape with CTRL+])
+    socat -,raw,echo=0,escape=0x1f FILE:"$SCRIPTS_DIR/tmp_pty",raw || error_exit "Serial attachment failed"
+
+    # After detach, send poweroff using expect
+    expect <<EOF || error_exit "Failed to poweroff VM after detach"
+    set timeout 60
+    spawn socat - UNIX-CONNECT:"$SERIAL_SOCK"
+    expect "root@vm:~#"
+    send "poweroff\r"
+    expect eof
+    exit 0
+EOF
+else
+    # Non-interactive mode
+    NON_INTERACTIVE=true
+    if [ "$SIMPLIFIED_MODE" = "true" ]; then
+        COMMAND="goose --config /mnt/share/config.yaml ${POSITIONAL[*]}"
+    else
+        COMMAND="podman exec -e NON_INTERACTIVE=true goose goose --config /mnt/share/config.yaml ${POSITIONAL[*]}"
+    fi
+
+    [ -e "$SCRIPTS_DIR/tmp_pty" ] || error_exit "PTY link failed"
+
+    echo "$COMMAND\necho DONE\npoweroff\n" > "$SCRIPTS_DIR/tmp_pty"
+
+    # Tail serial log until DONE
+    tail -f "$SCRIPTS_DIR/logs/vm_serial.log" | sed '/DONE/q' | grep -v "root@vm:~#"
+
 fi
 
 # Note: Config syncing uses virtiofs; mount host config to VM, then to containers rootlessly.
-
-EOF
-chmod +x "$SCRIPTS_DIR/goose"
-echo "Created wrapper script for goose"
-
-# Ensure utility container for install.sh operations (e.g., tests will use goose which handles it, but create here for consistency)
-UTILITY_CONTAINER="goose-utility"
-if ! podman ps -a --filter name="$UTILITY_CONTAINER" --format "{{.Names}}" | grep -q "$UTILITY_CONTAINER"; then
-    echo "Creating persistent utility container for config syncing during installation..."
-    podman run -d --name "$UTILITY_CONTAINER" -v goose-config:/data busybox sleep infinity || error_exit "Failed to create utility container."
-fi
-
-# Test commands
-echo "Testing goose commands..."
-echo "============================"
-SUCCESS_COUNT=0
-FAILED_COMMANDS=()
-GOOSE_TESTS=(
-    "--version"
-    "--help"
-    "info"
-)
-GOOSE_TESTS=()
-
-# Create temp config for smoke tests since --config is mandatory; this is a test-only workaround for security.
-TEMP_CONFIG=$(mktemp)
-if [ $? -ne 0 ] || ! echo "provider: dummy" > "$TEMP_CONFIG" || [ ! -f "$TEMP_CONFIG" ]; then
-    echo "Failed to create temp config for tests"
-    SUCCESS_COUNT=0
-else
-    for test_cmd in "${GOOSE_TESTS[@]}"; do
-        echo -n "Testing ./goose --config $TEMP_CONFIG $test_cmd... "
-        if "$SCRIPTS_DIR/goose" --config "$TEMP_CONFIG" $test_cmd &>/dev/null; then
-            echo "✅ Success"
-            SUCCESS_COUNT=$((SUCCESS_COUNT + 1))
-        else
-            echo "❌ Failed"
-            FAILED_COMMANDS+=("$SCRIPTS_DIR/goose --config $TEMP_CONFIG $test_cmd")
-        fi
-    done
-    rm -f "$TEMP_CONFIG"
-fi
-
-# Print summary
-echo "============================"
-echo "Test summary: $SUCCESS_COUNT/${#GOOSE_TESTS[@]} commands available"
-
-if [ ${#FAILED_COMMANDS[@]} -eq 0 ]; then
-    echo "All tested Goose commands are available!"
-else
-    echo "Failed commands:"
-    for cmd in "${FAILED_COMMANDS[@]}"; do
-        echo "- $cmd"
-    done
-    echo
-    echo "Troubleshooting tips:"
-    echo "1. Check if the container image was built successfully"
-    echo "2. Try running 'podman run --rm localhost/goose goose --version'"
-    echo "3. Check permissions on the wrapper script"
-fi
-
-echo
-echo "Goose CLI container solution installed successfully."
-echo "You can now use Goose CLI commands directly from this folder."
-echo
-echo "Examples:"
-echo "  ./goose --help            # Show help"
-echo "  ./goose configure         # Configure Goose"
-echo "  ./goose session list      # List sessions"
-echo "  ./goose --version         # Show version"
-echo "Note: Ensure API keys are set in your environment, e.g., export GOOGLE_API_KEY=your_key"
-exit 0

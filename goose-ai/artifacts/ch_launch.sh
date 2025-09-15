@@ -31,6 +31,11 @@ CLOUD_INIT_IMG="$BASE_DIR/cloud-init.img"
 FIRMWARE_PATH="/usr/share/cloud-hypervisor/hypervisor-fw"
 VFS_SOCKET="/tmp/vfs-$BASHPID.sock"
 
+# Check for virtiofsd
+if ! command -v virtiofsd &> /dev/null; then
+    error_exit "Install virtiofsd (from Cloud Hypervisor source or package)"
+fi
+
 # Download and convert noble Ubuntu cloud image if not present
 if [ ! -f "$IMAGE_PATH" ]; then
     wget https://cloud-images.ubuntu.com/noble/current/noble-server-cloudimg-amd64.img -O "$BASE_DIR/noble-server-cloudimg-amd64.img" || error_exit "Failed to download Ubuntu image."
@@ -56,12 +61,13 @@ virtiofsd --socket-path="$VFS_SOCKET" --shared-dir ./ --thread-pool-size=4 --cac
 VIRTIOFSD_PID=$!
 
 # Start Cloud Hypervisor with HTTP API, firmware, and disks (no kernel used)
-$CH_BIN --http-api yes --api-socket "$API_SOCKET" --firmware "$FIRMWARE_PATH" --disk path="$IMAGE_PATH" path="$CLOUD_INIT_IMG" --fs tag=host_share,socket="$VFS_SOCKET",num_queues=1,queue_size=512 --net "fd=3,mac=$MAC" &
+# Noting CLI for launch efficiency and curl for runtime control, referencing API.md.
+$CH_BIN --api-socket "$API_SOCKET" --firmware "$FIRMWARE_PATH" --disk path="$IMAGE_PATH" path="$CLOUD_INIT_IMG" --fs tag=host_share,socket="$VFS_SOCKET",num_queues=1,queue_size=512 --net "fd=3,mac=$MAC" &
 CH_PID=$!
 
-# Poll loop for API readiness
+# Poll loop for API readiness (enhanced to check vmm.ping)
 for i in {1..60}; do
-    if [ -S "$API_SOCKET" ]; then
+    if [ -S "$API_SOCKET" ] && curl --unix-socket "$API_SOCKET" -s http://localhost/vmm.ping; then
         break
     fi
     sleep 1
