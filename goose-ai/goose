@@ -7,8 +7,8 @@ set -x
 # Define defaults
 VM_MEMORY="1024M"
 VM_CPUS=4
-IMAGE_URL="https://cloud-images.ubuntu.com/noble/current/noble-server-cloudimg-amd64.img"
-IMAGE_FILE="noble-server-cloudimg-amd64.raw"
+IMAGE_URL="https://cloud-images.ubuntu.com/focal/current/focal-server-cloudimg-amd64.img"
+IMAGE_FILE="focal-server-cloudimg-amd64.raw"
 SHARED_DIR="./shared"
 CONFIG_MOUNT="/mnt/share"
 GOOSE_CONFIG="$CONFIG_MOUNT/config.yaml"
@@ -51,9 +51,9 @@ check_deps() {
         exit 1
     fi
 
-    # Check image compatibility (simple filename check for Noble)
-    if [[ "$IMAGE_URL" != *"noble"* ]]; then
-        echo "Warning: Image URL does not appear to be Ubuntu Noble; compatibility not guaranteed." >&2
+    # Check image compatibility (simple filename check for focal)
+    if [[ "$IMAGE_URL" != *"focal"* ]]; then
+        echo "Warning: Image URL does not appear to be Ubuntu focal; compatibility not guaranteed." >&2
     fi
 
     # Check if detected HOST_IFACE exists
@@ -66,9 +66,9 @@ check_deps() {
 # Function to download and prepare the cloud image
 download_image() {
     if [ ! -f "$IMAGE_FILE" ]; then
-        wget "$IMAGE_URL" -O noble-server-cloudimg-amd64.img
-        qemu-img convert -f qcow2 -O raw noble-server-cloudimg-amd64.img "$IMAGE_FILE"
-        rm noble-server-cloudimg-amd64.img
+        wget "$IMAGE_URL" -O focal-server-cloudimg-amd64.img
+        qemu-img convert -p -f qcow2 -O raw focal-server-cloudimg-amd64.img "$IMAGE_FILE"
+        rm focal-server-cloudimg-amd64.img
     fi
 }
 
@@ -103,6 +103,7 @@ packages:
 users:
   - default
   - name: goose
+    sudo: ALL=(ALL) NOPASSWD:ALL
     ssh-authorized-keys:
       - $SSH_KEY
     shell: /bin/bash
@@ -165,7 +166,7 @@ EOF
 
     # Copy to image (adapt from create-cloud-init.sh)
     for file in user-data meta-data network-config; do
-        if ! mcopy -oi "$CLOUD_INIT_IMG" "$file" ::; then
+        if ! mcopy -oi "$CLOUD_INIT_IMG" -s "$file" ::; then
             echo "Error: Failed to copy $file to cloud-init image" >&2
             exit 1
         fi
