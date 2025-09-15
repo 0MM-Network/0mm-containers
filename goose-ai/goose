@@ -2,7 +2,6 @@
 
 # Error handling
 set -e
-set -v  # Verbose logging
 
 # Define defaults
 VM_MEMORY="1024M"
@@ -18,18 +17,22 @@ CLOUD_INIT_IMG="cloud-init.img"
 SIMPLIFIED_MODE=${SIMPLIFIED_MODE:-true}
 HOST_IFACE="eno1"  # Adjust if needed
 MAC="12:34:56:78:90:ab"  # Default MAC from prompt
+VERBOSE=false
+LOG_FILE=""
 
 # Function to display help
 show_help() {
-    echo "Usage: $0 --config <path/to/config.yaml> [subcommand] [--interactive]"
+    echo "Usage: $0 --config <path/to/config.yaml> [subcommand] [--interactive] [-v] [--log <file>]"
     echo "  --config <path>     Mandatory: Path to config.yaml"
     echo "  subcommand          Optional: Goose subcommand (default: 'info')"
     echo "  --interactive       Optional: Force interactive REPL mode"
+    echo "  -v                  Enable verbose mode"
+    echo "  --log <file>        Log output to specified file"
     echo "  --help              Show this help message"
     exit 0
 }
 
-# Function to check dependencies
+# Function to check dependencies and portability
 check_deps() {
     local deps=("cloud-hypervisor" "ch-remote" "virtiofsd" "socat" "mkdosfs" "mcopy" "qemu-img" "curl" "expect" "ip" "wget" "md5sum")
     for dep in "${deps[@]}"; do
@@ -38,6 +41,17 @@ check_deps() {
             exit 1
         fi
     done
+
+    # Check architecture (assume x86-64)
+    if [ "$(uname -m)" != "x86_64" ]; then
+        echo "Error: This script assumes x86-64 architecture." >&2
+        exit 1
+    fi
+
+    # Check image compatibility (simple filename check for Noble)
+    if [[ "$IMAGE_URL" != *"noble"* ]]; then
+        echo "Warning: Image URL does not appear to be Ubuntu Noble; compatibility not guaranteed." >&2
+    fi
 }
 
 # Function to download and prepare the cloud image
@@ -54,7 +68,16 @@ create_cloud_init() {
     rm -f "$CLOUD_INIT_IMG"
     mkdosfs -n CIDATA -C "$CLOUD_INIT_IMG" 8192
 
+    # Get user's public SSH key (assume id_rsa.pub; fallback to empty)
+    SSH_KEY=""
+    if [ -f "$HOME/.ssh/id_rsa.pub" ]; then
+        SSH_KEY=$(cat "$HOME/.ssh/id_rsa.pub")
+    elif [ -f "$HOME/.ssh/id_ed25519.pub" ]; then
+        SSH_KEY=$(cat "$HOME/.ssh/id_ed25519.pub")
+    fi
+
     # User-data with Podman rootless setup, users: goose, mounts, podman pull/run, and GOOSE_CONFIG in .profile
+    # Security: Use SSH keys instead of passwords
     cat > user-data <<EOF
 #cloud-config
 
@@ -71,8 +94,8 @@ packages:
 users:
   - default
   - name: goose
-    plain_text_passwd: goose
-    lock_passwd: false
+    ssh-authorized-keys:
+      - $SSH_KEY
     shell: /bin/bash
 
 write_files:
@@ -108,7 +131,6 @@ runcmd:
   - mkdir -p /home/goose/src
   - mount -t virtiofs host_share /mnt/share
   - chown -R goose:goose /home/goose
-  - echo 'goose:goose' | chpasswd
   - systemctl start ssh
   - su - goose -c "systemctl --user daemon-reload"
   - su - goose -c "systemctl --user start podman.socket"
@@ -165,7 +187,7 @@ launch_vm() {
         --disk path=$IMAGE_FILE path=$CLOUD_INIT_IMG \
         --fs tag=host_share,socket=virtiofs.sock,num_queues=1,queue_size=512 \
         --net fd=3,mac=$MAC 3<>$TAP_DEVICE \
-        --serial unix=$SERIAL_SOCK \
+        --serial tty \
         --console off \
         --api-socket "$API_SOCK" &
     VM_PID=$!
@@ -235,9 +257,6 @@ sync_back_config() {
 
 # Main logic
 
-# Check deps
-check_deps
-
 # Parse arguments
 CONFIG=""
 INTERACTIVE=false
@@ -257,6 +276,14 @@ while [[ $# -gt 0 ]]; do
             INTERACTIVE=true
             shift
             ;;
+        -v)
+            VERBOSE=true
+            shift
+            ;;
+        --log)
+            LOG_FILE="$2"
+            shift 2
+            ;;
         --help)
             show_help
             ;;
@@ -267,6 +294,16 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 set -- "${POSITIONAL[@]}"
+
+# Enable verbose if -v
+if $VERBOSE; then
+    set -x
+fi
+
+# Redirect to log file if specified
+if [ -n "$LOG_FILE" ]; then
+    exec > >(tee -a "$LOG_FILE") 2>&1
+fi
 
 # Require --config
 if [ -z "$CONFIG" ]; then
@@ -279,6 +316,9 @@ if [ ! -f "$CONFIG" ]; then
     echo "Error: Specified config file $CONFIG not found." >&2
     exit 1
 fi
+
+# Check deps and portability
+check_deps
 
 # Download image
 download_image
