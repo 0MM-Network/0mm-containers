@@ -3,12 +3,6 @@
 # Error handling
 set -e
 
-# Require root privileges
-if [ "$(id -u)" != "0" ]; then
-    echo "This script requires root privileges. Please run with sudo." >&2
-    exit 1
-fi
-
 # Define defaults
 VM_MEMORY="1024M"
 VM_CPUS=4
@@ -188,11 +182,11 @@ setup_virtiofs() {
 # Function to launch the VM (with --firmware, --disk, --fs, --net using MACVTAP bridge from macvtap-bridge.md)
 launch_vm() {
     # Setup MACVTAP bridge (from macvtap-bridge.md)
-    ip link add link "$HOST_IFACE" name macvtap0 type macvtap mode bridge
-    ip link set macvtap0 address "$MAC" up
+    sudo ip link add link "$HOST_IFACE" name macvtap0 type macvtap mode bridge
+    sudo ip link set macvtap0 address "$MAC" up
     TAP_FD=$(cat /sys/class/net/macvtap0/ifindex)
     TAP_DEVICE="/dev/tap$TAP_FD"
-    chown "$UID:$UID" "$TAP_DEVICE"
+    sudo chown "$UID:$UID" "$TAP_DEVICE"
 
     # Launch Cloud Hypervisor
     cloud-hypervisor \
@@ -351,7 +345,7 @@ setup_virtiofs
 launch_vm
 
 # Trap for cleanup and sync
-trap 'curl --unix-socket "$API_SOCK" -X PUT http://localhost/vm.shutdown; kill $VM_PID $VIRTIOFSD_PID; rm -f "$CLOUD_INIT_IMG" virtiofs.sock "$API_SOCK" "$SERIAL_SOCK"; ip link delete macvtap0; sync_back_config' EXIT ERR INT TERM
+trap 'curl --unix-socket "$API_SOCK" -X PUT http://localhost/vm.shutdown; kill $VM_PID $VIRTIOFSD_PID; rm -f "$CLOUD_INIT_IMG" virtiofs.sock "$API_SOCK" "$SERIAL_SOCK"; sudo ip link delete macvtap0; sync_back_config' EXIT ERR INT TERM
 
 # Check for interactive mode
 if $INTERACTIVE || [[ "${POSITIONAL[0]}" == "repl" ]] || [ -t 0 ] && [ -t 1 ]; then
