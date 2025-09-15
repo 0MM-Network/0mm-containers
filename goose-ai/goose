@@ -19,9 +19,19 @@ SIMPLIFIED_MODE=${SIMPLIFIED_MODE:-true}
 HOST_IFACE="eno1"  # Adjust if needed
 MAC="12:34:56:78:90:ab"  # Default MAC from prompt
 
+# Function to display help
+show_help() {
+    echo "Usage: $0 --config <path/to/config.yaml> [subcommand] [--interactive]"
+    echo "  --config <path>     Mandatory: Path to config.yaml"
+    echo "  subcommand          Optional: Goose subcommand (default: 'info')"
+    echo "  --interactive       Optional: Force interactive REPL mode"
+    echo "  --help              Show this help message"
+    exit 0
+}
+
 # Function to check dependencies
 check_deps() {
-    local deps=("cloud-hypervisor" "ch-remote" "virtiofsd" "socat" "mkdosfs" "mcopy" "qemu-img" "curl" "expect" "ip" "wget")
+    local deps=("cloud-hypervisor" "ch-remote" "virtiofsd" "socat" "mkdosfs" "mcopy" "qemu-img" "curl" "expect" "ip" "wget" "md5sum")
     for dep in "${deps[@]}"; do
         if ! command -v "$dep" &> /dev/null; then
             echo "Error: $dep is required but not installed." >&2
@@ -44,7 +54,7 @@ create_cloud_init() {
     rm -f "$CLOUD_INIT_IMG"
     mkdosfs -n CIDATA -C "$CLOUD_INIT_IMG" 8192
 
-    # User-data with Podman rootless setup, users: goose, mounts, podman pull/run
+    # User-data with Podman rootless setup, users: goose, mounts, podman pull/run, and GOOSE_CONFIG in .profile
     cat > user-data <<EOF
 #cloud-config
 
@@ -87,6 +97,10 @@ write_files:
     owner: goose
     group: goose
     permissions: '0644'
+  - path: /home/goose/.profile
+    append: true
+    content: |
+      export GOOSE_CONFIG=/mnt/share/config.yaml
 
 runcmd:
   - SIMPLIFIED_MODE=$(grep -o "simplified_mode=true" /proc/cmdline || echo false)
@@ -129,6 +143,7 @@ EOF
 # Function to setup virtiofs for shared directory (per fs.md)
 setup_virtiofs() {
     mkdir -p "$SHARED_DIR"
+    cp "$CONFIG" "$SHARED_DIR/config.yaml"
     virtiofsd --socket-path=virtiofs.sock --shared-dir "$SHARED_DIR" --cache=never --thread-pool-size=4 &
     VIRTIOFSD_PID=$!
 }
@@ -150,7 +165,7 @@ launch_vm() {
         --disk path=$IMAGE_FILE path=$CLOUD_INIT_IMG \
         --fs tag=host_share,socket=virtiofs.sock,num_queues=1,queue_size=512 \
         --net fd=3,mac=$MAC 3<>$TAP_DEVICE \
-        --serial tty \
+        --serial unix=$SERIAL_SOCK \
         --console off \
         --api-socket "$API_SOCK" &
     VM_PID=$!
@@ -187,7 +202,8 @@ EOF
 
 # Function to run command in guest (send 'goose' sub-command via serial or expect)
 run_guest_command() {
-    local command="GOOSE_CONFIG=$GOOSE_CONFIG goose ${POSITIONAL[*]}"
+    local subcommand="${POSITIONAL[*]:-info}"
+    local command="GOOSE_CONFIG=$GOOSE_CONFIG goose $subcommand"
     if [ "$SIMPLIFIED_MODE" = "true" ]; then
         command="$command"  # Direct
     else
@@ -207,12 +223,24 @@ run_guest_command() {
 EOF
 }
 
+# Function to sync back config if modified
+sync_back_config() {
+    original_md5=$(md5sum "$CONFIG" | cut -d' ' -f1)
+    shared_md5=$(md5sum "$SHARED_DIR/config.yaml" | cut -d' ' -f1)
+    if [ "$original_md5" != "$shared_md5" ]; then
+        cp "$SHARED_DIR/config.yaml" "$CONFIG"
+        echo "Config changes synced back to $CONFIG"
+    fi
+}
+
 # Main logic
 
 # Check deps
 check_deps
 
 # Parse arguments
+CONFIG=""
+INTERACTIVE=false
 declare -a POSITIONAL=()
 while [[ $# -gt 0 ]]; do
     key="$1"
@@ -224,6 +252,13 @@ while [[ $# -gt 0 ]]; do
         --config)
             CONFIG="$2"
             shift 2
+            ;;
+        --interactive)
+            INTERACTIVE=true
+            shift
+            ;;
+        --help)
+            show_help
             ;;
         *)
             POSITIONAL+=("$1")
@@ -245,11 +280,6 @@ if [ ! -f "$CONFIG" ]; then
     exit 1
 fi
 
-# Copy config and Containerfile to shared dir
-mkdir -p "$SHARED_DIR"
-cp "$CONFIG" "$SHARED_DIR/config.yaml"
-cp goose-ai/Containerfile "$SHARED_DIR/Containerfile"
-
 # Download image
 download_image
 
@@ -262,11 +292,11 @@ setup_virtiofs
 # Launch VM
 launch_vm
 
-# Trap for cleanup
-trap 'ch-remote --api-socket "$API_SOCK" shutdown; kill $VM_PID $VIRTIOFSD_PID; rm -f "$CLOUD_INIT_IMG" virtiofs.sock "$API_SOCK" "$SERIAL_SOCK"; sudo ip link delete macvtap0' EXIT ERR INT TERM
+# Trap for cleanup and sync
+trap 'ch-remote --api-socket "$API_SOCK" shutdown; kill $VM_PID $VIRTIOFSD_PID; rm -f "$CLOUD_INIT_IMG" virtiofs.sock "$API_SOCK" "$SERIAL_SOCK"; sudo ip link delete macvtap0; sync_back_config' EXIT ERR INT TERM
 
 # Check for interactive mode
-if [[ "${POSITIONAL[0]}" == "repl" ]] || [ -t 0 ] && [ -t 1 ]; then
+if $INTERACTIVE || [[ "${POSITIONAL[0]}" == "repl" ]] || [ -t 0 ] && [ -t 1 ]; then
     interact_vm
 else
     run_guest_command
