@@ -55,19 +55,19 @@ export PATH="$PATH:/usr/libexec"
 
 # Check for virtiofsd with full path
 # Noting common virtiofsd locations (e.g., /usr/libexec/virtiofsd) and reference fs.md
-if [ -x /usr/libexec/virtiofsd ]; then
-    echo "virtiofsd found at /usr/libexec/virtiofsd"
+if [ -x /sbin/virtiofsd ]; then
+    echo "virtiofsd found at /sbin/virtiofsd"
 else
     if [ "$IGNORE_VIRTIOFSD" = "true" ]; then
         echo "Skipping virtiofsd"
     else
-        error_exit "virtiofsd not found at /usr/libexec/virtiofsd - install or adjust path"
+        error_exit "virtiofsd not found at /sbin/virtiofsd - install or adjust path"
     fi
 fi
 
 # Start virtiofsd for sharing host PWD (./) with guest
 # Referencing fs.md#how-to-share-directories-with-cloud-hypervisor
-/usr/libexec/virtiofsd --socket-path="$VFS_SOCKET" --shared-dir ./ --thread-pool-size=4 --cache=never &
+/sbin/virtiofsd --socket-path="$VFS_SOCKET" --shared-dir ./ --thread-pool-size=4 --cache=never &
 VIRTIOFSD_PID=$!
 
 # Check if using --fs and ensure shared=on is set

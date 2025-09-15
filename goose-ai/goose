@@ -166,7 +166,7 @@ EOF
 setup_virtiofs() {
     mkdir -p "$SHARED_DIR"
     cp "$CONFIG" "$SHARED_DIR/config.yaml"
-    virtiofsd --socket-path=virtiofs.sock --shared-dir "$SHARED_DIR" --cache=never --thread-pool-size=4 &
+    /sbin/virtiofsd --socket-path=virtiofs.sock --shared-dir "$SHARED_DIR" --cache=never --thread-pool-size=4 &
     VIRTIOFSD_PID=$!
 }
 
