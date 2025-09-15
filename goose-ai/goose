@@ -317,8 +317,8 @@ if [ ! -f "$CONFIG" ]; then
     exit 1
 fi
 
-# Add /usr/libexec to PATH for virtiofsd
-export PATH="$PATH:/usr/libexec"
+# Add /usr/libexec and /sbin to PATH for virtiofsd and mkdosfs
+export PATH="$PATH:/usr/libexec:/sbin"
 
 # Check deps and portability
 check_deps
