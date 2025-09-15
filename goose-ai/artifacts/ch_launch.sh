@@ -31,11 +31,6 @@ CLOUD_INIT_IMG="$BASE_DIR/cloud-init.img"
 FIRMWARE_PATH="/usr/share/cloud-hypervisor/hypervisor-fw"
 VFS_SOCKET="/tmp/vfs-$BASHPID.sock"
 
-# Check for virtiofsd
-if ! command -v virtiofsd &> /dev/null; then
-    error_exit "Install virtiofsd (from Cloud Hypervisor source or package)"
-fi
-
 # Download and convert noble Ubuntu cloud image if not present
 if [ ! -f "$IMAGE_PATH" ]; then
     wget https://cloud-images.ubuntu.com/noble/current/noble-server-cloudimg-amd64.img -O "$BASE_DIR/noble-server-cloudimg-amd64.img" || error_exit "Failed to download Ubuntu image."
@@ -55,9 +50,24 @@ mcopy -oi "$CLOUD_INIT_IMG" "$BASE_DIR/cloud-init-temp/user-data" ::
 mcopy -oi "$CLOUD_INIT_IMG" "$BASE_DIR/cloud-init-temp/meta-data" ::
 rm -rf "$BASE_DIR/cloud-init-temp"
 
+# Add optional PATH extension for flexibility
+export PATH="$PATH:/usr/libexec"
+
+# Check for virtiofsd with full path
+# Noting common virtiofsd locations (e.g., /usr/libexec/virtiofsd) and reference fs.md
+if [ -x /usr/libexec/virtiofsd ]; then
+    echo "virtiofsd found at /usr/libexec/virtiofsd"
+else
+    if [ "$IGNORE_VIRTIOFSD" = "true" ]; then
+        echo "Skipping virtiofsd"
+    else
+        error_exit "virtiofsd not found at /usr/libexec/virtiofsd - install or adjust path"
+    fi
+fi
+
 # Start virtiofsd for sharing host PWD (./) with guest
 # Referencing fs.md#how-to-share-directories-with-cloud-hypervisor
-virtiofsd --socket-path="$VFS_SOCKET" --shared-dir ./ --thread-pool-size=4 --cache=never &
+/usr/libexec/virtiofsd --socket-path="$VFS_SOCKET" --shared-dir ./ --thread-pool-size=4 --cache=never &
 VIRTIOFSD_PID=$!
 
 # Start Cloud Hypervisor with HTTP API, firmware, and disks (no kernel used)
