@@ -34,7 +34,7 @@ show_help() {
 
 # Function to check dependencies and portability
 check_deps() {
-    local deps=("cloud-hypervisor" "ch-remote" "virtiofsd" "socat" "mkdosfs" "mcopy" "qemu-img" "curl" "expect" "ip" "wget" "md5sum")
+    local deps=("cloud-hypervisor" "virtiofsd" "socat" "mkdosfs" "mcopy" "qemu-img" "curl" "expect" "ip" "wget" "md5sum")
     for dep in "${deps[@]}"; do
         if ! command -v "$dep" &> /dev/null; then
             echo "Error: $dep is required but not installed." >&2
@@ -204,8 +204,8 @@ launch_vm() {
         exit 1
     fi
 
-    # Boot the VM using ch-remote
-    ch-remote --api-socket "$API_SOCK" boot
+    # Boot the VM using curl
+    curl --unix-socket "$API_SOCK" -X PUT http://localhost/vm.boot
 }
 
 # Function for interactive VM mode
@@ -333,7 +333,7 @@ setup_virtiofs
 launch_vm
 
 # Trap for cleanup and sync
-trap 'ch-remote --api-socket "$API_SOCK" shutdown; kill $VM_PID $VIRTIOFSD_PID; rm -f "$CLOUD_INIT_IMG" virtiofs.sock "$API_SOCK" "$SERIAL_SOCK"; sudo ip link delete macvtap0; sync_back_config' EXIT ERR INT TERM
+trap 'curl --unix-socket "$API_SOCK" -X PUT http://localhost/vm.shutdown; kill $VM_PID $VIRTIOFSD_PID; rm -f "$CLOUD_INIT_IMG" virtiofs.sock "$API_SOCK" "$SERIAL_SOCK"; sudo ip link delete macvtap0; sync_back_config' EXIT ERR INT TERM
 
 # Check for interactive mode
 if $INTERACTIVE || [[ "${POSITIONAL[0]}" == "repl" ]] || [ -t 0 ] && [ -t 1 ]; then
