@@ -152,17 +152,17 @@ runcmd:
   - mount -t virtiofs host_share /home/goose/src
   - chown -R goose:goose /home/goose
   - systemctl start ssh
-  - su - goose -c "systemctl --user daemon-reload"
-  - su - goose -c "systemctl --user start podman.socket"
-  - su - goose -c "podman pull ghcr.io/oraios/serena:latest"
-  - su - goose -c "podman run --userns=keep-id -d -p 9121:9121 -p 24282:24282 --name serena ghcr.io/oraios/serena:latest serena start-mcp-server --transport stdio"
-  - if [ "$SIMPLIFIED_MODE" != "true" ]; then if ! podman image exists localhost/goose:latest; then podman build -t localhost/goose:latest -f /mnt/share/Containerfile; fi; su - goose -c "podman run --userns=keep-id -d --name goose -v /mnt/share:/home/goose/workspace localhost/goose:latest goose session"; fi
+  - su - goose -c "export HOME=/usr/goose; systemctl --user daemon-reload"
+  - su - goose -c "export HOME=/usr/goose; systemctl --user start podman.socket"
   - mkdir -p /etc/systemd/system/serial-getty@ttyS0.service.d/
   - systemctl daemon-reload
   - systemctl enable serial-getty@ttyS0.service
   - systemctl restart serial-getty@ttyS0.service
 EOF
 
+#  - su - goose -c "export HOME=/usr/goose; podman pull ghcr.io/oraios/serena:latest"
+#  - su - goose -c "export HOME=/usr/goose; podman run --userns=keep-id -d -p 9121:9121 -p 24282:24282 --name serena ghcr.io/oraios/serena:latest serena start-mcp-server --transport stdio"
+#  - if [ "$SIMPLIFIED_MODE" != "true" ]; then if ! podman image exists localhost/goose:latest; then podman build -t localhost/goose:latest -f /mnt/share/Containerfile; fi; su - goose -c "podman run --userns=keep-id -d --name goose -v /mnt/share:/home/goose/workspace localhost/goose:latest goose session"; fi
     # Basic meta-data
     echo "instance-id: iid-local01" > meta-data
     echo "local-hostname: vm" >> meta-data
