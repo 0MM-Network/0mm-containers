@@ -7,8 +7,8 @@ set -x
 # Define defaults
 VM_MEMORY="1024M"
 VM_CPUS=4
-IMAGE_URL="https://cloud-images.ubuntu.com/focal/current/focal-server-cloudimg-amd64.img"
-IMAGE_FILE="focal-server-cloudimg-amd64.raw"
+IMAGE_URL="https://cloud-images.ubuntu.com/jammy/current/jammy-server-cloudimg-amd64.img"
+IMAGE_FILE="jammy-server-cloudimg-amd64.raw"
 SHARED_DIR="./shared"
 CONFIG_MOUNT="/mnt/share"
 GOOSE_CONFIG="$CONFIG_MOUNT/config.yaml"
@@ -51,9 +51,9 @@ check_deps() {
         exit 1
     fi
 
-    # Check image compatibility (simple filename check for focal)
-    if [[ "$IMAGE_URL" != *"focal"* ]]; then
-        echo "Warning: Image URL does not appear to be Ubuntu focal; compatibility not guaranteed." >&2
+    # Check image compatibility (simple filename check for jammy)
+    if [[ "$IMAGE_URL" != *"jammy"* ]]; then
+        echo "Warning: Image URL does not appear to be Ubuntu jammy; compatibility not guaranteed." >&2
     fi
 
     # Check if detected HOST_IFACE exists
@@ -66,9 +66,12 @@ check_deps() {
 # Function to download and prepare the cloud image
 download_image() {
     if [ ! -f "$IMAGE_FILE" ]; then
-        wget "$IMAGE_URL" -O focal-server-cloudimg-amd64.img
-        qemu-img convert -p -f qcow2 -O raw focal-server-cloudimg-amd64.img "$IMAGE_FILE"
-        rm focal-server-cloudimg-amd64.img
+        if [ ! -f jammy-server-cloudimg-amd64.img ]; then
+            wget "$IMAGE_URL" -O jammy-server-cloudimg-amd64.img
+        fi
+        qemu-img convert -p -f qcow2 -O raw jammy-server-cloudimg-amd64.img "$IMAGE_FILE"
+        qemu-img resize -f raw "$IMAGE_FILE" 10G
+        # rm jammy-server-cloudimg-amd64.img
     fi
 }
 
@@ -139,11 +142,14 @@ write_files:
       [Service]
       ExecStart=
       ExecStart=-/sbin/agetty --autologin root -o '-p -- \\u' --keep-baud 115200,38400,9600 %I dumb
+
 runcmd:
+  - apt clean && growpart /dev/vda 1 && resize2fs /dev/vda1
+  - apt update && apt install -y podman fuse-overlayfs slirp4netns
   - SIMPLIFIED_MODE=$(grep -o "simplified_mode=true" /proc/cmdline || echo false)
-  - if [ "$SIMPLIFIED_MODE" = "true" ]; then wget https://github.com/block/goose/releases/download/v1.7.0/goose_1.7.0_amd64.deb -O /tmp/goose.deb; apt install -y /tmp/goose.deb; rm /tmp/goose.deb; fi
+  - curl -fsSL https://github.com/block/goose/releases/download/stable/download_cli.sh | CONFIGURE=false bash
   - mkdir -p /home/goose/src
-  - mount -t virtiofs host_share /mnt/share
+  - mount -t virtiofs host_share /home/goose/src
   - chown -R goose:goose /home/goose
   - systemctl start ssh
   - su - goose -c "systemctl --user daemon-reload"
@@ -151,9 +157,10 @@ runcmd:
   - su - goose -c "podman pull ghcr.io/oraios/serena:latest"
   - su - goose -c "podman run --userns=keep-id -d -p 9121:9121 -p 24282:24282 --name serena ghcr.io/oraios/serena:latest serena start-mcp-server --transport stdio"
   - if [ "$SIMPLIFIED_MODE" != "true" ]; then if ! podman image exists localhost/goose:latest; then podman build -t localhost/goose:latest -f /mnt/share/Containerfile; fi; su - goose -c "podman run --userns=keep-id -d --name goose -v /mnt/share:/home/goose/workspace localhost/goose:latest goose session"; fi
-  - agetty -s ttyS0  # Enable serial console for REPL
   - mkdir -p /etc/systemd/system/serial-getty@ttyS0.service.d/
   - systemctl daemon-reload
+  - systemctl enable serial-getty@ttyS0.service
+  - systemctl restart serial-getty@ttyS0.service
 EOF
 
     # Basic meta-data
