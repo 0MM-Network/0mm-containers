@@ -13,8 +13,8 @@ CONFIG_MOUNT="/home/goose/src"
 GOOSE_CONFIG="$CONFIG_MOUNT/config.yaml"
 SERIAL_SOCK="./serial.sock"
 API_SOCK="./api.sock"
-CLOUD_INIT_IMG_1="cloud-init_1.img"
-CLOUD_INIT_IMG_2="cloud-init_2.img"
+CLOUD_INIT_IMG_1="cloud-init-1.img"
+CLOUD_INIT_IMG_2="cloud-init-2.img"
 SIMPLIFIED_MODE=${SIMPLIFIED_MODE:-true}
 HOST_IFACE=$(ip route get 8.8.8.8 | awk -- '{printf $5}' | head -n1)  # Detect default interface
 MAC="12:34:56:78:90:ab"  # Default MAC from prompt
@@ -75,37 +75,75 @@ download_image() {
     fi
 }
 
-# Function to create cloud-init image (adapt from create-cloud-init.sh, include Podman setup from cloud_init.yaml)
+# Function to create cloud-init-1 image (adapt from create-cloud-init.sh)
 create_cloud_init_1() {
     rm -f "$CLOUD_INIT_IMG_1"
     mkdosfs -n CIDATA -C "$CLOUD_INIT_IMG_1" 8192
 
-    # User-data 
-    # Set up auto-login to ttyS0. Prevents tty login timeout.
+    # Generate isolated SSH keys in current working directory (if not already present)
+    if [ ! -f "./vm_root_id_rsa" ]; then
+        ssh-keygen -t rsa -b 2048 -f ./vm_root_id_rsa -N "" -C "VM root key" -q
+        echo "Generated SSH keys: ./vm_root_id_rsa (private) and ./vm_root_id_rsa.pub (public)"
+    fi
+
+    # Read the public key
+    SSH_PUB_KEY=$(cat ./vm_root_id_rsa.pub)
+
+    # User-data for SSH auto-login setup
     cat > user-data-1 <<EOF
 #cloud-config
 package_update: false
 package_upgrade: false
+
+# Unlock root account for login
 users:
   - name: root
     lock_passwd: false
+
+# Install OpenSSH server if needed
 packages:
-  - agetty
+  - openssh-server
+
+# Add public key to root's authorized_keys and configure SSH for root login
 write_files:
-  - path: /etc/systemd/system/serial-getty@ttyS0.service.d/override.conf
+  - path: /root/.ssh/authorized_keys
     content: |
-      [Service]
-      ExecStart=
-      ExecStart=-/sbin/agetty --autologin root --noclear --keep-baud 115200,38400,9600 %I \$TERM
-    permissions: '0644'
+      $SSH_PUB_KEY
+    permissions: '0600'
+    owner: root:root
+
 runcmd:
-  - systemctl daemon-reload
-  - systemctl enable serial-getty@ttyS0.service
-  - systemctl restart serial-getty@ttyS0.service || echo "Serial restart failed: \$(journalctl -u serial-getty@ttyS0 -n 10)" >> /var/log/cloud-init-1-debug.log
-  - systemctl status serial-getty@ttyS0.service >> /var/log/cloud-init-1-debug.log
-  - pkill -f "agetty.*ttyS0"
-  - /sbin/agetty --autologin root --noclear ttyS0 linux &
+  - sed -i 's/^#PermitRootLogin .*/PermitRootLogin yes/' /etc/ssh/sshd_config
+  - sed -i 's/^PermitRootLogin .*/PermitRootLogin yes/' /etc/ssh/sshd_config  # Ensure it's set (idempotent)
+  - mkdir -p /root/.ssh
+  - chmod 700 /root/.ssh
+  - systemctl restart ssh || systemctl restart sshd  # Restart SSH service
+  - echo "SSH root auto-login configured with key: $SSH_PUB_KEY" >> /var/log/cloud-init-ssh-setup.log
 EOF
+
+    # Basic meta-data (unchanged from your script)
+    echo "instance-id: iid-local01" > meta-data
+    echo "local-hostname: vm" >> meta-data
+
+    # Provided network-config for ens4 with MAC match (unchanged)
+    cat > network-config <<EOF
+version: 2
+ethernets:
+  ens4:
+    match:
+      macaddress: '$MAC'
+    dhcp4: true
+EOF
+
+    # Copy to image
+    for file in user-data-1 meta-data network-config; do
+        if ! mcopy -oi "$CLOUD_INIT_IMG_1" -s "$file" ::; then
+            echo "Error: Failed to copy $file to cloud-init-1 image" >&2
+            exit 1
+        fi
+    done
+    # Clean up temporary files
+    rm -f user-data-1 meta-data network-config
 }
 
 # Function to create cloud-init image (adapt from create-cloud-init.sh, include Podman setup from cloud_init.yaml)
