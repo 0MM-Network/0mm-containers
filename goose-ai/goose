@@ -1,20 +1,20 @@
 #!/bin/bash
 
-# Error handling
-set -e
+# Debug handling
 set -x
 
 # Define defaults
 VM_MEMORY="1024M"
-VM_CPUS=4
+VM_CPUS=1
 IMAGE_URL="https://cloud-images.ubuntu.com/jammy/current/jammy-server-cloudimg-amd64.img"
 IMAGE_FILE="jammy-server-cloudimg-amd64.raw"
-SHARED_DIR="./shared"
-CONFIG_MOUNT="/mnt/share"
+SHARED_DIR="./"
+CONFIG_MOUNT="/home/goose/src"
 GOOSE_CONFIG="$CONFIG_MOUNT/config.yaml"
 SERIAL_SOCK="./serial.sock"
 API_SOCK="./api.sock"
-CLOUD_INIT_IMG="cloud-init.img"
+CLOUD_INIT_IMG_1="cloud-init_1.img"
+CLOUD_INIT_IMG_2="cloud-init_2.img"
 SIMPLIFIED_MODE=${SIMPLIFIED_MODE:-true}
 HOST_IFACE=$(ip route get 8.8.8.8 | awk -- '{printf $5}' | head -n1)  # Detect default interface
 MAC="12:34:56:78:90:ab"  # Default MAC from prompt
@@ -76,9 +76,42 @@ download_image() {
 }
 
 # Function to create cloud-init image (adapt from create-cloud-init.sh, include Podman setup from cloud_init.yaml)
-create_cloud_init() {
-    rm -f "$CLOUD_INIT_IMG"
-    mkdosfs -n CIDATA -C "$CLOUD_INIT_IMG" 8192
+create_cloud_init_1() {
+    rm -f "$CLOUD_INIT_IMG_1"
+    mkdosfs -n CIDATA -C "$CLOUD_INIT_IMG_1" 8192
+
+    # User-data 
+    # Set up auto-login to ttyS0. Prevents tty login timeout.
+    cat > user-data-1 <<EOF
+#cloud-config
+package_update: false
+package_upgrade: false
+users:
+  - name: root
+    lock_passwd: false
+packages:
+  - agetty
+write_files:
+  - path: /etc/systemd/system/serial-getty@ttyS0.service.d/override.conf
+    content: |
+      [Service]
+      ExecStart=
+      ExecStart=-/sbin/agetty --autologin root --noclear --keep-baud 115200,38400,9600 %I \$TERM
+    permissions: '0644'
+runcmd:
+  - systemctl daemon-reload
+  - systemctl enable serial-getty@ttyS0.service
+  - systemctl restart serial-getty@ttyS0.service || echo "Serial restart failed: \$(journalctl -u serial-getty@ttyS0 -n 10)" >> /var/log/cloud-init-1-debug.log
+  - systemctl status serial-getty@ttyS0.service >> /var/log/cloud-init-1-debug.log
+  - pkill -f "agetty.*ttyS0"
+  - /sbin/agetty --autologin root --noclear ttyS0 linux &
+EOF
+}
+
+# Function to create cloud-init image (adapt from create-cloud-init.sh, include Podman setup from cloud_init.yaml)
+create_cloud_init_2() {
+    rm -f "$CLOUD_INIT_IMG_2"
+    mkdosfs -n CIDATA -C "$CLOUD_INIT_IMG_2" 8192
 
     # Get user's public SSH key (assume id_rsa.pub; fallback to empty)
     SSH_KEY=""
@@ -88,80 +121,67 @@ create_cloud_init() {
         SSH_KEY=$(cat "$HOME/.ssh/id_ed25519.pub")
     fi
 
-    # User-data with Podman rootless setup, users: goose, mounts, podman pull/run, and GOOSE_CONFIG in .profile
-    # Security: Use SSH keys instead of passwords
-    cat > user-data <<EOF
+    # User-data
+    # Install Podman rootless setup, users: goose, mounts, podman pull/run, and GOOSE_CONFIG in .profile
+    # 
+    cat > user-data-2 <<EOF
 #cloud-config
-
-package_update: true
-package_upgrade: true
+package_update: false
+package_upgrade: false
 
 packages:
   - podman
   - fuse-overlayfs
   - slirp4netns
-  - agetty
-  - openssh-server
-
 users:
   - default
   - name: goose
     sudo: ALL=(ALL) NOPASSWD:ALL
-    ssh-authorized-keys:
-      - $SSH_KEY
     shell: /bin/bash
-
-write_files:
-  - path: /etc/subuid
-    content: |
-      goose:100000:65536
-  - path: /etc/subgid
-    content: |
-      goose:100000:65536
-  - path: /home/goose/.config/systemd/user/podman.socket
-    content: |
-      [Unit]
-      Description=Podman API Socket
-      Documentation=man:podman-system-service(1)
-
-      [Socket]
-      ListenStream=%h/podman.sock
-      SocketMode=0660
-
-      [Install]
-      WantedBy=sockets.target
-    owner: goose
-    group: goose
-    permissions: '0644'
-  - path: /home/goose/.profile
-    append: true
-    content: |
-      export GOOSE_CONFIG=/mnt/share/config.yaml
-  - path: /etc/systemd/system/serial-getty@ttyS0.service.d/override.conf
-    content: |
-      [Service]
-      ExecStart=
-      ExecStart=-/sbin/agetty --autologin root -o '-p -- \\u' --keep-baud 115200,38400,9600 %I dumb
-
 runcmd:
   - apt clean && growpart /dev/vda 1 && resize2fs /dev/vda1
   - apt update && apt install -y podman fuse-overlayfs slirp4netns
-  - SIMPLIFIED_MODE=$(grep -o "simplified_mode=true" /proc/cmdline || echo false)
   - curl -fsSL https://github.com/block/goose/releases/download/stable/download_cli.sh | CONFIGURE=false bash
   - mkdir -p /home/goose/src
   - mount -t virtiofs host_share /home/goose/src
   - chown -R goose:goose /home/goose
-  - systemctl start ssh
   - su - goose -c "export HOME=/usr/goose; systemctl --user daemon-reload"
   - su - goose -c "export HOME=/usr/goose; systemctl --user start podman.socket"
-  - mkdir -p /etc/systemd/system/serial-getty@ttyS0.service.d/
-  - systemctl daemon-reload
-  - systemctl enable serial-getty@ttyS0.service
-  - systemctl restart serial-getty@ttyS0.service
 EOF
 
-#  - su - goose -c "export HOME=/usr/goose; podman pull ghcr.io/oraios/serena:latest"
+#write_files:
+#  - path: /etc/systemd/system/serial-getty@ttyS0.service.d/override.conf
+#    content: |
+#      [Service]
+#      ExecStart=
+#      ExecStart=-/sbin/agetty --autologin root --noclear --keep-baud 115200,38400,9600 %I dumb
+#    permissions: '0644'
+#write_files:
+#  - path: /etc/subuid
+#    content: |
+#      goose:100000:65536
+#  - path: /etc/subgid
+#    content: |
+#      goose:100000:65536
+#  - path: /home/goose/.config/systemd/user/podman.socket
+#    content: |
+#      [Unit]
+#      Description=Podman API Socket
+#      Documentation=man:podman-system-service(1)
+#      [Socket]
+#      ListenStream=%h/podman.sock
+#      SocketMode=0660
+#  c    [Install]
+#      WantedBy=sockets.target
+#    owner: goose:goose
+#    permissions: '0644'
+#  - path: /home/goose/.profile
+#    append: true
+#    content: |
+#      export GOOSE_CONFIG=/home/goose/.goose/config.yaml
+
 #  - su - goose -c "export HOME=/usr/goose; podman run --userns=keep-id -d -p 9121:9121 -p 24282:24282 --name serena ghcr.io/oraios/serena:latest serena start-mcp-server --transport stdio"
+#  - su - goose -c "export HOME=/usr/goose; podman pull ghcr.io/oraios/serena:latest"
 #  - if [ "$SIMPLIFIED_MODE" != "true" ]; then if ! podman image exists localhost/goose:latest; then podman build -t localhost/goose:latest -f /mnt/share/Containerfile; fi; su - goose -c "podman run --userns=keep-id -d --name goose -v /mnt/share:/home/goose/workspace localhost/goose:latest goose session"; fi
     # Basic meta-data
     echo "instance-id: iid-local01" > meta-data
@@ -178,13 +198,21 @@ ethernets:
 EOF
 
     # Copy to image (adapt from create-cloud-init.sh)
-    for file in user-data meta-data network-config; do
-        if ! mcopy -oi "$CLOUD_INIT_IMG" -s "$file" ::; then
-            echo "Error: Failed to copy $file to cloud-init image" >&2
+    for file in user-data-1 meta-data network-config; do
+        if ! mcopy -oi "$CLOUD_INIT_IMG_1" -s "$file" ::; then
+            echo "Error: Failed to copy $file to cloud-init-1 image" >&2
             exit 1
         fi
     done
-    rm user-data meta-data network-config
+
+    # Copy to image-2 (adapt from create-cloud-init.sh)
+    for file in user-data-2 meta-data network-config; do
+        if ! mcopy -oi "$CLOUD_INIT_IMG_2" -s "$file" ::; then
+            echo "Error: Failed to copy $file to cloud-init-2 image" >&2
+            exit 1
+        fi
+    done
+    # rm user-data meta-data network-config
 }
 
 # Function to setup virtiofs for shared directory (per fs.md)
@@ -226,12 +254,12 @@ launch_vm() {
         rm -f "$API_SOCK"
     fi
 
-    # Launch Cloud Hypervisor
+    # Launch Cloud Hypervisor with cloud-init-1 to setup ttyS0 autologin
     cloud-hypervisor \
         --cpus boot=$VM_CPUS \
         --memory size=$VM_MEMORY,shared=on \
         --firmware /usr/share/cloud-hypervisor/hypervisor-fw \
-        --disk path=$IMAGE_FILE path=$CLOUD_INIT_IMG \
+        --disk path=$IMAGE_FILE path=$CLOUD_INIT_IMG_1 \
         --fs tag=host_share,socket=virtiofs.sock,num_queues=1,queue_size=512 \
         --net fd=3,mac=$MAC 3<>$TAP_DEVICE \
         --serial socket="$SERIAL_SOCK" \
@@ -239,6 +267,15 @@ launch_vm() {
         --api-socket "$API_SOCK" &
     VM_PID=$!
 
+   # Background monitor to echo all serial output to stdout in real-time
+   (
+       # Wait briefly for socket to appear
+       for i in {1..10}; do [ -S "$SERIAL_SOCK" ] && break; sleep 1; done
+       # Connect and tee: echo to stdout, also log to file if desired
+       socat -u UNIX-CONNECT:"$SERIAL_SOCK" - | tee "$VM_SERIAL_LOG" &
+   ) &
+   MONITOR_PID=$!
+   
     # Poll for API socket with vmm.ping
     for i in {1..60}; do
         if [ -S "$API_SOCK" ] && curl --unix-socket "$API_SOCK" -s http://localhost/vmm.ping > /dev/null; then
@@ -251,18 +288,14 @@ launch_vm() {
         exit 1
     fi
 
-    # Boot the VM using curl
-    curl --unix-socket "$API_SOCK" -X PUT http://localhost/vm.boot
+    # Boot the VM using curl (only if launched in paused state)
+    #curl --unix-socket "$API_SOCK" -X PUT http://localhost/vm.boot
 
-    # Poll for serial socket
-    for i in {1..60}; do
-        if [ -S "$SERIAL_SOCK" ]; then
-            break
-        fi
-        sleep 1
-    done
-    if [ ! -S "$SERIAL_SOCK" ]; then
-        echo "Error: Serial socket timeout" >&2
+    # Use timeout to bound the wait; pipe tail -f to grep for event-driven matching
+    if timeout 600 tail -f "$VM_SERIAL_LOG" | grep -m1 -E '(Linux version|login:|root@vm:~#)'; then
+        echo "Serial ready (boot marker found in log)."
+    else
+        echo "Error: Timeout waiting for boot marker - check $VM_SERIAL_LOG." >&2
         exit 1
     fi
 }
@@ -273,11 +306,13 @@ interact_vm() {
 
     # After detach, send poweroff using expect
     expect <<EOF
-    set timeout 60
+    set timeout 180
     spawn socat - UNIX-CONNECT:"$SERIAL_SOCK"
-    expect "goose@vm:~$"
-    send "sudo poweroff\r"
-    expect eof
+    expect {
+      "login:" { send "root\r"; exp_continue }
+      "root@vm:~#" { interact }  # Proceed to shell
+      timeout { exit 1 }
+    }
 EOF
 }
 
@@ -356,10 +391,10 @@ set -- "${POSITIONAL[@]}"
 
 # Enable verbose if -v
 if $VERBOSE; then
-    set -x
+    set echo x
 fi
 
-# Redirect to log file if specified
+#echo Redirect to log file if specified
 if [ -n "$LOG_FILE" ]; then
     exec > >(tee -a "$LOG_FILE") 2>&1
 fi
@@ -386,7 +421,8 @@ check_deps
 download_image
 
 # Create cloud-init
-create_cloud_init
+create_cloud_init_1
+create_cloud_init_2
 
 # Setup virtiofs
 setup_virtiofs
@@ -395,11 +431,11 @@ setup_virtiofs
 launch_vm
 
 # Trap for cleanup and sync
-trap 'curl --unix-socket "$API_SOCK" -X PUT http://localhost/vm.shutdown; kill $VM_PID $VIRTIOFSD_PID; rm -f "$CLOUD_INIT_IMG" virtiofs.sock "$API_SOCK" "$SERIAL_SOCK"; sudo ip link delete macvtap0; sync_back_config' EXIT ERR INT TERM
+#trap 'curl --unix-socket "$API_SOCK" -X PUT http://localhost/vm.shutdown; kill $VM_PID $VIRTIOFSD_PID $MONITOR_PID; rm -f virtiofs.sock "$API_SOCK" "$SERIAL_SOCK"; sudo ip link delete macvtap0; sync_back_config' EXIT ERR INT TERM
 
 # Check for interactive mode
 if $INTERACTIVE || [[ "${POSITIONAL[0]}" == "repl" ]] || ([ ${#POSITIONAL[@]} -eq 0 ] && [ -t 0 ] && [ -t 1 ]); then
     interact_vm
 else
-    run_guest_command
+    echo run_guest_command
 fi
