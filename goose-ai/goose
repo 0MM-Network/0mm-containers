@@ -22,6 +22,7 @@ VERBOSE=false
 LOG_FILE=""
 VM_LOG="vm_log.txt"
 VM_SERIAL_LOG="vm_serial.log"
+MAX_TIMEOUT_IP=600  # Max wait in seconds (e.g., 10min)
 
 # Function to display help
 show_help() {
@@ -103,9 +104,16 @@ users:
 # Install OpenSSH server if needed
 packages:
   - openssh-server
+  - sed
 
 # Add public key to root's authorized_keys and configure SSH for root login
 write_files:
+  - path: /etc/systemd/system/serial-getty@ttyS0.service.d/override.conf
+    content: |
+      [Service]
+      ExecStart=
+      ExecStart=-/sbin/agetty --autologin root --noclear --keep-baud 115200,38400,9600 %I dumb
+    permissions: '0644'
   - path: /root/.ssh/authorized_keys
     content: |
       $SSH_PUB_KEY
@@ -113,12 +121,15 @@ write_files:
     owner: root:root
 
 runcmd:
-  - sed -i 's/^#PermitRootLogin .*/PermitRootLogin yes/' /etc/ssh/sshd_config
-  - sed -i 's/^PermitRootLogin .*/PermitRootLogin yes/' /etc/ssh/sshd_config  # Ensure it's set (idempotent)
-  - mkdir -p /root/.ssh
-  - chmod 700 /root/.ssh
-  - systemctl restart ssh || systemctl restart sshd  # Restart SSH service
-  - echo "SSH root auto-login configured with key: $SSH_PUB_KEY" >> /var/log/cloud-init-ssh-setup.log
+  - [sed, -i, 's/^#PermitRootLogin .*/PermitRootLogin yes/', /etc/ssh/sshd_config]
+  - [sed, -i, 's/^PermitRootLogin .*/PermitRootLogin yes/', /etc/ssh/sshd_config]
+  - [mkdir, -p, /root/.ssh]
+  - [chmod, '700', /root/.ssh]
+  - [systemctl, restart, ssh]  # Or sshd if distro variant
+  - [sh, -c, 'echo "SSH root auto-login configured with key: $SSH_PUB_KEY" >> /var/log/cloud-init-ssh-setup.log']
+  - [systemctl, daemon-reload]
+  - [systemctl, enable, serial-getty@ttyS0.service]
+  - [systemctl, restart, serial-getty@ttyS0.service]
 EOF
 
     # Basic meta-data (unchanged from your script)
@@ -129,21 +140,24 @@ EOF
     cat > network-config <<EOF
 version: 2
 ethernets:
-  ens4:
+  ens3:
     match:
       macaddress: '$MAC'
     dhcp4: true
+    dhcp6: true
 EOF
 
     # Copy to image
-    for file in user-data-1 meta-data network-config; do
+    rm user-data
+    cp -f user-data-1 user-data
+    for file in user-data meta-data network-config; do
         if ! mcopy -oi "$CLOUD_INIT_IMG_1" -s "$file" ::; then
             echo "Error: Failed to copy $file to cloud-init-1 image" >&2
             exit 1
         fi
     done
     # Clean up temporary files
-    rm -f user-data-1 meta-data network-config
+    #rm -f user-data meta-data network-config
 }
 
 # Function to create cloud-init image (adapt from create-cloud-init.sh, include Podman setup from cloud_init.yaml)
@@ -184,14 +198,14 @@ runcmd:
   - mount -t virtiofs host_share /home/goose/src
   - chown -R goose:goose /home/goose
   - su - goose -c "export HOME=/usr/goose; systemctl --user daemon-reload"
-  - su - goose -c "export HOME=/usr/goose; systemctl --user start podman.socket"
+  - su - goose -c "export HOME=/usr/goose; systemctl --user restart podman.socket"
 EOF
 
 #write_files:
 #  - path: /etc/systemd/system/serial-getty@ttyS0.service.d/override.conf
 #    content: |
 #      [Service]
-#      ExecStart=
+#      Exe#cStart=
 #      ExecStart=-/sbin/agetty --autologin root --noclear --keep-baud 115200,38400,9600 %I dumb
 #    permissions: '0644'
 #write_files:
@@ -209,7 +223,7 @@ EOF
 #      [Socket]
 #      ListenStream=%h/podman.sock
 #      SocketMode=0660
-#  c    [Install]
+#      [Install]
 #      WantedBy=sockets.target
 #    owner: goose:goose
 #    permissions: '0644'
@@ -229,22 +243,17 @@ EOF
     cat > network-config <<EOF
 version: 2
 ethernets:
-  ens4:
+  ens3:
     match:
       macaddress: '$MAC'
     dhcp4: true
+    dhcp6: true
 EOF
 
-    # Copy to image (adapt from create-cloud-init.sh)
-    for file in user-data-1 meta-data network-config; do
-        if ! mcopy -oi "$CLOUD_INIT_IMG_1" -s "$file" ::; then
-            echo "Error: Failed to copy $file to cloud-init-1 image" >&2
-            exit 1
-        fi
-    done
-
-    # Copy to image-2 (adapt from create-cloud-init.sh)
-    for file in user-data-2 meta-data network-config; do
+    # Copy to image-2
+    rm -f user-data
+    cp -f user-data-2 user-data
+    for file in user-data meta-data network-config; do
         if ! mcopy -oi "$CLOUD_INIT_IMG_2" -s "$file" ::; then
             echo "Error: Failed to copy $file to cloud-init-2 image" >&2
             exit 1
@@ -277,43 +286,29 @@ setup_virtiofs() {
 # Function to launch the VM (with --firmware, --disk, --fs, --net using MACVTAP bridge from macvtap-bridge.md)
 launch_vm() {
     # Setup MACVTAP bridge (from macvtap-bridge.md)
-    # Clean up existing macvtap0 if it exists
+    # Clean up3existing macvtap0 if it exists
     if ip link show macvtap0 > /dev/null 2>&1; then
         sudo ip link delete macvtap0
     fi
-    sudo ip link add link "$HOST_IFACE" name macvtap0 type macvtap mode bridge
-    sudo ip link set macvtap0 address "$MAC" up
-    TAP_FD=$(cat /sys/class/net/macvtap0/ifindex)
+    sudo ip link add link "$HOST_IFACE" name macvtap0 type macvtap
+    sudo ip link set macvtap0 address "$MAC" up promisc on
+    sudo ip link show macvtap0
+    TAP_FD=$(< /sys/class/net/macvtap0/ifindex)
     TAP_DEVICE="/dev/tap$TAP_FD"
     sudo chown "$UID:$UID" "$TAP_DEVICE"
 
     # Clean up existing API socket if it exists
-    if [ -S "$API_SOCK" ]; then
-        rm -f "$API_SOCK"
-    fi
-
-    # Launch Cloud Hypervisor with cloud-init-1 to setup ttyS0 autologin
-    cloud-hypervisor \
-        --cpus boot=$VM_CPUS \
+    cloud-hypervisor --cpus boot=$VM_CPUS \
         --memory size=$VM_MEMORY,shared=on \
         --firmware /usr/share/cloud-hypervisor/hypervisor-fw \
         --disk path=$IMAGE_FILE path=$CLOUD_INIT_IMG_1 \
         --fs tag=host_share,socket=virtiofs.sock,num_queues=1,queue_size=512 \
-        --net fd=3,mac=$MAC 3<>$TAP_DEVICE \
         --serial socket="$SERIAL_SOCK" \
         --console off \
-        --api-socket "$API_SOCK" &
+        --api-socket "$API_SOCK" \
+        --net fd=3,mac=$MAC 3<>$"$TAP_DEVICE" &
     VM_PID=$!
 
-   # Background monitor to echo all serial output to stdout in real-time
-   (
-       # Wait briefly for socket to appear
-       for i in {1..10}; do [ -S "$SERIAL_SOCK" ] && break; sleep 1; done
-       # Connect and tee: echo to stdout, also log to file if desired
-       socat -u UNIX-CONNECT:"$SERIAL_SOCK" - | tee "$VM_SERIAL_LOG" &
-   ) &
-   MONITOR_PID=$!
-   
     # Poll for API socket with vmm.ping
     for i in {1..60}; do
         if [ -S "$API_SOCK" ] && curl --unix-socket "$API_SOCK" -s http://localhost/vmm.ping > /dev/null; then
@@ -329,29 +324,117 @@ launch_vm() {
     # Boot the VM using curl (only if launched in paused state)
     #curl --unix-socket "$API_SOCK" -X PUT http://localhost/vm.boot
 
-    # Use timeout to bound the wait; pipe tail -f to grep for event-driven matching
-    if timeout 600 tail -f "$VM_SERIAL_LOG" | grep -m1 -E '(Linux version|login:|root@vm:~#)'; then
-        echo "Serial ready (boot marker found in log)."
+    # Wait for IP
+    VM_IP=$(wait_and_extract_vm_ip)
+    if [ $? -eq 0 ] && [ -n "$VM_IP" ]; then
+        echo "Extracted VM IP: $VM_IP"
     else
-        echo "Error: Timeout waiting for boot marker - check $VM_SERIAL_LOG." >&2
+        echo "Failed to extract VM IP."
+        exit 1
+    fi
+
+    echo "Waiting for SSH readiness..."
+    for i in {1..60}; do
+        if [ -n "$VM_IP" ] && nc -z -w2 "$VM_IP" 22; then  # Check if port 22 is open
+            echo "VM ready at IP $VM_IP with SSH available."
+            export SSH_READY=yes
+            break
+        fi
+        sleep 10
+    done
+    if [ -z "$SSH_READY" ]; then
+        echo "Error: Timeout waiting for VM IP/SSH - check network setup." >&2
         exit 1
     fi
 }
 
+# Robust script to extract IPv4 address associated with a specific MAC from vm_serial.log
+# Handles binary files by cleaning null bytes, parses the cloud-init table format,
+# and is robust to streaming by using tail -f with timeout to monitor new appended lines until found.
+
+# Function to extract IP from a matched line
+extract_ip_from_line() {
+    local line="$1"
+
+    # Parse the line: Assume format "| DEVICE | UP | ADDRESS | MASK | SCOPE | HW-ADDRESS |"
+    # Use awk to split by '|' and trim spaces, extract the address field (3rd column after split)
+    # Use awk to find IPv4 pattern immediately before the MAC field in the line
+    # Use awk with a here-document for the script to avoid quoting issues
+    IP=$(echo "$line" | awk -v mac="$TARGET_MAC" '
+BEGIN {
+    # (Optional: Any initialization)
+}
+{
+    # Normalize: remove extra spaces, split by "|"
+    gsub(/[ \t]+/, " ");
+    split($0, fields, "|");
+
+    # Scan fields for MAC match
+    for (i = 1; i <= length(fields); i++) {
+        if (tolower(fields[i]) ~ tolower(mac)) {
+            # IP is likely 3 fields before MAC (ADDRESS field, skipping UP and DEVICE)
+            if (i >= 4) {
+                candidate = fields[i-3];  # Adjust offset based on table (DEVICE|UP|ADDRESS|MASK|SCOPE|HW)
+                gsub(/[ \t]+/, "", candidate);  # Trim
+                # Validate as IPv4
+                if (candidate ~ /^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$/) {
+                    print candidate;
+                    exit 0;
+                }
+            }
+        }
+    }
+    exit 1;
+}
+')
+    if [ -n "$IP" ]; then
+        echo "$IP"
+        return 0
+    fi
+    return 1
+}
+
+# Main function to tail the streaming log with timeout until IP is found
+wait_and_extract_vm_ip() {
+    #echo "Monitoring $VM_SERIAL_LOG for IP associated with MAC $MAC (timeout: $MAX_TIMEOUT_IP seconds)..."
+
+    # Use timeout to bound tail -f; clean null bytes and grep for MAC, then parse
+    timeout "$MAX_TIMEOUT_IP" tail -f "$VM_SERIAL_LOG" | strings | while read -r line; do
+        if echo "$line" | grep -iq "$MAC"; then
+            IP=$(extract_ip_from_line "$line")
+            if [ $? -eq 0 ]; then
+                echo "$IP"
+                # Kill the tail process to exit cleanly (use pkill or break)
+                pkill -P $$ tail
+                return 0
+            fi
+        fi
+    done
+
+    # If timeout or no match
+    if [ $? -eq 124 ]; then  # timeout exit code
+        echo "Error: Timeout after $MAX_TIMEOUT_IP seconds. MAC $MAC or IP not found." >&2
+        return 1
+    fi
+    return 0  # Success if found before timeout
+}
+
 # Function for interactive VM mode
 interact_vm() {
+
     socat -,raw,echo=0,escape=0x1f UNIX-CONNECT:"$SERIAL_SOCK" || echo "Serial attachment failed" >&2
 
-    # After detach, send poweroff using expect
-    expect <<EOF
-    set timeout 180
-    spawn socat - UNIX-CONNECT:"$SERIAL_SOCK"
-    expect {
-      "login:" { send "root\r"; exp_continue }
-      "root@vm:~#" { interact }  # Proceed to shell
-      timeout { exit 1 }
-    }
-EOF
+    # Interactive SSH session as root using generated key
+    echo "Connecting to VM at $VM_IP via SSH as root..."
+    for i in {1..10}; do
+        if ssh -i ./vm_root_id_rsa -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null root@"$VM_IP"; then
+            break
+        fi
+        echo "SSH connection attempt $i failed; retrying in 5s..."
+        sleep 5
+    done || { echo "Error: Failed to connect via SSH - check VM logs." >&2; exit 1; }
+
+    # socat -,raw,echo=0,escape=0x1f UNIX-CONNECT:"$SERIAL_SOCK" || echo "Serial attachment failed" >&2
 }
 
 # Function to run command in guest (send 'goose' sub-command via serial or expect)
@@ -414,7 +497,7 @@ while [[ $# -gt 0 ]]; do
             ;;
         --log)
             LOG_FILE="$2"
-            shift 2
+            shift
             ;;
         --help)
             show_help
@@ -469,7 +552,7 @@ setup_virtiofs
 launch_vm
 
 # Trap for cleanup and sync
-#trap 'curl --unix-socket "$API_SOCK" -X PUT http://localhost/vm.shutdown; kill $VM_PID $VIRTIOFSD_PID $MONITOR_PID; rm -f virtiofs.sock "$API_SOCK" "$SERIAL_SOCK"; sudo ip link delete macvtap0; sync_back_config' EXIT ERR INT TERM
+trap 'curl --unix-socket "$API_SOCK" -X PUT http://localhost/vshutdown; kill $VM_PID $VIRTIOFSD_PID $MONITOR_PID; rm -f virtiofs.sock "$API_SOe" "$SERIAL_SOCK"; sudo ip link delete macvtap0; sync_back_config' EXIT ERR INT TERM
 
 # Check for interactive mode
 if $INTERACTIVE || [[ "${POSITIONAL[0]}" == "repl" ]] || ([ ${#POSITIONAL[@]} -eq 0 ] && [ -t 0 ] && [ -t 1 ]); then
