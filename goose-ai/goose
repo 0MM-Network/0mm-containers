@@ -13,15 +13,13 @@ CONFIG_MOUNT="/home/goose/src"
 GOOSE_CONFIG="$CONFIG_MOUNT/config.yaml"
 SERIAL_SOCK="./serial.sock"
 API_SOCK="./api.sock"
-CLOUD_INIT_IMG_1="cloud-init-1.img"
-CLOUD_INIT_IMG_2="cloud-init-2.img"
+CLOUD_INIT_IMG="cloud-init.img"
 SIMPLIFIED_MODE=${SIMPLIFIED_MODE:-true}
 HOST_IFACE=$(ip route get 8.8.8.8 | awk -- '{printf $5}' | head -n1)  # Detect default interface
 MAC="12:34:56:78:90:ab"  # Default MAC from prompt
 VERBOSE=false
 LOG_FILE=""
 VM_LOG="vm_log.txt"
-VM_SERIAL_LOG="vm_serial.log"
 MAX_TIMEOUT_IP=600  # Max wait in seconds (e.g., 10min)
 
 # Function to display help
@@ -76,10 +74,10 @@ download_image() {
     fi
 }
 
-# Function to create cloud-init-1 image (adapt from create-cloud-init.sh)
-create_cloud_init_1() {
-    rm -f "$CLOUD_INIT_IMG_1"
-    mkdosfs -n CIDATA -C "$CLOUD_INIT_IMG_1" 8192
+# Function to create cloud-init image (merged from 1 and 2)
+create_cloud_init() {
+    rm -f "$CLOUD_INIT_IMG"
+    mkdosfs -n CIDATA -C "$CLOUD_INIT_IMG" 8192
 
     # Generate isolated SSH keys in current working directory (if not already present)
     if [ ! -f "./vm_root_id_rsa" ]; then
@@ -90,23 +88,35 @@ create_cloud_init_1() {
     # Read the public key
     SSH_PUB_KEY=$(cat ./vm_root_id_rsa.pub)
 
-    # User-data for SSH auto-login setup
-    cat > user-data-1 <<EOF
+    # Get user's public SSH key (assume id_rsa.pub; fallback to empty)
+    SSH_KEY=""
+    if [ -f "$HOME/.ssh/id_rsa.pub" ]; then
+        SSH_KEY=$(cat "$HOME/.ssh/id_rsa.pub")
+    elif [ -f "$HOME/.ssh/id_ed25519.pub" ]; then
+        SSH_KEY=$(cat "$HOME/.ssh/id_ed25519.pub")
+    fi
+
+    # Merged user-data
+    cat > user-data <<EOF
 #cloud-config
 package_update: false
 package_upgrade: false
 
-# Unlock root account for login
-users:
-  - name: root
-    lock_passwd: false
-
-# Install OpenSSH server if needed
 packages:
   - openssh-server
   - sed
+  - podman
+  - fuse-overlayfs
+  - slirp4netns
 
-# Add public key to root's authorized_keys and configure SSH for root login
+users:
+  - name: root
+    lock_passwd: false
+  - default
+  - name: goose
+    sudo: ALL=(ALL) NOPASSWD:ALL
+    shell: /bin/bash
+
 write_files:
   - path: /etc/systemd/system/serial-getty@ttyS0.service.d/override.conf
     content: |
@@ -119,6 +129,32 @@ write_files:
       $SSH_PUB_KEY
     permissions: '0600'
     owner: root:root
+  - path: /etc/subuid
+    content: |
+      goose:100000:65536
+    permissions: '0644'
+  - path: /etc/subgid
+    content: |
+      goose:100000:65536
+    permissions: '0644'
+  - path: /home/goose/.config/systemd/user/podman.socket
+    content: |
+      [Unit]
+      Description=Podman API Socket
+      Documentation=man:podman-system-service(1)
+
+      [Socket]
+      ListenStream=%h/podman.sock
+      SocketMode=0660
+
+      [Install]
+      WantedBy=sockets.target
+    owner: goose:goose
+    permissions: '0644'
+  - path: /home/goose/.profile
+    append: true
+    content: |
+      export GOOSE_CONFIG=/home/goose/src/config.yaml
 
 runcmd:
   - [sed, -i, 's/^#PermitRootLogin .*/PermitRootLogin yes/', /etc/ssh/sshd_config]
@@ -130,111 +166,16 @@ runcmd:
   - [systemctl, daemon-reload]
   - [systemctl, enable, serial-getty@ttyS0.service]
   - [systemctl, restart, serial-getty@ttyS0.service]
-EOF
-
-    # Basic meta-data (unchanged from your script)
-    echo "instance-id: iid-local01" > meta-data
-    echo "local-hostname: vm" >> meta-data
-
-    # Provided network-config for ens4 with MAC match (unchanged)
-    cat > network-config <<EOF
-version: 2
-ethernets:
-  ens3:
-    match:
-      macaddress: '$MAC'
-    dhcp4: true
-    dhcp6: true
-EOF
-
-    # Copy to image
-    rm user-data
-    cp -f user-data-1 user-data
-    for file in user-data meta-data network-config; do
-        if ! mcopy -oi "$CLOUD_INIT_IMG_1" -s "$file" ::; then
-            echo "Error: Failed to copy $file to cloud-init-1 image" >&2
-            exit 1
-        fi
-    done
-    # Clean up temporary files
-    #rm -f user-data meta-data network-config
-}
-
-# Function to create cloud-init image (adapt from create-cloud-init.sh, include Podman setup from cloud_init.yaml)
-create_cloud_init_2() {
-    rm -f "$CLOUD_INIT_IMG_2"
-    mkdosfs -n CIDATA -C "$CLOUD_INIT_IMG_2" 8192
-
-    # Get user's public SSH key (assume id_rsa.pub; fallback to empty)
-    SSH_KEY=""
-    if [ -f "$HOME/.ssh/id_rsa.pub" ]; then
-        SSH_KEY=$(cat "$HOME/.ssh/id_rsa.pub")
-    elif [ -f "$HOME/.ssh/id_ed25519.pub" ]; then
-        SSH_KEY=$(cat "$HOME/.ssh/id_ed25519.pub")
-    fi
-
-    # User-data
-    # Install Podman rootless setup, users: goose, mounts, podman pull/run, and GOOSE_CONFIG in .profile
-    # 
-    cat > user-data-2 <<EOF
-#cloud-config
-package_update: false
-package_upgrade: false
-
-packages:
-  - podman
-  - fuse-overlayfs
-  - slirp4netns
-users:
-  - default
-  - name: goose
-    sudo: ALL=(ALL) NOPASSWD:ALL
-    shell: /bin/bash
-runcmd:
   - apt clean && growpart /dev/vda 1 && resize2fs /dev/vda1
   - apt update && apt install -y podman fuse-overlayfs slirp4netns
   - curl -fsSL https://github.com/block/goose/releases/download/stable/download_cli.sh | CONFIGURE=false bash
   - mkdir -p /home/goose/src
   - mount -t virtiofs host_share /home/goose/src
   - chown -R goose:goose /home/goose
-  - su - goose -c "export HOME=/usr/goose; systemctl --user daemon-reload"
-  - su - goose -c "export HOME=/usr/goose; systemctl --user restart podman.socket"
+  - su - goose -c "export HOME=/home/goose; systemctl --user daemon-reload"
+  - su - goose -c "export HOME=/home/goose; systemctl --user restart podman.socket"
 EOF
 
-#write_files:
-#  - path: /etc/systemd/system/serial-getty@ttyS0.service.d/override.conf
-#    content: |
-#      [Service]
-#      Exe#cStart=
-#      ExecStart=-/sbin/agetty --autologin root --noclear --keep-baud 115200,38400,9600 %I dumb
-#    permissions: '0644'
-#write_files:
-#  - path: /etc/subuid
-#    content: |
-#      goose:100000:65536
-#  - path: /etc/subgid
-#    content: |
-#      goose:100000:65536
-#  - path: /home/goose/.config/systemd/user/podman.socket
-#    content: |
-#      [Unit]
-#      Description=Podman API Socket
-#      Documentation=man:podman-system-service(1)
-#      [Socket]
-#      ListenStream=%h/podman.sock
-#      SocketMode=0660
-#      [Install]
-#      WantedBy=sockets.target
-#    owner: goose:goose
-#    permissions: '0644'
-#  - path: /home/goose/.profile
-#    append: true
-#    content: |
-#      export GOOSE_CONFIG=/home/goose/.goose/config.yaml
-
-#  - su - goose -c "export HOME=/usr/goose; podman run --userns=keep-id -d -p 9121:9121 -p 24282:24282 --name serena ghcr.io/oraios/serena:latest serena start-mcp-server --transport stdio"
-#  - su - goose -c "export HOME=/usr/goose; podman pull ghcr.io/oraios/serena:latest"
-#  - if [ "$SIMPLIFIED_MODE" != "true" ]; then if ! podman image exists localhost/goose:latest; then podman build -t localhost/goose:latest -f /mnt/share/Containerfile; fi; su - goose -c "podman run --userns=keep-id -d --name goose -v /mnt/share:/home/goose/workspace localhost/goose:latest goose session"; fi
     # Basic meta-data
     echo "instance-id: iid-local01" > meta-data
     echo "local-hostname: vm" >> meta-data
@@ -250,16 +191,15 @@ ethernets:
     dhcp6: true
 EOF
 
-    # Copy to image-2
-    rm -f user-data
-    cp -f user-data-2 user-data
+    # Copy to image
     for file in user-data meta-data network-config; do
-        if ! mcopy -oi "$CLOUD_INIT_IMG_2" -s "$file" ::; then
-            echo "Error: Failed to copy $file to cloud-init-2 image" >&2
+        if ! mcopy -oi "$CLOUD_INIT_IMG" -s "$file" ::; then
+            echo "Error: Failed to copy $file to cloud-init image" >&2
             exit 1
         fi
     done
-    # rm user-data meta-data network-config
+    # Clean up temporary files
+    #rm -f user-data meta-data network-config
 }
 
 # Function to setup virtiofs for shared directory (per fs.md)
@@ -286,7 +226,7 @@ setup_virtiofs() {
 # Function to launch the VM (with --firmware, --disk, --fs, --net using MACVTAP bridge from macvtap-bridge.md)
 launch_vm() {
     # Setup MACVTAP bridge (from macvtap-bridge.md)
-    # Clean up3existing macvtap0 if it exists
+    # Clean up existing macvtap0 if it exists
     if ip link show macvtap0 > /dev/null 2>&1; then
         sudo ip link delete macvtap0
     fi
@@ -301,7 +241,7 @@ launch_vm() {
     cloud-hypervisor --cpus boot=$VM_CPUS \
         --memory size=$VM_MEMORY,shared=on \
         --firmware /usr/share/cloud-hypervisor/hypervisor-fw \
-        --disk path=$IMAGE_FILE path=$CLOUD_INIT_IMG_1 \
+        --disk path=$IMAGE_FILE path=$CLOUD_INIT_IMG \
         --fs tag=host_share,socket=virtiofs.sock,num_queues=1,queue_size=512 \
         --serial socket="$SERIAL_SOCK" \
         --console off \
@@ -321,11 +261,8 @@ launch_vm() {
         exit 1
     fi
 
-    # Boot the VM using curl (only if launched in paused state)
-    #curl --unix-socket "$API_SOCK" -X PUT http://localhost/vm.boot
-
-    # Wait for IP
-    VM_IP=$(wait_and_extract_vm_ip)
+    # Wait for IP using ARP
+    VM_IP=$(wait_for_ip)
     if [ $? -eq 0 ] && [ -n "$VM_IP" ]; then
         echo "Extracted VM IP: $VM_IP"
     else
@@ -348,93 +285,35 @@ launch_vm() {
     fi
 }
 
-# Robust script to extract IPv4 address associated with a specific MAC from vm_serial.log
-# Handles binary files by cleaning null bytes, parses the cloud-init table format,
-# and is robust to streaming by using tail -f with timeout to monitor new appended lines until found.
-
-# Function to extract IP from a matched line
-extract_ip_from_line() {
-    local line="$1"
-
-    # Parse the line: Assume format "| DEVICE | UP | ADDRESS | MASK | SCOPE | HW-ADDRESS |"
-    # Use awk to split by '|' and trim spaces, extract the address field (3rd column after split)
-    # Use awk to find IPv4 pattern immediately before the MAC field in the line
-    # Use awk with a here-document for the script to avoid quoting issues
-    IP=$(echo "$line" | awk -v mac="$TARGET_MAC" '
-BEGIN {
-    # (Optional: Any initialization)
-}
-{
-    # Normalize: remove extra spaces, split by "|"
-    gsub(/[ \t]+/, " ");
-    split($0, fields, "|");
-
-    # Scan fields for MAC match
-    for (i = 1; i <= length(fields); i++) {
-        if (tolower(fields[i]) ~ tolower(mac)) {
-            # IP is likely 3 fields before MAC (ADDRESS field, skipping UP and DEVICE)
-            if (i >= 4) {
-                candidate = fields[i-3];  # Adjust offset based on table (DEVICE|UP|ADDRESS|MASK|SCOPE|HW)
-                gsub(/[ \t]+/, "", candidate);  # Trim
-                # Validate as IPv4
-                if (candidate ~ /^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$/) {
-                    print candidate;
-                    exit 0;
-                }
-            }
-        }
-    }
-    exit 1;
-}
-')
-    if [ -n "$IP" ]; then
-        echo "$IP"
-        return 0
-    fi
-    return 1
-}
-
-# Main function to tail the streaming log with timeout until IP is found
-wait_and_extract_vm_ip() {
-    #echo "Monitoring $VM_SERIAL_LOG for IP associated with MAC $MAC (timeout: $MAX_TIMEOUT_IP seconds)..."
-
-    # Use timeout to bound tail -f; clean null bytes and grep for MAC, then parse
-    timeout "$MAX_TIMEOUT_IP" tail -f "$VM_SERIAL_LOG" | strings | while read -r line; do
-        if echo "$line" | grep -iq "$MAC"; then
-            IP=$(extract_ip_from_line "$line")
-            if [ $? -eq 0 ]; then
-                echo "$IP"
-                # Kill the tail process to exit cleanly (use pkill or break)
-                pkill -P $$ tail
-                return 0
-            fi
+# Function to wait for IP via ARP
+wait_for_ip() {
+    for ((i=1; i<=$MAX_TIMEOUT_IP; i++)); do
+        VM_IP=$(arp -a | grep -i "$MAC" | awk '{gsub(/[()]/,""); print $2}')
+        if [ -n "$VM_IP" ]; then
+            echo "$VM_IP"
+            return 0
         fi
+        sleep 1
     done
-
-    # If timeout or no match
-    if [ $? -eq 124 ]; then  # timeout exit code
-        echo "Error: Timeout after $MAX_TIMEOUT_IP seconds. MAC $MAC or IP not found." >&2
-        return 1
-    fi
-    return 0  # Success if found before timeout
+    echo "Error: Timeout after $MAX_TIMEOUT_IP seconds. IP for MAC $MAC not found." >&2
+    return 1
 }
 
 # Function for interactive VM mode
 interact_vm() {
-
-    socat -,raw,echo=0,escape=0x1f UNIX-CONNECT:"$SERIAL_SOCK" || echo "Serial attachment failed" >&2
-
-    # Interactive SSH session as root using generated key
-    echo "Connecting to VM at $VM_IP via SSH as root..."
-    for i in {1..10}; do
-        if ssh -i ./vm_root_id_rsa -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null root@"$VM_IP"; then
-            break
-        fi
-        echo "SSH connection attempt $i failed; retrying in 5s..."
-        sleep 5
-    done || { echo "Error: Failed to connect via SSH - check VM logs." >&2; exit 1; }
-
-    # socat -,raw,echo=0,escape=0x1f UNIX-CONNECT:"$SERIAL_SOCK" || echo "Serial attachment failed" >&2
+    if $SERIAL; then
+        socat -,raw,echo=0,escape=0x1f UNIX-CONNECT:"$SERIAL_SOCK" || echo "Serial attachment failed" >&2
+    else
+        # Interactive SSH session as root using generated key
+        echo "Connecting to VM at $VM_IP via SSH as root..."
+        for i in {1..10}; do
+            if ssh -i ./vm_root_id_rsa -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null root@"$VM_IP"; then
+                break
+            fi
+            echo "SSH connection attempt $i failed; retrying in 5s..."
+            sleep 5
+        done || { echo "Error: Failed to connect via SSH - check VM logs." >&2; exit 1; }
+    fi
 }
 
 # Function to run command in guest (send 'goose' sub-command via serial or expect)
@@ -451,7 +330,7 @@ run_guest_command() {
     expect <<EOF
     set timeout 60
     spawn socat - UNIX-CONNECT:"$SERIAL_SOCK"
-    expect "goose@vm:~$"
+    expect "root@vm:~#"
     send "$command\r"
     send "echo DONE\r"
     send "sudo poweroff\r"
@@ -475,6 +354,7 @@ sync_back_config() {
 # Parse arguments
 CONFIG=""
 INTERACTIVE=false
+SERIAL=false
 declare -a POSITIONAL=()
 while [[ $# -gt 0 ]]; do
     key="$1"
@@ -489,6 +369,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --interactive)
             INTERACTIVE=true
+            shift
+            ;;
+        --serial)
+            SERIAL=true
             shift
             ;;
         -v)
@@ -542,8 +426,7 @@ check_deps
 download_image
 
 # Create cloud-init
-create_cloud_init_1
-create_cloud_init_2
+create_cloud_init
 
 # Setup virtiofs
 setup_virtiofs
@@ -552,11 +435,11 @@ setup_virtiofs
 launch_vm
 
 # Trap for cleanup and sync
-trap 'curl --unix-socket "$API_SOCK" -X PUT http://localhost/vshutdown; kill $VM_PID $VIRTIOFSD_PID $MONITOR_PID; rm -f virtiofs.sock "$API_SOe" "$SERIAL_SOCK"; sudo ip link delete macvtap0; sync_back_config' EXIT ERR INT TERM
+trap 'curl --unix-socket "$API_SOCK" -X PUT http://localhost/vshutdown; kill $VM_PID $VIRTIOFSD_PID $MONITOR_PID; rm -f virtiofs.sock "$API_SOCK" "$SERIAL_SOCK"; sudo ip link delete macvtap0; sync_back_config' EXIT ERR INT TERM
 
 # Check for interactive mode
 if $INTERACTIVE || [[ "${POSITIONAL[0]}" == "repl" ]] || ([ ${#POSITIONAL[@]} -eq 0 ] && [ -t 0 ] && [ -t 1 ]); then
     interact_vm
 else
-    echo run_guest_command
+    run_guest_command
 fi
