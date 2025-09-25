@@ -2,18 +2,23 @@
 
 This repository contains the Goose script for launching and managing VMs with Cloud Hypervisor.
 
-## Running BATS Tests
+## Prerequisites
 
-To run the BATS tests for the Goose script:
+Before running the script or tests, ensure the following dependencies are installed:
 
-1. **Install test dependencies**: Run the installation script to set up bats-support and bats-assert.
-   ```
-   ./tests/install_deps.sh
-   ```
+- cloud-hypervisor
+- virtiofsd
+- socat
+- dosfstools (provides mkdosfs and mcopy)
+- qemu-utils (provides qemu-img)
+- curl
+- expect
+- iproute2 (provides ip)
+- wget
+- coreutils (provides md5sum)
+- openssh-client (provides ssh and ssh-keygen)
+- netcat (provides nc)
+- procps (provides pkill)
 
-2. **Run the tests**: Execute the BATS test file using the `bats` command (ensure BATS is installed on your system).
-   ```
-   bats tests/goose_repl.bats
-   ```
+On Ubuntu, install them with:
 
-These tests verify REPL mode and non-REPL command execution, including VM launch and serial interaction.

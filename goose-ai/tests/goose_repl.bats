@@ -4,6 +4,7 @@ load 'lib/bats-support/load'
 load 'lib/bats-assert/load'
 
 setup() {
+  export PATH="$PATH:/usr/libexec:/sbin"
   TEST_DIR=$(cd "$(dirname "$BATS_TEST_FILENAME")"; pwd)
   SCRIPT="$TEST_DIR/../goose"
   CONFIG_FILE="$BATS_TEST_TMPDIR/test_config.yaml"
