@@ -17,6 +17,7 @@
 !**/bats/**/*
 !**/examples/**/*
 !**/references/**/*
+!**/tests/**/*
 
 # ...even if they are in subdirectories
 !aider-ai/
@@ -27,8 +28,9 @@
 
 !goose-ai/
 !goose-ai/artifacts/
+!goose-ai/tests/
 
- !python/
+!python/
 
 !salt/
 
