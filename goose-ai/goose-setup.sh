@@ -42,12 +42,19 @@ perform_setup() {
         chmod 666 jammy-server-cloudimg-amd64.img "$IMAGE_FILE" || { echo "Error: Failed to set image permissions" >> "$LOG_FILE" >&2; exit 1; }
     fi
 
-    # Kill existing virtiofsd processes before launching new one
+    # Preemptively kill any matching old virtiofsd processes using socket path filters
     echo "Checking for existing virtiofsd processes..." >> "$LOG_FILE"
-    pkill -f "virtiofsd.*--socket-path=$VIRTIOFS_SOCK" || true
-    sleep 1
-    pkill -9 -f "virtiofsd.*--socket-path=$VIRTIOFS_SOCK" || true
-    if pgrep -f "virtiofsd.*--socket-path=$VIRTIOFS_SOCK" > /dev/null; then
+    pkill -TERM -f "virtiofsd.*--socket-path=virtiofs.sock" || true
+    sleep 2
+    pkill -9 -f "virtiofsd.*--socket-path=virtiofs.sock" || true
+    pkill -TERM -f "virtiofsd.*--socket-path=.goose/virtiofs.sock" || true
+    sleep 2
+    pkill -9 -f "virtiofsd.*--socket-path=.goose/virtiofs.sock" || true
+    KILLED_PIDS=$(pgrep -f "virtiofsd.*--socket-path=(virtiofs.sock|.goose/virtiofs.sock)" || true)
+    if [ -n "$KILLED_PIDS" ]; then
+        echo "Killed lingering virtiofsd PIDs: $KILLED_PIDS" >> "$LOG_FILE"
+    fi
+    if pgrep -f "virtiofsd.*--socket-path=(virtiofs.sock|.goose/virtiofs.sock)" > /dev/null; then
         echo "Warning: Lingering virtiofsd processes after kill" >> "$LOG_FILE" >&2
     fi
 
@@ -108,30 +115,42 @@ perform_teardown() {
         sleep 5
     fi
 
-    # Graceful kill for virtiofsd
+    # Graceful kill for tracked virtiofsd PID
     echo "Gracefully killing virtiofsd PID $VIRTIOFSD_PID..." >> "$LOG_FILE"
     kill -TERM "$VIRTIOFSD_PID" 2>/dev/null || true
     sleep 2
     kill -9 "$VIRTIOFSD_PID" 2>/dev/null || true
     echo "Killed virtiofsd PID $VIRTIOFSD_PID" >> "$LOG_FILE"
 
-    # Broader kill for any lingering virtiofsd
-    pkill -f "virtiofsd.*--socket-path=$VIRTIOFS_SOCK" || true
-    sleep 1
-    pkill -9 -f "virtiofsd.*--socket-path=$VIRTIOFS_SOCK" || true
+    # Broader kill for any lingering virtiofsd with socket path patterns
+    echo "Killing any lingering virtiofsd processes..." >> "$LOG_FILE"
+    pkill -TERM -f "virtiofsd.*--socket-path=virtiofs.sock" || true
+    sleep 2
+    pkill -9 -f "virtiofsd.*--socket-path=virtiofs.sock" || true
+    pkill -TERM -f "virtiofsd.*--socket-path=.goose/virtiofs.sock" || true
+    sleep 2
+    pkill -9 -f "virtiofsd.*--socket-path=.goose/virtiofs.sock" || true
+    KILLED_PIDS=$(pgrep -f "virtiofsd.*--socket-path=(virtiofs.sock|.goose/virtiofs.sock)" || true)
+    if [ -n "$KILLED_PIDS" ]; then
+        echo "Killed additional virtiofsd PIDs: $KILLED_PIDS" >> "$LOG_FILE"
+    fi
 
     # Broader kill for hypervisor
     echo "Killing hypervisor processes..." >> "$LOG_FILE"
-    pkill -f "cloud-hypervisor.*--api-socket" || true
-    sleep 1
+    pkill -TERM -f "cloud-hypervisor.*--api-socket" || true
+    sleep 2
     pkill -9 -f "cloud-hypervisor.*--api-socket" || true
+    KILLED_PIDS=$(pgrep -f "cloud-hypervisor.*--api-socket" || true)
+    if [ -n "$KILLED_PIDS" ]; then
+        echo "Killed hypervisor PIDs: $KILLED_PIDS" >> "$LOG_FILE"
+    fi
 
     # Verify no lingering processes
-    if pgrep -f "virtiofsd.*--socket-path=$VIRTIOFS_SOCK" > /dev/null; then
-        echo "Warning: Lingering virtiofsd processes" >> "$LOG_FILE" >&2
+    if pgrep -f "virtiofsd.*--socket-path=(virtiofs.sock|.goose/virtiofs.sock)" > /dev/null; then
+        echo "Warning: Lingering virtiofsd after teardown" >> "$LOG_FILE" >&2
     fi
     if pgrep -f "cloud-hypervisor.*--api-socket" > /dev/null; then
-        echo "Warning: Lingering hypervisor processes" >> "$LOG_FILE" >&2
+        echo "Warning: Lingering hypervisor processes after teardown" >> "$LOG_FILE" >&2
     fi
 
     # Remove sockets and files
