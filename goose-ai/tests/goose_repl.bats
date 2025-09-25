@@ -8,7 +8,7 @@ setup_file() {
   TEST_DIR=$(cd "$(dirname "$BATS_TEST_FILENAME")"; pwd)
   SCRIPT="$TEST_DIR/../goose"
   SETUP_SCRIPT="$TEST_DIR/../goose-setup.sh"
-  CONFIG_FILE="$BATS_TEST_TMPDIR/test_config.yaml"
+  CONFIG_FILE=$(mktemp /tmp/test_config.XXXXXX.yaml)
   cat > "$CONFIG_FILE" <<EOF
 # Minimal test config
 key: value
@@ -18,6 +18,9 @@ EOF
   for dep in cloud-hypervisor virtiofsd socat mkdosfs mcopy qemu-img curl expect ip wget md5sum ssh ssh-keygen nc pkill; do
     command -v "$dep" >/dev/null || skip "$dep not installed"
   done
+
+  # Ensure setup script is executable
+  chmod +x "$SETUP_SCRIPT"
 
   # Run persistent setup once per suite
   run sudo "$SETUP_SCRIPT" --setup
