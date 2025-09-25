@@ -36,7 +36,6 @@ setup_file() {
 teardown_file() {
   # Additional cleanup
   rm -f vm_root_id_rsa vm_root_id_rsa.pub
-  rm -f jammy-server-cloudimg-amd64.img jammy-server-cloudimg-amd64.raw
   rm -f cloud-init.img
   rm -f user-data meta-data network-config
   rm -rf /tmp/goose_test.* || true

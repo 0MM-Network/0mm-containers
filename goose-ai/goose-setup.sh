@@ -1,7 +1,4 @@
 #!/bin/bash
-#
-
-set -x
 
 # Define paths and defaults
 GOOSE_DIR=".goose"
@@ -14,8 +11,8 @@ SHARED_DIR="./"  # Can be overridden if needed
 HOST_IFACE=$(ip route get 8.8.8.8 | awk -- '{printf $5}' | head -n1)
 MAC="12:34:56:78:90:ab"
 IMAGE_URL="https://cloud-images.ubuntu.com/jammy/current/jammy-server-cloudimg-amd64.img"
-IMAGE_FILE="jammy-server-cloudimg-amd64.raw"
-IMG_FILE="jammy-server-cloudimg-amd64.img"
+IMAGE_FILE=".goose/jammy-server-cloudimg-amd64.raw"
+IMG_FILE=".goose/jammy-server-cloudimg-amd64.img"
 KNOWN_IMG_SIZE=536870912  # Example known size in bytes for integrity check; update as needed
 
 # Function to perform idempotent setup
@@ -42,13 +39,16 @@ perform_setup() {
     if [ -f "$IMG_FILE" ] && [ -f "$IMAGE_FILE" ] && [ $(stat -c %s "$IMG_FILE") -eq $KNOWN_IMG_SIZE ]; then
         echo "Image files exist and integrity verified, skipping download" >> "$LOG_FILE"
     else
-        if [ ! -f "$IMG_FILE" ]; then
-            wget "$IMAGE_URL" -O "$IMG_FILE" || { echo "Error: Failed to download image" >> "$LOG_FILE" >&2; exit 1; }
+        if [ ! -f "jammy-server-cloudimg-amd64.img" ]; then
+            wget "$IMAGE_URL" -O "jammy-server-cloudimg-amd64.img" || { echo "Error: Failed to download image" >> "$LOG_FILE" >&2; exit 1; }
         fi
-        qemu-img convert -p -f qcow2 -O raw "$IMG_FILE" "$IMAGE_FILE" || { echo "Error: Failed to convert image" >> "$LOG_FILE" >&2; exit 1; }
-        qemu-img resize -f raw "$IMAGE_FILE" 10G || { echo "Error: Failed to resize image" >> "$LOG_FILE" >&2; exit 1; }
+        qemu-img convert -p -f qcow2 -O raw "jammy-server-cloudimg-amd64.img" "jammy-server-cloudimg-amd64.raw" || { echo "Error: Failed to convert image" >> "$LOG_FILE" >&2; exit 1; }
+        qemu-img resize -f raw "jammy-server-cloudimg-amd64.raw" 10G || { echo "Error: Failed to resize image" >> "$LOG_FILE" >&2; exit 1; }
+        mv "jammy-server-cloudimg-amd64.img" "$IMG_FILE"
+        mv "jammy-server-cloudimg-amd64.raw" "$IMAGE_FILE"
         # Make images world readable/writable
         chmod 666 "$IMG_FILE" "$IMAGE_FILE" || { echo "Error: Failed to set image permissions" >> "$LOG_FILE" >&2; exit 1; }
+        chown $UID:$GID "$IMG_FILE" "$IMAGE_FILE" || { echo "Error: Failed to chown image files" >> "$LOG_FILE" >&2; exit 1; }
     fi
 
     # Preemptively kill any matching old virtiofsd processes using socket path filters
