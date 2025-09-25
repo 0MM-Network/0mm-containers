@@ -294,6 +294,8 @@ start_hypervisor() {
     socat UNIX-LISTEN:"$SERIAL_SOCK",fork PTY:$PTY_PATH | tee "$SERIAL_LOG" &
     SOCAT_PID=$!
     echo "Started socat bridge with PID $SOCAT_PID" >> "$VM_LOG"
+    sleep 1
+    [ -S "$SERIAL_SOCK" ] || { echo "Error: Socat bridge failed" >> "$VM_LOG" >&2; exit 1; }
 }
 
 # Modularized: Wait for resources (API, IP, SSH)
@@ -420,7 +422,7 @@ sync_back_config() {
 cleanup_vm() {
     echo "Cleaned up on signal" >> "$VM_LOG"
     pkill -P $$ || true  # Kill child processes
-    pkill -f "socat.*$SERIAL_SOCK" || true  # Kill socat bridge
+    kill $SOCAT_PID 2>/dev/null || pkill -f "socat.*$SERIAL_SOCK" || true  # Kill socat bridge
     rm -f "$API_SOCK" "$SERIAL_SOCK" "$SERIAL_LOG" || true
     sync_back_config
 }
