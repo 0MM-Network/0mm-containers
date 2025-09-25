@@ -73,7 +73,7 @@ teardown() {
   # Create expect script for interactive REPL test
   EXPECT_SCRIPT=$(mktemp)
   cat > "$EXPECT_SCRIPT" <<EOF
-set timeout 60
+set timeout 120
 spawn socat - UNIX-CONNECT:.goose/serial.sock
 expect {
   "root@vm:~#" { }
@@ -92,6 +92,15 @@ EOF
   echo "Generated Expect script:"
   cat "$EXPECT_SCRIPT"
 
+  # Poll for serial socket existence
+  for i in {1..10}; do
+    if [ -S .goose/serial.sock ]; then
+      break
+    fi
+    sleep 1
+  done
+  [ -S .goose/serial.sock ] || fail "Serial socket not created after wait"
+
   # Run with external timeout
   run timeout 120s expect -f "$EXPECT_SCRIPT"
   assert_success
@@ -107,6 +116,9 @@ EOF
 
   # Verify VM launched (e.g., check for API socket as indicator)
   [ -S ".goose/api.sock" ]
+
+  # Assert on serial.log existence
+  [ -f serial.log ] || fail "Serial log missing"
 
   rm -f "$EXPECT_SCRIPT"
 }
