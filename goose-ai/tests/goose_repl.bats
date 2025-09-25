@@ -15,7 +15,7 @@ setup_file() {
 
   # Check if setup is complete
   if [ ! -f ".goose/setup.lock" ] || ! source ".goose/setup.lock" 2>/dev/null || [ -z "$VIRTIOFSD_PID" ]; then
-    echo "Setup not detected. Please run 'sudo ./goose-setup.sh --setup' before tests and try again."
+    echo "Setup not detected or stale. Please run 'sudo ./goose-setup.sh --teardown' followed by 'sudo ./goose-setup.sh --setup' and try again."
     fail "Setup required"
   fi
 

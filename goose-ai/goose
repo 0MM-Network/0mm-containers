@@ -219,17 +219,8 @@ handle_setup() {
     if check_setup; then
         echo "Reusing existing setup." >> "$VM_LOG"
     else
-        echo "Setup stale or missing. Recreating..." >> "$VM_LOG"
-        ./goose-setup.sh --teardown
-        if [ $? -ne 0 ]; then
-            echo "Teardown failed: $?" >> "$VM_LOG" >&2
-            exit 1
-        fi
-        ./goose-setup.sh --setup
-        if [ $? -ne 0 ]; then
-            echo "Setup failed: $?" >> "$VM_LOG" >&2
-            exit 1
-        fi
+        echo "Stale setup detected. Please run 'sudo ./goose-setup.sh --teardown' followed by 'sudo ./goose-setup.sh --setup' and then retry this command."
+        exit 1
     fi
 }
 
