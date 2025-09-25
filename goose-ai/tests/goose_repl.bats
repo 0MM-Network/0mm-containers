@@ -6,13 +6,7 @@ load 'lib/bats-assert/load'
 setup_file() {
   export PATH="$PATH:/usr/libexec:/sbin"
   TEST_DIR=$(cd "$(dirname "$BATS_TEST_FILENAME")"; pwd)
-  SCRIPT="$TEST_DIR/../goose"
   SETUP_SCRIPT="$TEST_DIR/../goose-setup.sh"
-  CONFIG_FILE=$(mktemp -p /tmp test_config.XXXXXX.yaml)
-  cat > "$CONFIG_FILE" <<EOF
-# Minimal test config
-key: value
-EOF
 
   # Dependency checks (run once)
   for dep in cloud-hypervisor virtiofsd socat mkdosfs mcopy qemu-img curl expect ip wget md5sum ssh ssh-keygen nc pkill; do
@@ -33,7 +27,6 @@ teardown_file() {
   assert_success
 
   # Additional cleanup
-  rm -f "$CONFIG_FILE"
   rm -f vm_root_id_rsa vm_root_id_rsa.pub
   rm -f jammy-server-cloudimg-amd64.img jammy-server-cloudimg-amd64.raw
   rm -f cloud-init.img
@@ -42,8 +35,14 @@ teardown_file() {
 }
 
 setup() {
-  # Per-test setup (e.g., reset any test-specific state)
-  :
+  # Per-test setup: define variables here for scope in test subshells
+  TEST_DIR=$(cd "$(dirname "$BATS_TEST_FILENAME")"; pwd)
+  SCRIPT="$TEST_DIR/../goose"
+  CONFIG_FILE=$(mktemp -p /tmp test_config.XXXXXX.yaml)
+  cat > "$CONFIG_FILE" <<EOF
+# Minimal test config
+key: value
+EOF
 }
 
 teardown() {
@@ -52,6 +51,7 @@ teardown() {
   pkill -f socat || true
   pkill -f expect || true
   rm -f .goose/serial.sock .goose/api.sock || true
+  rm -f "$CONFIG_FILE"
 }
 
 @test "REPL mode launches VM and provides interactive access via serial" {
