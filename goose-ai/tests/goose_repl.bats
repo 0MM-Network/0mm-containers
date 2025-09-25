@@ -17,9 +17,17 @@ EOF
   for dep in cloud-hypervisor virtiofsd socat mkdosfs mcopy qemu-img curl expect ip wget md5sum ssh ssh-keygen nc pkill; do
     command -v "$dep" >/dev/null || skip "$dep not installed"
   done
+
+  # Run sudo setup
+  run sudo "$SCRIPT" --sudo-setup --config "$CONFIG_FILE"
+  assert_success
 }
 
 teardown() {
+  # Run sudo teardown
+  run sudo "$SCRIPT" --sudo-teardown
+  assert_success
+
   # Cleanup files
   rm -f "$CONFIG_FILE"
   rm -f vm_root_id_rsa vm_root_id_rsa.pub
@@ -45,7 +53,7 @@ teardown() {
   EXPECT_SCRIPT=$(mktemp)
   cat > "$EXPECT_SCRIPT" <<EOF
 set timeout 300
-spawn $SCRIPT --serial --config $CONFIG_FILE repl
+spawn $SCRIPT --serial --config $CONFIG_FILE repl --no-trap
 expect {
   "root@vm:~#" { }
   timeout { exit 1 }
@@ -71,7 +79,7 @@ EOF
 }
 
 @test "Non-REPL mode runs command via expect over ttyS0" {
-  run timeout 300 $SCRIPT --serial --config $CONFIG_FILE info
+  run timeout 300 $SCRIPT --serial --config $CONFIG_FILE info --no-trap
   assert_success
 
   # Verify expected output (adjust based on 'info' command; assuming it echoes something verifiable)

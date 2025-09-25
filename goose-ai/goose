@@ -202,40 +202,71 @@ EOF
     #rm -f user-data meta-data network-config
 }
 
-# Function to setup virtiofs for shared directory (per fs.md)
-setup_virtiofs() {
-    mkdir -p "$SHARED_DIR"
-    cp "$CONFIG" "$SHARED_DIR/config.yaml"
-    sudo bash -c "ulimit -n 1000000 && /usr/libexec/virtiofsd --sandbox none --socket-path=virtiofs.sock --shared-dir \"$SHARED_DIR\" --cache=never --thread-pool-size=4 &"
-    VIRTIOFSD_PID=$!
+# Function for sudo-requiring setup commands, idempotent where possible
+sudo_setup() {
+    local SUDO="sudo"
+    if [ "$(id -u)" -eq 0 ]; then SUDO=""; fi
 
-    # Poll for virtiofs.sock
-    for i in {1..30}; do
-        if [ -S "virtiofs.sock" ]; then
-            break
-        fi
-        sleep 1
-    done
+    # Setup virtiofs
     if [ ! -S "virtiofs.sock" ]; then
-        echo "Error: virtiofs.sock timeout" >&2
-        exit 1
+        $SUDO bash -c "ulimit -n 1000000 && exec /usr/libexec/virtiofsd --sandbox none --socket-path=virtiofs.sock --shared-dir \"$SHARED_DIR\" --cache=never --thread-pool-size=4" &
+        # Poll for virtiofs.sock
+        for i in {1..30}; do
+            if [ -S "virtiofs.sock" ]; then
+                break
+            fi
+            sleep 1
+        done
+        if [ ! -S "virtiofs.sock" ]; then
+            echo "Error: virtiofs.sock timeout" >&2
+            exit 1
+        fi
     fi
-    sudo chmod 666 virtiofs.sock
-}
+    if [ -S "virtiofs.sock" ] && [ "$(stat -c %a "virtiofs.sock")" != "666" ]; then
+        $SUDO chmod 666 virtiofs.sock
+    fi
 
-# Function to launch the VM (with --firmware, --disk, --fs, --net using MACVTAP bridge from macvtap-bridge.md)
-launch_vm() {
-    # Setup MACVTAP bridge (from macvtap-bridge.md)
-    # Clean up existing macvtap0 if it exists
+    # Setup MACVTAP
     if ip link show macvtap0 > /dev/null 2>&1; then
-        sudo ip link delete macvtap0
+        $SUDO ip link delete macvtap0
     fi
-    sudo ip link add link "$HOST_IFACE" name macvtap0 type macvtap
-    sudo ip link set macvtap0 address "$MAC" up promisc on
-    sudo ip link show macvtap0
+    $SUDO ip link add link "$HOST_IFACE" name macvtap0 type macvtap
+    $SUDO ip link set macvtap0 address "$MAC" up promisc on
+    $SUDO ip link show macvtap0
     TAP_FD=$(< /sys/class/net/macvtap0/ifindex)
     TAP_DEVICE="/dev/tap$TAP_FD"
-    sudo chown "$UID:$UID" "$TAP_DEVICE"
+    if [ "$(stat -c %u "$TAP_DEVICE")" != "$UID" ]; then
+        $SUDO chown "$UID:$UID" "$TAP_DEVICE"
+    fi
+}
+
+# Function for sudo-requiring teardown commands, idempotent
+sudo_teardown() {
+    local SUDO="sudo"
+    if [ "$(id -u)" -eq 0 ]; then SUDO=""; fi
+
+    local SHARED_ABS=$(realpath "$SHARED_DIR")
+    local API_ABS=$(realpath "$API_SOCK")
+
+    if [ -S "$API_SOCK" ]; then
+        curl --unix-socket "$API_SOCK" -X PUT http://localhost/vmm.shutdown
+        sleep 5  # Wait for graceful shutdown
+    fi
+
+    $SUDO pkill -f "cloud-hypervisor.*--api-socket $API_ABS" || true
+    $SUDO pkill -f "virtiofsd.*--shared-dir $SHARED_ABS" || true
+    $SUDO rm -f virtiofs.sock "$API_SOCK" "$SERIAL_SOCK" || true
+
+    if ip link show macvtap0 > /dev/null 2>&1; then
+        $SUDO ip link delete macvtap0 || true
+    fi
+}
+
+# Function to launch the VM (assumes sudo_setup has been called)
+launch_vm() {
+    # Assume MACVTAP is set up, get TAP details
+    TAP_FD=$(< /sys/class/net/macvtap0/ifindex)
+    TAP_DEVICE="/dev/tap$TAP_FD"
 
     # Clean up existing API socket if it exists
     cloud-hypervisor --cpus boot=$VM_CPUS \
@@ -355,6 +386,9 @@ sync_back_config() {
 CONFIG=""
 INTERACTIVE=false
 SERIAL=false
+SUDO_SETUP=false
+SUDO_TEARDOWN=false
+NO_TRAP=false
 declare -a POSITIONAL=()
 while [[ $# -gt 0 ]]; do
     key="$1"
@@ -375,13 +409,25 @@ while [[ $# -gt 0 ]]; do
             SERIAL=true
             shift
             ;;
+        --sudo-setup)
+            SUDO_SETUP=true
+            shift
+            ;;
+        --sudo-teardown)
+            SUDO_TEARDOWN=true
+            shift
+            ;;
+        --no-trap)
+            NO_TRAP=true
+            shift
+            ;;
         -v)
             VERBOSE=true
             shift
             ;;
         --log)
             LOG_FILE="$2"
-            shift
+            shift 2
             ;;
         --help)
             show_help
@@ -396,12 +442,24 @@ set -- "${POSITIONAL[@]}"
 
 # Enable verbose if -v
 if $VERBOSE; then
-    set echo x
+    set -x
 fi
 
-#echo Redirect to log file if specified
+# Redirect to log file if specified
 if [ -n "$LOG_FILE" ]; then
     exec > >(tee -a "$LOG_FILE") 2>&1
+fi
+
+# Handle special flags
+if $SUDO_SETUP; then
+    mkdir -p "$SHARED_DIR"
+    cp "$CONFIG" "$SHARED_DIR/config.yaml"
+    sudo_setup
+    exit 0
+fi
+if $SUDO_TEARDOWN; then
+    sudo_teardown
+    exit 0
 fi
 
 # Require --config
@@ -422,20 +480,26 @@ export PATH="$PATH:/usr/libexec:/sbin"
 # Check deps and portability
 check_deps
 
+# Prepare shared dir
+mkdir -p "$SHARED_DIR"
+cp "$CONFIG" "$SHARED_DIR/config.yaml"
+
+# Perform sudo setup
+sudo_setup
+
 # Download image
 download_image
 
 # Create cloud-init
 create_cloud_init
 
-# Setup virtiofs
-setup_virtiofs
-
 # Launch VM
 launch_vm
 
 # Trap for cleanup and sync
-trap 'curl --unix-socket "$API_SOCK" -X PUT http://localhost/vshutdown; kill $VM_PID $VIRTIOFSD_PID $MONITOR_PID; rm -f virtiofs.sock "$API_SOCK" "$SERIAL_SOCK"; sudo ip link delete macvtap0; sync_back_config' EXIT ERR INT TERM
+if ! $NO_TRAP; then
+    trap 'sudo_teardown; sync_back_config' EXIT ERR INT TERM
+fi
 
 # Check for interactive mode
 if $INTERACTIVE || [[ "${POSITIONAL[0]}" == "repl" ]] || ([ ${#POSITIONAL[@]} -eq 0 ] && [ -t 0 ] && [ -t 1 ]); then
