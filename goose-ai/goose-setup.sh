@@ -1,7 +1,4 @@
 #!/bin/bash
-#
-
-set -x
 
 # Define paths and defaults
 GOOSE_DIR=".goose"
