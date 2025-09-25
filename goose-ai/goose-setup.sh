@@ -10,6 +10,8 @@ LOG_FILE="$GOOSE_DIR/setup.log"
 SHARED_DIR="./"  # Can be overridden if needed
 HOST_IFACE=$(ip route get 8.8.8.8 | awk -- '{printf $5}' | head -n1)
 MAC="12:34:56:78:90:ab"
+IMAGE_URL="https://cloud-images.ubuntu.com/jammy/current/jammy-server-cloudimg-amd64.img"
+IMAGE_FILE="jammy-server-cloudimg-amd64.raw"
 
 # Function to perform idempotent setup
 perform_setup() {
@@ -26,7 +28,18 @@ perform_setup() {
     if [ "$EUID" -eq 0 ]; then
         SUDO=""
     else
-        $SUDO true || { echo "Error: Non-interactive sudo not available" >&2; exit 1; }
+        $SUDO true || { echo "Error: Non-interactive sudo not available" >> "$LOG_FILE" >&2; exit 1; }
+    fi
+
+    # Download and prepare image idempotently
+    if [ ! -f "$IMAGE_FILE" ]; then
+        if [ ! -f jammy-server-cloudimg-amd64.img ]; then
+            wget "$IMAGE_URL" -O jammy-server-cloudimg-amd64.img || { echo "Error: Failed to download image" >> "$LOG_FILE" >&2; exit 1; }
+        fi
+        qemu-img convert -p -f qcow2 -O raw jammy-server-cloudimg-amd64.img "$IMAGE_FILE" || { echo "Error: Failed to convert image" >> "$LOG_FILE" >&2; exit 1; }
+        qemu-img resize -f raw "$IMAGE_FILE" 10G || { echo "Error: Failed to resize image" >> "$LOG_FILE" >&2; exit 1; }
+        # Make images world readable/writable
+        chmod 666 jammy-server-cloudimg-amd64.img "$IMAGE_FILE" || { echo "Error: Failed to set image permissions" >> "$LOG_FILE" >&2; exit 1; }
     fi
 
     # Setup virtiofsd if not running

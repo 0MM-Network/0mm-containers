@@ -6,7 +6,6 @@ set -x
 # Define defaults
 VM_MEMORY="1024M"
 VM_CPUS=1
-IMAGE_URL="https://cloud-images.ubuntu.com/jammy/current/jammy-server-cloudimg-amd64.img"
 IMAGE_FILE="jammy-server-cloudimg-amd64.raw"
 SHARED_DIR="./"
 CONFIG_MOUNT="/home/goose/src"
@@ -54,27 +53,10 @@ check_deps() {
         exit 1
     fi
 
-    # Check image compatibility (simple filename check for jammy)
-    if [[ "$IMAGE_URL" != *"jammy"* ]]; then
-        echo "Warning: Image URL does not appear to be Ubuntu jammy; compatibility not guaranteed." >&2
-    fi
-
     # Check if detected HOST_IFACE exists
     if [ -z "$HOST_IFACE" ] || ! ip link show "$HOST_IFACE" > /dev/null 2>&1; then
         echo "Error: Unable to detect a valid network interface. Please set HOST_IFACE manually." >&2
         exit 1
-    fi
-}
-
-# Function to download and prepare the cloud image
-download_image() {
-    if [ ! -f "$IMAGE_FILE" ]; then
-        if [ ! -f jammy-server-cloudimg-amd64.img ]; then
-            wget "$IMAGE_URL" -O jammy-server-cloudimg-amd64.img
-        fi
-        qemu-img convert -p -f qcow2 -O raw jammy-server-cloudimg-amd64.img "$IMAGE_FILE"
-        qemu-img resize -f raw "$IMAGE_FILE" 10G
-        # rm jammy-server-cloudimg-amd64.img
     fi
 }
 
@@ -233,12 +215,21 @@ check_setup() {
 
 # Function to handle setup (reuse or recreate if stale)
 handle_setup() {
+    [ -w "$VM_LOG" ] || { echo "Error: Cannot write to log - check permissions" >&2; exit 1; }
     if check_setup; then
         echo "Reusing existing setup." >> "$VM_LOG"
     else
         echo "Setup stale or missing. Recreating..." >> "$VM_LOG"
-        ./goose-setup.sh --teardown || true  # Clean up any partial state
+        ./goose-setup.sh --teardown
+        if [ $? -ne 0 ]; then
+            echo "Teardown failed: $?" >> "$VM_LOG" >&2
+            exit 1
+        fi
         ./goose-setup.sh --setup
+        if [ $? -ne 0 ]; then
+            echo "Setup failed: $?" >> "$VM_LOG" >&2
+            exit 1
+        fi
     fi
 }
 
@@ -527,9 +518,6 @@ cp "$CONFIG" "$SHARED_DIR/config.yaml"
 
 # Handle setup (reuse or recreate)
 handle_setup
-
-# Download image
-download_image
 
 # Create cloud-init
 create_cloud_init
