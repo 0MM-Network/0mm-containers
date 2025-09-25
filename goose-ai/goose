@@ -6,16 +6,18 @@ set -x
 # Define defaults
 VM_MEMORY="1024M"
 VM_CPUS=1
-IMAGE_FILE="jammy-server-cloudimg-amd64.raw"
+
+GOOSE_DIR=".goose"
+
+IMAGE_FILE="$GOOSE_DIR/jammy-server-cloudimg-amd64.raw"
 SHARED_DIR="./"
 CONFIG_MOUNT="/home/goose/src"
 GOOSE_CONFIG="$CONFIG_MOUNT/config.yaml"
-GOOSE_DIR=".goose"
 SERIAL_SOCK="$GOOSE_DIR/serial.sock"
 API_SOCK="$GOOSE_DIR/api.sock"
 VIRTIOFS_SOCK="$GOOSE_DIR/virtiofs.sock"
 LOCK_FILE="$GOOSE_DIR/setup.lock"
-CLOUD_INIT_IMG="cloud-init.img"
+CLOUD_INIT_IMG="$GOOSE_DIR/cloud-init.img"
 SERIAL_LOG="serial.log"
 SIMPLIFIED_MODE=${SIMPLIFIED_MODE:-true}
 HOST_IFACE=$(ip route get 8.8.8.8 | awk -- '{printf $5}' | head -n1)  # Detect default interface

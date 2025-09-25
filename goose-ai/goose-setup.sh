@@ -113,7 +113,7 @@ perform_setup() {
     fi
     TAP_FD=$(< /sys/class/net/macvtap0/ifindex)
     TAP_DEVICE="/dev/tap$TAP_FD"
-    if [ "$(stat -c %u "$TAP_DEVICE")" != "$UID" ]; then
+    if [ "$(stat -c %u "$TAP_DEVICE")" != "$ORIGINAL_UID" ]; then
         chown $ORIGINAL_UID:$ORIGINAL_GID "$TAP_DEVICE" || { echo "chown TAP" >> "$LOG_FILE" >&2; exit 1; }
     fi
 
