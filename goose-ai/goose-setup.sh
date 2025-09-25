@@ -14,43 +14,52 @@ MAC="12:34:56:78:90:ab"
 # Function to perform idempotent setup
 perform_setup() {
     mkdir -p "$GOOSE_DIR"
+
+    # Set permissions for log file
+    umask 002
+    touch "$LOG_FILE"
+    chmod 666 "$LOG_FILE"
+
     echo "Starting setup..." >> "$LOG_FILE"
+
+    local SUDO="sudo -n"
+    if [ "$EUID" -eq 0 ]; then
+        SUDO=""
+    else
+        $SUDO true || { echo "Error: Non-interactive sudo not available" >&2; exit 1; }
+    fi
 
     # Setup virtiofsd if not running
     if ! pgrep -f "virtiofsd.*--socket-path=$VIRTIOFS_SOCK" > /dev/null; then
-        sudo bash -c "ulimit -n 1000000 && exec /usr/libexec/virtiofsd --sandbox none --socket-path=$VIRTIOFS_SOCK --shared-dir \"$SHARED_DIR\" --cache=never --thread-pool-size=4" &
+        $SUDO bash -c "ulimit -n 1000000 && exec /usr/libexec/virtiofsd --sandbox none --socket-path=$VIRTIOFS_SOCK --shared-dir \"$SHARED_DIR\" --cache=never --thread-pool-size=4" &
         VIRTIOFSD_PID=$!
-        # Poll for socket
-        for i in {1..30}; do
-            if [ -S "$VIRTIOFS_SOCK" ]; then
-                break
-            fi
-            sleep 1
-        done
-        if [ ! -S "$VIRTIOFS_SOCK" ]; then
-            echo "Error: virtiofs.sock timeout" >&2
+        # Poll for socket with timeout
+        timeout 30s bash -c 'for i in {1..30}; do if [ -S "'"$VIRTIOFS_SOCK"'" ]; then exit 0; fi; sleep 1; done; echo "Timeout on virtiofs.sock" >&2; exit 1'
+        if [ $? -ne 0 ]; then
+            echo "Error: virtiofs.sock timeout" >> "$LOG_FILE" >&2
             exit 1
         fi
-        sudo chmod 666 "$VIRTIOFS_SOCK"
+        $SUDO chmod 666 "$VIRTIOFS_SOCK"
     else
         VIRTIOFSD_PID=$(pgrep -f "virtiofsd.*--socket-path=$VIRTIOFS_SOCK")
     fi
 
     # Setup MACVTAP if not exists
     if ! ip link show macvtap0 > /dev/null 2>&1; then
-        sudo ip link add link "$HOST_IFACE" name macvtap0 type macvtap
-        sudo ip link set macvtap0 address "$MAC" up promisc on
+        timeout 10s $SUDO ip link add link "$HOST_IFACE" name macvtap0 type macvtap || { echo "Timeout on MACVTAP add" >> "$LOG_FILE" >&2; exit 1; }
+        timeout 10s $SUDO ip link set macvtap0 address "$MAC" up promisc on || { echo "Timeout on MACVTAP set" >> "$LOG_FILE" >&2; exit 1; }
     fi
     TAP_FD=$(< /sys/class/net/macvtap0/ifindex)
     TAP_DEVICE="/dev/tap$TAP_FD"
     if [ "$(stat -c %u "$TAP_DEVICE")" != "$UID" ]; then
-        sudo chown "$UID:$UID" "$TAP_DEVICE"
+        timeout 10s $SUDO chown "$UID:$UID" "$TAP_DEVICE" || { echo "Timeout on chown TAP" >> "$LOG_FILE" >&2; exit 1; }
     fi
 
-    # Write lock file with PIDs and timestamp
-    echo "VIRTIOFSD_PID=$VIRTIOFSD_PID" > "$LOCK_FILE"
-    echo "TIMESTAMP=$(date +%s)" >> "$LOCK_FILE"
+    # Write lock file with safe export
+    echo "export VIRTIOFSD_PID=\"$VIRTIOFSD_PID\"" > "$LOCK_FILE"
+    echo "export TIMESTAMP=\"$(date +%s)\"" >> "$LOCK_FILE"
     echo "Setup completed." >> "$LOG_FILE"
+    chmod 666 "$LOG_FILE"
 }
 
 # Function to perform teardown
@@ -60,8 +69,15 @@ perform_teardown() {
         return 0
     fi
 
-    source "$LOCK_FILE"
+    source "$LOCK_FILE" && [ -n "$VIRTIOFSD_PID" ] || { echo "Error: Invalid or corrupted lock file" >> "$LOG_FILE" >&2; exit 1; }
     echo "Starting teardown..." >> "$LOG_FILE"
+
+    local SUDO="sudo -n"
+    if [ "$EUID" -eq 0 ]; then
+        SUDO=""
+    else
+        $SUDO true || { echo "Error: Non-interactive sudo not available" >&2; exit 1; }
+    fi
 
     # Shutdown VM if API socket exists
     if [ -S "$API_SOCK" ]; then
@@ -70,20 +86,21 @@ perform_teardown() {
     fi
 
     # Kill processes
-    sudo kill "$VIRTIOFSD_PID" 2>/dev/null || true
-    sudo pkill -f "cloud-hypervisor.*--api-socket $API_SOCK" || true
+    timeout 10s $SUDO kill "$VIRTIOFSD_PID" 2>/dev/null || echo "Timeout on kill virtiofsd" >> "$LOG_FILE" >&2
+    timeout 10s $SUDO pkill -f "cloud-hypervisor.*--api-socket $API_SOCK" || echo "Timeout on pkill hypervisor" >> "$LOG_FILE" >&2
 
     # Remove sockets and files
-    sudo rm -f "$VIRTIOFS_SOCK" "$API_SOCK" "$SERIAL_SOCK" || true
+    timeout 10s $SUDO rm -f "$VIRTIOFS_SOCK" "$API_SOCK" "$SERIAL_SOCK" || echo "Timeout on rm sockets" >> "$LOG_FILE" >&2
 
     # Delete MACVTAP
     if ip link show macvtap0 > /dev/null 2>&1; then
-        sudo ip link delete macvtap0 || true
+        timeout 10s $SUDO ip link delete macvtap0 || echo "Timeout on MACVTAP delete" >> "$LOG_FILE" >&2
     fi
 
     # Remove lock file
     rm -f "$LOCK_FILE"
     echo "Teardown completed." >> "$LOG_FILE"
+    chmod 666 "$LOG_FILE"
 }
 
 # Parse arguments

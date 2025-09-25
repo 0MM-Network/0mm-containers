@@ -211,7 +211,7 @@ check_setup() {
     if [ ! -f "$LOCK_FILE" ]; then
         return 1
     fi
-    source "$LOCK_FILE"
+    source "$LOCK_FILE" && [ -n "$VIRTIOFSD_PID" ] || { echo "Error: Invalid or corrupted lock file" >> "$VM_LOG" >&2; exit 1; }
 
     # Check if processes are running
     if ! kill -0 "$VIRTIOFSD_PID" 2>/dev/null; then

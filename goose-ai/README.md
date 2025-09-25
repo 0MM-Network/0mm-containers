@@ -35,22 +35,26 @@ Additionally, for running BATS tests, install bats:
 sudo apt install bats
 ```
 
-The tests require sudo privileges for managing network interfaces (e.g., macvtap). If sudo prompts appear, ensure your user has passwordless sudo for the relevant commands or run the tests with `sudo bats tests/goose_repl.bats`.
+The tests require sudo privileges for managing network interfaces (e.g., macvtap). To avoid sudo prompts, run the tests as root:
+
+```
+sudo bats tests/goose_repl.bats
+```
+
+Alternatively, ensure your user has passwordless sudo for the relevant commands.
 
 ## Running BATS Tests
 
 To run the BATS tests for the Goose script:
 
 1. **Install test dependencies**: Run the installation script to set up bats-support and bats-assert.
-
-    ```
-    ./tests/install_deps.sh
-    ```
+   ```
+   ./tests/install_deps.sh
+   ```
 
 2. **Run the tests**: Execute the BATS test file using the `bats` command (ensure BATS is installed on your system).
-
-    ```
-    bats tests/goose_repl.bats
-    ```
+   ```
+   bats tests/goose_repl.bats
+   ```
 
 These tests verify REPL mode and non-REPL command execution, including VM launch and serial interaction.

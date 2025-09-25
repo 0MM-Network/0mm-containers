@@ -16,14 +16,18 @@ setup_file() {
   # Ensure setup script is executable
   chmod +x "$SETUP_SCRIPT"
 
-  # Run persistent setup once per suite
-  run sudo "$SETUP_SCRIPT" --setup
+  # Run persistent setup once per suite with timeout to prevent hangs
+  run timeout 10s sudo "$SETUP_SCRIPT" --setup
   assert_success
+
+  # Assertions post-setup
+  grep -q "export VIRTIOFSD_PID=" .goose/setup.lock || fail "Invalid lock file format"
+  [ -w .goose/setup.log ] || fail "Setup log not writable"
 }
 
 teardown_file() {
-  # Run persistent teardown once per suite
-  run sudo "$SETUP_SCRIPT" --teardown
+  # Run persistent teardown once per suite with timeout
+  run timeout 10s sudo "$SETUP_SCRIPT" --teardown
   assert_success
 
   # Additional cleanup
