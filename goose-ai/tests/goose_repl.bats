@@ -22,6 +22,8 @@ setup_file() {
   # Assertions post-setup
   grep -q "export VIRTIOFSD_PID=" .goose/setup.lock || fail "Invalid lock file format"
   [ -w .goose/setup.log ] || fail "Setup log not writable"
+  [ -S ".goose/virtiofs.sock" ] || fail "virtiofs.sock missing"
+  [ -r ".goose/virtiofs.sock" ] || fail "virtiofs.sock not readable"
 }
 
 teardown_file() {
