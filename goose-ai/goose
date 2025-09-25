@@ -195,8 +195,11 @@ check_setup() {
     fi
     source "$LOCK_FILE" && [ -n "$VIRTIOFSD_PID" ] || { echo "Error: Invalid or corrupted lock file" >> "$VM_LOG" >&2; exit 1; }
 
-    # Check if processes are running
-    if ! kill -0 "$VIRTIOFSD_PID" 2>/dev/null; then
+    # Permission-agnostic check for process existence
+    if ps -p "$VIRTIOFSD_PID" > /dev/null 2>&1; then
+        echo "Checked PID $VIRTIOFSD_PID: exists" >> "$VM_LOG"
+    else
+        echo "Checked PID $VIRTIOFSD_PID: missing" >> "$VM_LOG"
         return 1
     fi
 

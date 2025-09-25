@@ -162,3 +162,12 @@ EOF
   run sudo "$SETUP_SCRIPT" --setup
   assert_success
 }
+
+@test "check_setup detects running root-owned PIDs correctly" {
+  # Simulate a root-owned PID (assuming setup has run and VIRTIOFSD_PID is root-owned)
+  source ".goose/setup.lock"
+  ps -p "$VIRTIOFSD_PID" > /dev/null 2>&1 || fail "check_setup should detect running PID $VIRTIOFSD_PID"
+
+  # Check log for verification
+  grep -q "Checked PID $VIRTIOFSD_PID: exists" vm_log.txt || fail "Log does not confirm PID exists"
+}
