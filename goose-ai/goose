@@ -233,9 +233,9 @@ check_setup() {
 # Function to handle setup (reuse or recreate if stale)
 handle_setup() {
     if check_setup; then
-        echo "Reusing existing setup."
+        echo "Reusing existing setup." >> "$VM_LOG"
     else
-        echo "Setup stale or missing. Recreating..."
+        echo "Setup stale or missing. Recreating..." >> "$VM_LOG"
         ./goose-setup.sh --teardown || true  # Clean up any partial state
         ./goose-setup.sh --setup
     fi
@@ -264,35 +264,36 @@ launch_vm() {
     # Poll for API socket with vmm.ping
     for i in {1..60}; do
         if [ -S "$API_SOCK" ] && curl --unix-socket "$API_SOCK" -s http://localhost/vmm.ping > /dev/null; then
+            echo "API socket ready after $i attempts." >> "$VM_LOG"
             break
         fi
         sleep 1
     done
     if [ ! -S "$API_SOCK" ]; then
-        echo "Error: API socket timeout" >&2
+        echo "Error: API socket timeout" >> "$VM_LOG" >&2
         exit 1
     fi
 
     # Wait for IP using ARP
     VM_IP=$(wait_for_ip)
     if [ $? -eq 0 ] && [ -n "$VM_IP" ]; then
-        echo "Extracted VM IP: $VM_IP"
+        echo "Extracted VM IP: $VM_IP" >> "$VM_LOG"
     else
-        echo "Failed to extract VM IP."
+        echo "Failed to extract VM IP." >> "$VM_LOG"
         exit 1
     fi
 
-    echo "Waiting for SSH readiness..."
+    echo "Waiting for SSH readiness..." >> "$VM_LOG"
     for i in {1..60}; do
         if [ -n "$VM_IP" ] && nc -z -w2 "$VM_IP" 22; then  # Check if port 22 is open
-            echo "VM ready at IP $VM_IP with SSH available."
+            echo "VM ready at IP $VM_IP with SSH available after $i attempts." >> "$VM_LOG"
             export SSH_READY=yes
             break
         fi
         sleep 10
     done
     if [ -z "$SSH_READY" ]; then
-        echo "Error: Timeout waiting for VM IP/SSH - check network setup." >&2
+        echo "Error: Timeout waiting for VM IP/SSH - check network setup." >> "$VM_LOG" >&2
         exit 1
     fi
 }
@@ -305,9 +306,10 @@ wait_for_ip() {
             echo "$VM_IP"
             return 0
         fi
+        echo "Waiting for IP (attempt $i/$MAX_TIMEOUT_IP)..." >> "$VM_LOG"
         sleep 1
     done
-    echo "Error: Timeout after $MAX_TIMEOUT_IP seconds. IP for MAC $MAC not found." >&2
+    echo "Error: Timeout after $MAX_TIMEOUT_IP seconds. IP for MAC $MAC not found." >> "$VM_LOG" >&2
     return 1
 }
 

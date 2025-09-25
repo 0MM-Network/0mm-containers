@@ -32,13 +32,16 @@ teardown_file() {
   rm -f cloud-init.img
   rm -f user-data meta-data network-config
   rm -rf .goose || true
+  rm -rf /tmp/goose_test.* || true
+  rm -f /tmp/test_config.*.yaml || true
 }
 
 setup() {
   # Per-test setup: define variables here for scope in test subshells
   TEST_DIR=$(cd "$(dirname "$BATS_TEST_FILENAME")"; pwd)
   SCRIPT="$TEST_DIR/../goose"
-  CONFIG_FILE=$(mktemp -p /tmp test_config.XXXXXX.yaml)
+  CONFIG_DIR=$(mktemp -d /tmp/goose_test.XXXXXX)
+  CONFIG_FILE="$CONFIG_DIR/config.yaml"
   cat > "$CONFIG_FILE" <<EOF
 # Minimal test config
 key: value
@@ -51,23 +54,27 @@ teardown() {
   pkill -f socat || true
   pkill -f expect || true
   rm -f .goose/serial.sock .goose/api.sock || true
-  rm -f "$CONFIG_FILE"
+  rm -rf "$CONFIG_DIR"
+  rm -f /tmp/test_config.*.yaml /tmp/goose_test.*
 }
 
 @test "REPL mode launches VM and provides interactive access via serial" {
+  # Verify config file existence
+  [ -f "$CONFIG_FILE" ] || fail "Config file missing: $CONFIG_FILE"
+
   # Create expect script for interactive REPL test
   EXPECT_SCRIPT=$(mktemp)
   cat > "$EXPECT_SCRIPT" <<EOF
-set timeout 300
+set timeout 60
 spawn $SCRIPT --serial --config $CONFIG_FILE repl --no-trap
 expect {
   "root@vm:~#" { }
-  timeout { exit 1 }
+  timeout { send_user "Timeout: VM prompt not found"; exit 1 }
 }
 send "echo Test REPL\\r"
 expect {
   "Test REPL" { }
-  timeout { exit 1 }
+  timeout { send_user "Timeout: Echo response not found"; exit 1 }
 }
 send "exit\\r"
 expect eof
@@ -77,10 +84,15 @@ EOF
   echo "Generated Expect script:"
   cat "$EXPECT_SCRIPT"
 
-  run expect -f "$EXPECT_SCRIPT"
+  # Run with external timeout
+  run timeout 120s expect -f "$EXPECT_SCRIPT"
   assert_success
   assert_output --partial "root@vm:~#"
   assert_output --partial "Test REPL"
+
+  # Capture and assert on goose logs (assuming VM_LOG is vm_log.txt)
+  [ -f "vm_log.txt" ] || fail "VM log file missing"
+  ! grep -q "Error:.*timeout" vm_log.txt || fail "Errors found in VM log"
 
   # Verify VM launched (e.g., check for API socket as indicator)
   [ -S ".goose/api.sock" ]
