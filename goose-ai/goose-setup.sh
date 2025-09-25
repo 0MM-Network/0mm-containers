@@ -12,6 +12,8 @@ HOST_IFACE=$(ip route get 8.8.8.8 | awk -- '{printf $5}' | head -n1)
 MAC="12:34:56:78:90:ab"
 IMAGE_URL="https://cloud-images.ubuntu.com/jammy/current/jammy-server-cloudimg-amd64.img"
 IMAGE_FILE="jammy-server-cloudimg-amd64.raw"
+IMG_FILE="jammy-server-cloudimg-amd64.img"
+KNOWN_IMG_SIZE=536870912  # Example known size in bytes for integrity check; update as needed
 
 # Function to perform idempotent setup
 perform_setup() {
@@ -31,15 +33,19 @@ perform_setup() {
         $SUDO true || { echo "Error: Non-interactive sudo not available" >> "$LOG_FILE" >&2; exit 1; }
     fi
 
-    # Download and prepare image idempotently
-    if [ ! -f "$IMAGE_FILE" ]; then
-        if [ ! -f jammy-server-cloudimg-amd64.img ]; then
-            wget "$IMAGE_URL" -O jammy-server-cloudimg-amd64.img || { echo "Error: Failed to download image" >> "$LOG_FILE" >&2; exit 1; }
+    # Download and prepare image idempotently with integrity check
+    echo "Image check: .img exists? $([ -f "$IMG_FILE" ] && echo yes || echo no)" >> "$LOG_FILE"
+    echo "Image check: .raw exists? $([ -f "$IMAGE_FILE" ] && echo yes || echo no)" >> "$LOG_FILE"
+    if [ -f "$IMG_FILE" ] && [ -f "$IMAGE_FILE" ] && [ $(stat -c %s "$IMG_FILE") -eq $KNOWN_IMG_SIZE ]; then
+        echo "Image files exist and integrity verified, skipping download" >> "$LOG_FILE"
+    else
+        if [ ! -f "$IMG_FILE" ]; then
+            wget "$IMAGE_URL" -O "$IMG_FILE" || { echo "Error: Failed to download image" >> "$LOG_FILE" >&2; exit 1; }
         fi
-        qemu-img convert -p -f qcow2 -O raw jammy-server-cloudimg-amd64.img "$IMAGE_FILE" || { echo "Error: Failed to convert image" >> "$LOG_FILE" >&2; exit 1; }
+        qemu-img convert -p -f qcow2 -O raw "$IMG_FILE" "$IMAGE_FILE" || { echo "Error: Failed to convert image" >> "$LOG_FILE" >&2; exit 1; }
         qemu-img resize -f raw "$IMAGE_FILE" 10G || { echo "Error: Failed to resize image" >> "$LOG_FILE" >&2; exit 1; }
         # Make images world readable/writable
-        chmod 666 jammy-server-cloudimg-amd64.img "$IMAGE_FILE" || { echo "Error: Failed to set image permissions" >> "$LOG_FILE" >&2; exit 1; }
+        chmod 666 "$IMG_FILE" "$IMAGE_FILE" || { echo "Error: Failed to set image permissions" >> "$LOG_FILE" >&2; exit 1; }
     fi
 
     # Preemptively kill any matching old virtiofsd processes using socket path filters
@@ -177,6 +183,7 @@ perform_teardown() {
 
     # Remove lock file
     rm -f "$LOCK_FILE"
+    # Do not delete persistent image files
     echo "Teardown completed." >> "$LOG_FILE"
     chmod 666 "$LOG_FILE"
 }
