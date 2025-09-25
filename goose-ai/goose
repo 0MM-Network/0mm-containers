@@ -477,7 +477,7 @@ launch_vm
 
 # Trap for cleanup and sync
 if ! $NO_TRAP; then
-    trap 'sudo_teardown; sync_back_config' EXIT ERR INT TERM
+    trap './goose-setup.sh --teardown; sync_back_config' EXIT ERR INT TERM
 fi
 
 # Check for interactive mode

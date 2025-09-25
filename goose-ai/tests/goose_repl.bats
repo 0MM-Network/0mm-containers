@@ -8,7 +8,7 @@ setup_file() {
   TEST_DIR=$(cd "$(dirname "$BATS_TEST_FILENAME")"; pwd)
   SCRIPT="$TEST_DIR/../goose"
   SETUP_SCRIPT="$TEST_DIR/../goose-setup.sh"
-  CONFIG_FILE=$(mktemp /tmp/test_config.XXXXXX.yaml)
+  CONFIG_FILE=$(mktemp -p /tmp test_config.XXXXXX.yaml)
   cat > "$CONFIG_FILE" <<EOF
 # Minimal test config
 key: value
@@ -59,7 +59,7 @@ teardown() {
   EXPECT_SCRIPT=$(mktemp)
   cat > "$EXPECT_SCRIPT" <<EOF
 set timeout 300
-spawn $SCRIPT --serial --config $CONFIG_FILE repl --no-trap
+spawn -- $SCRIPT --serial --config $CONFIG_FILE repl --no-trap
 expect {
   "root@vm:~#" { }
   timeout { exit 1 }
@@ -118,7 +118,7 @@ EOF
 
 @test "staleness triggers fallback re-setup" {
   # Simulate staleness by deleting a socket
-  rm -f ".goose/virtiofs.sock"
+  sudo rm -f ".goose/virtiofs.sock"
 
   run timeout 300 $SCRIPT --serial --config $CONFIG_FILE info --no-trap
   assert_success
