@@ -14,9 +14,9 @@ setup_file() {
   done
 
   # Check if setup is complete
-  if [ ! -f ".goose/setup.lock" ] || ! source ".goose/setup.lock" 2>/dev/null || [ -z "$VIRTIOFSD_PID" ]; then
-    echo "Setup not detected or stale. Please run 'sudo ./goose-setup.sh --teardown' followed by 'sudo ./goose-setup.sh --setup' and try again."
-    fail "Setup required"
+  if [ ! -f ".goose/setup.lock" ] || ! source ".goose/setup.lock" 2>/dev/null || ! ps -p "$VIRTIOFSD_PID" > /dev/null || [ ! -S ".goose/virtiofs.sock" ]; then
+    echo "Setup missing or stale. Please run 'sudo ./goose-setup.sh --setup' manually and then re-run the tests."
+    fail "Manual setup required"
   fi
 
   # Assertions post-setup
@@ -39,11 +39,10 @@ teardown_file() {
   rm -f jammy-server-cloudimg-amd64.img jammy-server-cloudimg-amd64.raw
   rm -f cloud-init.img
   rm -f user-data meta-data network-config
-  sudo rm -rf .goose || true
   rm -rf /tmp/goose_test.* || true
   rm -f /tmp/test_config.*.yaml || true
 
-  echo "Teardown not automatic. Please run 'sudo ./goose-setup.sh --teardown' after tests if needed."
+  echo "Please run 'sudo ./goose-setup.sh --teardown' after tests"
 }
 
 setup() {
