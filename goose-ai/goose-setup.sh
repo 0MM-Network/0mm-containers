@@ -44,17 +44,24 @@ perform_setup() {
 
     # Preemptively kill any matching old virtiofsd processes using socket path filters
     echo "Checking for existing virtiofsd processes..." >> "$LOG_FILE"
-    pkill -TERM -f "virtiofsd.*--socket-path=virtiofs.sock" || true
-    sleep 2
-    pkill -9 -f "virtiofsd.*--socket-path=virtiofs.sock" || true
-    pkill -TERM -f "virtiofsd.*--socket-path=.goose/virtiofs.sock" || true
-    sleep 2
-    pkill -9 -f "virtiofsd.*--socket-path=.goose/virtiofs.sock" || true
-    KILLED_PIDS=$(pgrep -f "virtiofsd.*--socket-path=(virtiofs.sock|.goose/virtiofs.sock)" || true)
+    for attempt in {1..3}; do
+        pkill -TERM -f "bash.*virtiofsd.*--socket-path=(virtiofs.sock|.goose/virtiofs.sock)" || true
+        pkill -TERM -f "virtiofsd.*--socket-path=(virtiofs.sock|.goose/virtiofs.sock)" || true
+        sleep 3
+        pkill -9 -f "bash.*virtiofsd.*--socket-path=(virtiofs.sock|.goose/virtiofs.sock)" || true
+        pkill -9 -f "virtiofsd.*--socket-path=(virtiofs.sock|.goose/virtiofs.sock)" || true
+        if ! pgrep -f "(bash.*virtiofsd|virtiofsd).*--socket-path=(virtiofs.sock|.goose/virtiofs.sock)" > /dev/null; then
+            break
+        fi
+        echo "Retry $attempt: Lingering virtiofsd detected, retrying kill..." >> "$LOG_FILE"
+    done
+    KILLED_PIDS=$(pgrep -f "(bash.*virtiofsd|virtiofsd).*--socket-path=(virtiofs.sock|.goose/virtiofs.sock)" || true)
     if [ -n "$KILLED_PIDS" ]; then
         echo "Killed lingering virtiofsd PIDs: $KILLED_PIDS" >> "$LOG_FILE"
+    else
+        echo "No lingering virtiofsd found" >> "$LOG_FILE"
     fi
-    if pgrep -f "virtiofsd.*--socket-path=(virtiofs.sock|.goose/virtiofs.sock)" > /dev/null; then
+    if pgrep -f "(bash.*virtiofsd|virtiofsd).*--socket-path=(virtiofs.sock|.goose/virtiofs.sock)" > /dev/null; then
         echo "Warning: Lingering virtiofsd processes after kill" >> "$LOG_FILE" >&2
     fi
 
@@ -122,17 +129,24 @@ perform_teardown() {
     kill -9 "$VIRTIOFSD_PID" 2>/dev/null || true
     echo "Killed virtiofsd PID $VIRTIOFSD_PID" >> "$LOG_FILE"
 
-    # Broader kill for any lingering virtiofsd with socket path patterns
+    # Broader kill for any lingering virtiofsd with socket path patterns, including wrappers
     echo "Killing any lingering virtiofsd processes..." >> "$LOG_FILE"
-    pkill -TERM -f "virtiofsd.*--socket-path=virtiofs.sock" || true
-    sleep 2
-    pkill -9 -f "virtiofsd.*--socket-path=virtiofs.sock" || true
-    pkill -TERM -f "virtiofsd.*--socket-path=.goose/virtiofs.sock" || true
-    sleep 2
-    pkill -9 -f "virtiofsd.*--socket-path=.goose/virtiofs.sock" || true
-    KILLED_PIDS=$(pgrep -f "virtiofsd.*--socket-path=(virtiofs.sock|.goose/virtiofs.sock)" || true)
+    for attempt in {1..3}; do
+        pkill -TERM -f "bash.*virtiofsd.*--socket-path=(virtiofs.sock|.goose/virtiofs.sock)" || true
+        pkill -TERM -f "virtiofsd.*--socket-path=(virtiofs.sock|.goose/virtiofs.sock)" || true
+        sleep 3
+        pkill -9 -f "bash.*virtiofsd.*--socket-path=(virtiofs.sock|.goose/virtiofs.sock)" || true
+        pkill -9 -f "virtiofsd.*--socket-path=(virtiofs.sock|.goose/virtiofs.sock)" || true
+        if ! pgrep -f "(bash.*virtiofsd|virtiofsd).*--socket-path=(virtiofs.sock|.goose/virtiofs.sock)" > /dev/null; then
+            break
+        fi
+        echo "Retry $attempt: Lingering virtiofsd detected, retrying kill..." >> "$LOG_FILE"
+    done
+    KILLED_PIDS=$(pgrep -f "(bash.*virtiofsd|virtiofsd).*--socket-path=(virtiofs.sock|.goose/virtiofs.sock)" || true)
     if [ -n "$KILLED_PIDS" ]; then
-        echo "Killed additional virtiofsd PIDs: $KILLED_PIDS" >> "$LOG_FILE"
+        echo "Killed lingering virtiofsd PIDs: $KILLED_PIDS" >> "$LOG_FILE"
+    else
+        echo "No lingering virtiofsd found" >> "$LOG_FILE"
     fi
 
     # Broader kill for hypervisor
@@ -146,7 +160,7 @@ perform_teardown() {
     fi
 
     # Verify no lingering processes
-    if pgrep -f "virtiofsd.*--socket-path=(virtiofs.sock|.goose/virtiofs.sock)" > /dev/null; then
+    if pgrep -f "(bash.*virtiofsd|virtiofsd).*--socket-path=(virtiofs.sock|.goose/virtiofs.sock)" > /dev/null; then
         echo "Warning: Lingering virtiofsd after teardown" >> "$LOG_FILE" >&2
     fi
     if pgrep -f "cloud-hypervisor.*--api-socket" > /dev/null; then
