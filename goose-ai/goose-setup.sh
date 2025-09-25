@@ -1,5 +1,7 @@
 #!/bin/bash
 
+set -x
+
 # Define paths and defaults
 GOOSE_DIR=".goose"
 LOCK_FILE="$GOOSE_DIR/setup.lock"
@@ -13,7 +15,7 @@ MAC="12:34:56:78:90:ab"
 IMAGE_URL="https://cloud-images.ubuntu.com/jammy/current/jammy-server-cloudimg-amd64.img"
 IMAGE_FILE=".goose/jammy-server-cloudimg-amd64.raw"
 IMG_FILE=".goose/jammy-server-cloudimg-amd64.img"
-KNOWN_IMG_SIZE=536870912  # Example known size in bytes for integrity check; update as needed
+KNOWN_IMG_SIZE=677302272  # Example known size in bytes for integrity check; update as needed
 
 # Function to perform idempotent setup
 perform_setup() {
@@ -36,7 +38,7 @@ perform_setup() {
     # Download and prepare image idempotently with integrity check
     echo "Image check: .img exists? $([ -f "$IMG_FILE" ] && echo yes || echo no)" >> "$LOG_FILE"
     echo "Image check: .raw exists? $([ -f "$IMAGE_FILE" ] && echo yes || echo no)" >> "$LOG_FILE"
-    if [ -f "$IMG_FILE" ] && [ -f "$IMAGE_FILE" ] && [ $(stat -c %s "$IMG_FILE") -eq $KNOWN_IMG_SIZE ]; then
+    if [ -f "$IMG_FILE" ] && [ $(stat -c %s "$IMG_FILE") -eq $KNOWN_IMG_SIZE ]; then
         echo "Image files exist and integrity verified, skipping download" >> "$LOG_FILE"
     else
         if [ ! -f "jammy-server-cloudimg-amd64.img" ]; then
@@ -48,7 +50,7 @@ perform_setup() {
         mv "jammy-server-cloudimg-amd64.raw" "$IMAGE_FILE"
         # Make images world readable/writable
         chmod 666 "$IMG_FILE" "$IMAGE_FILE" || { echo "Error: Failed to set image permissions" >> "$LOG_FILE" >&2; exit 1; }
-        chown $UID:$GID "$IMG_FILE" "$IMAGE_FILE" || { echo "Error: Failed to chown image files" >> "$LOG_FILE" >&2; exit 1; }
+        chown $(id -u):$(id -g) "$IMG_FILE" "$IMAGE_FILE" || { echo "Error: Failed to chown image files" >> "$LOG_FILE" >&2; exit 1; }
     fi
 
     # Preemptively kill any matching old virtiofsd processes using socket path filters
@@ -98,13 +100,14 @@ perform_setup() {
     TAP_FD=$(< /sys/class/net/macvtap0/ifindex)
     TAP_DEVICE="/dev/tap$TAP_FD"
     if [ "$(stat -c %u "$TAP_DEVICE")" != "$UID" ]; then
-        timeout 10s $SUDO chown "$UID:$UID" "$TAP_DEVICE" || { echo "Timeout on chown TAP" >> "$LOG_FILE" >&2; exit 1; }
+        chown $(id -u):$(id -g) "$TAP_DEVICE" || { echo "chown TAP" >> "$LOG_FILE" >&2; exit 1; }
     fi
 
     # Write lock file with safe export
     echo "export VIRTIOFSD_PID=\"$VIRTIOFSD_PID\"" > "$LOCK_FILE"
     echo "export TIMESTAMP=\"$(date +%s)\"" >> "$LOCK_FILE"
     echo "Setup completed." >> "$LOG_FILE"
+    chown -R $(id -u):$(id -g) $GOOSE_DIR
     chmod 666 "$LOCK_FILE"
     chmod 666 .goose/* || true  # Set world-readable/writable on all .goose/ files
     chmod 666 "$LOG_FILE"
