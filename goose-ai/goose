@@ -17,13 +17,14 @@ API_SOCK="$GOOSE_DIR/api.sock"
 VIRTIOFS_SOCK="$GOOSE_DIR/virtiofs.sock"
 LOCK_FILE="$GOOSE_DIR/setup.lock"
 CLOUD_INIT_IMG="cloud-init.img"
+SERIAL_LOG="serial.log"
 SIMPLIFIED_MODE=${SIMPLIFIED_MODE:-true}
 HOST_IFACE=$(ip route get 8.8.8.8 | awk -- '{printf $5}' | head -n1)  # Detect default interface
 MAC="12:34:56:78:90:ab"  # Default MAC from prompt
 VERBOSE=false
 LOG_FILE=""
 VM_LOG="vm_log.txt"
-MAX_TIMEOUT_IP=600  # Max wait in seconds (e.g., 10min)
+MAX_TIMEOUT_IP=${MAX_TIMEOUT_IP:-60}  # Configurable via env var, default 60s for dev/test
 
 # Function to display help
 show_help() {
@@ -241,28 +242,53 @@ handle_setup() {
     fi
 }
 
-# Function to launch the VM (assumes setup has been handled)
-launch_vm() {
+# Modularized: Prepare resources before starting hypervisor
+prepare_resources() {
     # Get TAP details
     TAP_FD=$(< /sys/class/net/macvtap0/ifindex)
     TAP_DEVICE="/dev/tap$TAP_FD"
 
     # Clean up existing API socket if it exists
     rm -f "$API_SOCK" || true
+}
+
+# Modularized: Start the hypervisor
+start_hypervisor() {
+    local serial_opt="--serial file=$SERIAL_LOG"
+    if $SERIAL; then
+        serial_opt="--serial tty"
+    fi
 
     cloud-hypervisor --cpus boot=$VM_CPUS \
         --memory size=$VM_MEMORY,shared=on \
         --firmware /usr/share/cloud-hypervisor/hypervisor-fw \
         --disk path=$IMAGE_FILE path=$CLOUD_INIT_IMG \
         --fs tag=host_share,socket="$VIRTIOFS_SOCK",num_queues=1,queue_size=512 \
-        --serial socket="$SERIAL_SOCK" \
+        $serial_opt \
         --console off \
         --api-socket "$API_SOCK" \
         --net fd=3,mac=$MAC 3<>"$TAP_DEVICE" &
     VM_PID=$!
 
+    # Check if launch succeeded
+    if [ $? -ne 0 ]; then
+        echo "Error: Failed to start cloud-hypervisor" >> "$VM_LOG" >&2
+        exit 1
+    fi
+
+    # Wait a bit for process to start
+    sleep 1
+    if ! kill -0 $VM_PID 2>/dev/null; then
+        echo "Error: cloud-hypervisor process failed to start" >> "$VM_LOG" >&2
+        exit 1
+    fi
+}
+
+# Modularized: Wait for resources (API, IP, SSH)
+wait_resources() {
     # Poll for API socket with vmm.ping
     for i in {1..60}; do
+        echo "Polling API socket (attempt $i/60)..." >> "$VM_LOG"
         if [ -S "$API_SOCK" ] && curl --unix-socket "$API_SOCK" -s http://localhost/vmm.ping > /dev/null; then
             echo "API socket ready after $i attempts." >> "$VM_LOG"
             break
@@ -274,17 +300,19 @@ launch_vm() {
         exit 1
     fi
 
-    # Wait for IP using ARP
+    # Wait for IP using serial log parsing
     VM_IP=$(wait_for_ip)
     if [ $? -eq 0 ] && [ -n "$VM_IP" ]; then
         echo "Extracted VM IP: $VM_IP" >> "$VM_LOG"
     else
-        echo "Failed to extract VM IP." >> "$VM_LOG"
+        echo "Failed to extract VM IP." >> "$VM_LOG" >&2
         exit 1
     fi
 
+    # Wait for SSH readiness
     echo "Waiting for SSH readiness..." >> "$VM_LOG"
     for i in {1..60}; do
+        echo "Polling SSH (attempt $i/60)..." >> "$VM_LOG"
         if [ -n "$VM_IP" ] && nc -z -w2 "$VM_IP" 22; then  # Check if port 22 is open
             echo "VM ready at IP $VM_IP with SSH available after $i attempts." >> "$VM_LOG"
             export SSH_READY=yes
@@ -298,18 +326,18 @@ launch_vm() {
     fi
 }
 
-# Function to wait for IP via ARP
+# Function to wait for IP via serial log parsing
 wait_for_ip() {
     for ((i=1; i<=$MAX_TIMEOUT_IP; i++)); do
-        VM_IP=$(arp -a | grep -i "$MAC" | awk '{gsub(/[()]/,""); print $2}')
+        echo "Waiting for IP from serial log (attempt $i/$MAX_TIMEOUT_IP)..." >> "$VM_LOG"
+        VM_IP=$(grep -oE 'inet [0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' "$SERIAL_LOG" | tail -1 | awk '{print $2}')
         if [ -n "$VM_IP" ]; then
             echo "$VM_IP"
             return 0
         fi
-        echo "Waiting for IP (attempt $i/$MAX_TIMEOUT_IP)..." >> "$VM_LOG"
         sleep 1
     done
-    echo "Error: Timeout after $MAX_TIMEOUT_IP seconds. IP for MAC $MAC not found." >> "$VM_LOG" >&2
+    echo "Error: Timeout after $MAX_TIMEOUT_IP seconds. IP not found in serial log." >> "$VM_LOG" >&2
     return 1
 }
 
@@ -361,6 +389,14 @@ sync_back_config() {
         cp "$SHARED_DIR/config.yaml" "$CONFIG"
         echo "Config changes synced back to $CONFIG"
     fi
+}
+
+# Cleanup function for traps
+cleanup_vm() {
+    echo "Cleaned up on signal" >> "$VM_LOG"
+    pkill -P $$ || true  # Kill child processes
+    rm -f "$API_SOCK" "$SERIAL_SOCK" "$SERIAL_LOG" || true
+    sync_back_config
 }
 
 # Main logic
@@ -474,12 +510,14 @@ download_image
 # Create cloud-init
 create_cloud_init
 
-# Launch VM
-launch_vm
+# Launch VM modularly
+prepare_resources
+start_hypervisor
+wait_resources
 
 # Trap for cleanup and sync
 if ! $NO_TRAP; then
-    trap './goose-setup.sh --teardown; sync_back_config' EXIT ERR INT TERM
+    trap "cleanup_vm; exit 1" EXIT ERR INT TERM
 fi
 
 # Check for interactive mode
