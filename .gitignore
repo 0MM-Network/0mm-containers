@@ -13,6 +13,7 @@
 !LICENSE
 !aider
 !goose
+!*-setup.sh
 !**/artifacts/**/*
 !**/bats/**/*
 !**/examples/**/*

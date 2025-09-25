@@ -1,5 +1,7 @@
 #!/bin/bash
 
+set -x
+
 # Define paths and defaults
 GOOSE_DIR=".goose"
 LOCK_FILE="$GOOSE_DIR/setup.lock"
@@ -13,7 +15,7 @@ MAC="12:34:56:78:90:ab"
 IMAGE_URL="https://cloud-images.ubuntu.com/jammy/current/jammy-server-cloudimg-amd64.img"
 IMAGE_FILE="jammy-server-cloudimg-amd64.raw"
 IMG_FILE="jammy-server-cloudimg-amd64.img"
-KNOWN_IMG_SIZE=536870912  # Example known size in bytes for integrity check; update as needed
+KNOWN_IMG_SIZE=677302272  # Example known size in bytes for integrity check; update as needed
 
 # Function to perform idempotent setup
 perform_setup() {
