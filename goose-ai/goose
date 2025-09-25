@@ -254,7 +254,7 @@ prepare_resources() {
 
 # Modularized: Start the hypervisor
 start_hypervisor() {
-    local serial_opt="--serial file=$SERIAL_LOG"
+    local serial_opt="--serial pty"
     if $SERIAL; then
         serial_opt="--serial tty"
     fi
@@ -267,7 +267,7 @@ start_hypervisor() {
         $serial_opt \
         --console off \
         --api-socket "$API_SOCK" \
-        --net fd=3,mac=$MAC 3<>"$TAP_DEVICE" &
+        --net fd=3,mac=$MAC 3<>"$TAP_DEVICE" > "$VM_LOG" 2>&1 &
     VM_PID=$!
 
     # Check if launch succeeded
@@ -282,6 +282,18 @@ start_hypervisor() {
         echo "Error: cloud-hypervisor process failed to start" >> "$VM_LOG" >&2
         exit 1
     fi
+
+    # Capture PTY path from VM_LOG (assuming output like "Serial console on /dev/pts/X")
+    PTY_PATH=$(grep -oE 'Serial console on /dev/pts/[0-9]+' "$VM_LOG" | awk '{print $NF}' | tail -1)
+    if [ -z "$PTY_PATH" ]; then
+        echo "Error: Failed to capture PTY path" >> "$VM_LOG" >&2
+        exit 1
+    fi
+
+    # Start socat bridge for serial socket
+    socat UNIX-LISTEN:"$SERIAL_SOCK",fork PTY:$PTY_PATH | tee "$SERIAL_LOG" &
+    SOCAT_PID=$!
+    echo "Started socat bridge with PID $SOCAT_PID" >> "$VM_LOG"
 }
 
 # Modularized: Wait for resources (API, IP, SSH)
@@ -408,6 +420,7 @@ sync_back_config() {
 cleanup_vm() {
     echo "Cleaned up on signal" >> "$VM_LOG"
     pkill -P $$ || true  # Kill child processes
+    pkill -f "socat.*$SERIAL_SOCK" || true  # Kill socat bridge
     rm -f "$API_SOCK" "$SERIAL_SOCK" "$SERIAL_LOG" || true
     sync_back_config
 }

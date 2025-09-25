@@ -74,7 +74,7 @@ teardown() {
   EXPECT_SCRIPT=$(mktemp)
   cat > "$EXPECT_SCRIPT" <<EOF
 set timeout 60
-spawn $SCRIPT --serial --config $CONFIG_FILE repl
+spawn socat - UNIX-CONNECT:.goose/serial.sock
 expect {
   "root@vm:~#" { }
   timeout { send_user "Timeout: VM prompt not found"; exit 1 }
