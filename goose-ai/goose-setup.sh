@@ -42,10 +42,20 @@ perform_setup() {
         chmod 666 jammy-server-cloudimg-amd64.img "$IMAGE_FILE" || { echo "Error: Failed to set image permissions" >> "$LOG_FILE" >&2; exit 1; }
     fi
 
+    # Kill existing virtiofsd processes before launching new one
+    echo "Checking for existing virtiofsd processes..." >> "$LOG_FILE"
+    pkill -f "virtiofsd.*--socket-path=$VIRTIOFS_SOCK" || true
+    sleep 1
+    pkill -9 -f "virtiofsd.*--socket-path=$VIRTIOFS_SOCK" || true
+    if pgrep -f "virtiofsd.*--socket-path=$VIRTIOFS_SOCK" > /dev/null; then
+        echo "Warning: Lingering virtiofsd processes after kill" >> "$LOG_FILE" >&2
+    fi
+
     # Setup virtiofsd if not running
     if ! pgrep -f "virtiofsd.*--socket-path=$VIRTIOFS_SOCK" > /dev/null; then
         $SUDO bash -c "ulimit -n 1000000 && exec /usr/libexec/virtiofsd --sandbox none --socket-path=$VIRTIOFS_SOCK --shared-dir \"$SHARED_DIR\" --cache=never --thread-pool-size=4" &
         VIRTIOFSD_PID=$!
+        echo "Launched virtiofsd with PID $VIRTIOFSD_PID" >> "$LOG_FILE"
         # Poll for socket with timeout
         timeout 30s bash -c 'for i in {1..30}; do if [ -S "'"$VIRTIOFS_SOCK"'" ]; then exit 0; fi; sleep 1; done; echo "Timeout on virtiofs.sock" >&2; exit 1'
         if [ $? -ne 0 ]; then
@@ -98,9 +108,31 @@ perform_teardown() {
         sleep 5
     fi
 
-    # Kill processes
-    timeout 10s $SUDO kill "$VIRTIOFSD_PID" 2>/dev/null || echo "Timeout on kill virtiofsd" >> "$LOG_FILE" >&2
-    timeout 10s $SUDO pkill -f "cloud-hypervisor.*--api-socket $API_SOCK" || echo "Timeout on pkill hypervisor" >> "$LOG_FILE" >&2
+    # Graceful kill for virtiofsd
+    echo "Gracefully killing virtiofsd PID $VIRTIOFSD_PID..." >> "$LOG_FILE"
+    kill -TERM "$VIRTIOFSD_PID" 2>/dev/null || true
+    sleep 2
+    kill -9 "$VIRTIOFSD_PID" 2>/dev/null || true
+    echo "Killed virtiofsd PID $VIRTIOFSD_PID" >> "$LOG_FILE"
+
+    # Broader kill for any lingering virtiofsd
+    pkill -f "virtiofsd.*--socket-path=$VIRTIOFS_SOCK" || true
+    sleep 1
+    pkill -9 -f "virtiofsd.*--socket-path=$VIRTIOFS_SOCK" || true
+
+    # Broader kill for hypervisor
+    echo "Killing hypervisor processes..." >> "$LOG_FILE"
+    pkill -f "cloud-hypervisor.*--api-socket" || true
+    sleep 1
+    pkill -9 -f "cloud-hypervisor.*--api-socket" || true
+
+    # Verify no lingering processes
+    if pgrep -f "virtiofsd.*--socket-path=$VIRTIOFS_SOCK" > /dev/null; then
+        echo "Warning: Lingering virtiofsd processes" >> "$LOG_FILE" >&2
+    fi
+    if pgrep -f "cloud-hypervisor.*--api-socket" > /dev/null; then
+        echo "Warning: Lingering hypervisor processes" >> "$LOG_FILE" >&2
+    fi
 
     # Remove sockets and files
     timeout 10s $SUDO rm -f "$VIRTIOFS_SOCK" "$API_SOCK" "$SERIAL_SOCK" || echo "Timeout on rm sockets" >> "$LOG_FILE" >&2
