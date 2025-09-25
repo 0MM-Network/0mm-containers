@@ -2,6 +2,20 @@
 
 set -x
 
+# Check if running under sudo
+if [ "$EUID" -eq 0 ] && [ -n "$SUDO_USER" ]; then
+    ORIGINAL_USER="$SUDO_USER"
+    ORIGINAL_USER_GROUP="$(id -gn $SUDO_USER)"
+    ORIGINAL_UID="$SUDO_UID"
+    ORIGINAL_GID="$(id -g $SUDO_USER)"
+    echo "Script called by user: $ORIGINAL_USER (Group: $ORIGINAL_USER_GROUP, UID: $ORIGINAL_UID, GID: $ORIGINAL_GID)"
+else
+    # Fallback if not sudo (use current user)
+    ORIGINAL_USER="$USER"
+    ORIGINAL_UID="$(id -u)"
+    echo "Script not called with sudo. Current user: $ORIGINAL_USER (UID: $ORIGINAL_UID)"
+fi
+
 # Define paths and defaults
 GOOSE_DIR=".goose"
 LOCK_FILE="$GOOSE_DIR/setup.lock"
@@ -50,7 +64,7 @@ perform_setup() {
         mv "jammy-server-cloudimg-amd64.raw" "$IMAGE_FILE"
         # Make images world readable/writable
         chmod 666 "$IMG_FILE" "$IMAGE_FILE" || { echo "Error: Failed to set image permissions" >> "$LOG_FILE" >&2; exit 1; }
-        chown $(id -u):$(id -g) "$IMG_FILE" "$IMAGE_FILE" || { echo "Error: Failed to chown image files" >> "$LOG_FILE" >&2; exit 1; }
+        chown $ORIGINAL_UID:$ORIGINAL_GID "$IMG_FILE" "$IMAGE_FILE" || { echo "Error: Failed to chown image files" >> "$LOG_FILE" >&2; exit 1; }
     fi
 
     # Preemptively kill any matching old virtiofsd processes using socket path filters
@@ -100,14 +114,14 @@ perform_setup() {
     TAP_FD=$(< /sys/class/net/macvtap0/ifindex)
     TAP_DEVICE="/dev/tap$TAP_FD"
     if [ "$(stat -c %u "$TAP_DEVICE")" != "$UID" ]; then
-        chown $(id -u):$(id -g) "$TAP_DEVICE" || { echo "chown TAP" >> "$LOG_FILE" >&2; exit 1; }
+        chown $ORIGINAL_UID:$ORIGINAL_GID "$TAP_DEVICE" || { echo "chown TAP" >> "$LOG_FILE" >&2; exit 1; }
     fi
 
     # Write lock file with safe export
     echo "export VIRTIOFSD_PID=\"$VIRTIOFSD_PID\"" > "$LOCK_FILE"
     echo "export TIMESTAMP=\"$(date +%s)\"" >> "$LOCK_FILE"
     echo "Setup completed." >> "$LOG_FILE"
-    chown -R $(id -u):$(id -g) $GOOSE_DIR
+    chown -R $ORIGINAL_UID:$ORIGINAL_GID $GOOSE_DIR
     chmod 666 "$LOCK_FILE"
     chmod 666 .goose/* || true  # Set world-readable/writable on all .goose/ files
     chmod 666 "$LOG_FILE"
