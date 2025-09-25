@@ -286,9 +286,17 @@ start_hypervisor() {
 
 # Modularized: Wait for resources (API, IP, SSH)
 wait_resources() {
+    local api_poll_max=60
+    local ssh_poll_max=60
+    if $TEST_MODE; then
+        api_poll_max=10
+        ssh_poll_max=10
+        echo "Test mode: Reduced poll max to $api_poll_max" >> "$VM_LOG"
+    fi
+
     # Poll for API socket with vmm.ping
-    for i in {1..60}; do
-        echo "Polling API socket (attempt $i/60)..." >> "$VM_LOG"
+    for i in {1..$api_poll_max}; do
+        echo "Polling API socket (attempt $i/$api_poll_max)..." >> "$VM_LOG"
         if [ -S "$API_SOCK" ] && curl --unix-socket "$API_SOCK" -s http://localhost/vmm.ping > /dev/null; then
             echo "API socket ready after $i attempts." >> "$VM_LOG"
             break
@@ -311,8 +319,8 @@ wait_resources() {
 
     # Wait for SSH readiness
     echo "Waiting for SSH readiness..." >> "$VM_LOG"
-    for i in {1..60}; do
-        echo "Polling SSH (attempt $i/60)..." >> "$VM_LOG"
+    for i in {1..$ssh_poll_max}; do
+        echo "Polling SSH (attempt $i/$ssh_poll_max)..." >> "$VM_LOG"
         if [ -n "$VM_IP" ] && nc -z -w2 "$VM_IP" 22; then  # Check if port 22 is open
             echo "VM ready at IP $VM_IP with SSH available after $i attempts." >> "$VM_LOG"
             export SSH_READY=yes
@@ -328,8 +336,13 @@ wait_resources() {
 
 # Function to wait for IP via serial log parsing
 wait_for_ip() {
-    for ((i=1; i<=$MAX_TIMEOUT_IP; i++)); do
-        echo "Waiting for IP from serial log (attempt $i/$MAX_TIMEOUT_IP)..." >> "$VM_LOG"
+    local timeout_ip=$MAX_TIMEOUT_IP
+    if $TEST_MODE; then
+        timeout_ip=10
+        echo "Test mode: Reduced IP timeout to $timeout_ip" >> "$VM_LOG"
+    fi
+    for ((i=1; i<=$timeout_ip; i++)); do
+        echo "Waiting for IP from serial log (attempt $i/$timeout_ip)..." >> "$VM_LOG"
         VM_IP=$(grep -oE 'inet [0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' "$SERIAL_LOG" | tail -1 | awk '{print $2}')
         if [ -n "$VM_IP" ]; then
             echo "$VM_IP"
@@ -337,7 +350,7 @@ wait_for_ip() {
         fi
         sleep 1
     done
-    echo "Error: Timeout after $MAX_TIMEOUT_IP seconds. IP not found in serial log." >> "$VM_LOG" >&2
+    echo "Error: Timeout after $timeout_ip seconds. IP not found in serial log." >> "$VM_LOG" >&2
     return 1
 }
 
@@ -408,6 +421,7 @@ SERIAL=false
 SUDO_SETUP=false
 SUDO_TEARDOWN=false
 NO_TRAP=false
+TEST_MODE=false
 declare -a POSITIONAL=()
 while [[ $# -gt 0 ]]; do
     key="$1"
@@ -440,6 +454,10 @@ while [[ $# -gt 0 ]]; do
             NO_TRAP=true
             shift
             ;;
+        --test-mode)
+            TEST_MODE=true
+            shift
+            ;;
         -v)
             VERBOSE=true
             shift
@@ -458,6 +476,12 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 set -- "${POSITIONAL[@]}"
+
+# If test mode, enable verbose and short timeouts
+if $TEST_MODE; then
+    VERBOSE=true
+    MAX_TIMEOUT_IP=10
+fi
 
 # Enable verbose if -v
 if $VERBOSE; then

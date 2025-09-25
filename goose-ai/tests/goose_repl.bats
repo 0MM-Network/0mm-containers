@@ -66,7 +66,7 @@ teardown() {
   EXPECT_SCRIPT=$(mktemp)
   cat > "$EXPECT_SCRIPT" <<EOF
 set timeout 60
-spawn $SCRIPT --serial --config $CONFIG_FILE repl --no-trap
+spawn $SCRIPT --test-mode --serial --config $CONFIG_FILE repl --no-trap
 expect {
   "root@vm:~#" { }
   timeout { send_user "Timeout: VM prompt not found"; exit 1 }
@@ -89,6 +89,9 @@ EOF
   assert_success
   assert_output --partial "root@vm:~#"
   assert_output --partial "Test REPL"
+
+  # Assert hypervisor started
+  pgrep cloud-hypervisor || fail "Hypervisor not started"
 
   # Capture and assert on goose logs (assuming VM_LOG is vm_log.txt)
   [ -f "vm_log.txt" ] || fail "VM log file missing"
