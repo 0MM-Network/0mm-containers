@@ -64,11 +64,31 @@ teardown() {
   rm -f .goose/serial.sock .goose/api.sock || true
   rm -rf "$CONFIG_DIR"
   rm -f /tmp/test_config.*.yaml /tmp/goose_test.*
+  if [ -n "$VM_PID" ]; then
+    kill $VM_PID || true
+  fi
 }
 
 @test "REPL mode launches VM and provides interactive access via serial" {
   # Verify config file existence
   [ -f "$CONFIG_FILE" ] || fail "Config file missing: $CONFIG_FILE"
+
+  # Launch the goose script in background to start VM
+  $SCRIPT --test-mode --serial --config $CONFIG_FILE repl --no-trap &
+  VM_PID=$!
+
+  # Poll for serial socket existence
+  for i in {1..30}; do
+    echo "Checking socket (attempt $i): $([ -S .goose/serial.sock ] && echo found || echo missing)"
+    if [ -S .goose/serial.sock ]; then
+      break
+    fi
+    sleep 1
+  done
+  [ -S .goose/serial.sock ] || fail "Serial socket not created after wait"
+
+  # Ensure VM is running
+  kill -0 $VM_PID || fail "VM not launched"
 
   # Create expect script for interactive REPL test
   EXPECT_SCRIPT=$(mktemp)
@@ -91,16 +111,6 @@ EOF
   # Debug: Print the generated Expect script
   echo "Generated Expect script:"
   cat "$EXPECT_SCRIPT"
-
-  # Poll for serial socket existence
-  for i in {1..30}; do
-    echo "Checking socket (attempt $i): $([ -S .goose/serial.sock ] && echo found || echo missing)"
-    if [ -S .goose/serial.sock ]; then
-      break
-    fi
-    sleep 1
-  done
-  [ -S .goose/serial.sock ] || fail "Serial socket not created after wait"
 
   # Run with external timeout
   run timeout 120s expect -f "$EXPECT_SCRIPT"
