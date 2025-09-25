@@ -75,7 +75,7 @@ teardown() {
   EXPECT_SCRIPT=$(mktemp)
   cat > "$EXPECT_SCRIPT" <<EOF
 set timeout 60
-spawn $SCRIPT --test-mode --serial --config $CONFIG_FILE repl --no-trap
+spawn $SCRIPT --serial --config $CONFIG_FILE repl
 expect {
   "root@vm:~#" { }
   timeout { send_user "Timeout: VM prompt not found"; exit 1 }
@@ -113,7 +113,7 @@ EOF
 }
 
 @test "Non-REPL mode runs command via expect over ttyS0" {
-  run timeout 300 $SCRIPT --serial --config $CONFIG_FILE info --no-trap
+  run timeout 300 $SCRIPT --serial --config $CONFIG_FILE info
   assert_success
 
   # Verify expected output (adjust based on 'info' command; assuming it echoes something verifiable)
@@ -131,12 +131,12 @@ EOF
 
 @test "multiple main script runs reuse setup without recreation" {
   # First run
-  run timeout 300 $SCRIPT --serial --config $CONFIG_FILE info --no-trap
+  run timeout 300 $SCRIPT --serial --config $CONFIG_FILE info
   assert_success
   local first_pid=$(pgrep -f "virtiofsd.*--socket-path=.goose/virtiofs.sock")
 
   # Second run
-  run timeout 300 $SCRIPT --serial --config $CONFIG_FILE info --no-trap
+  run timeout 300 $SCRIPT --serial --config $CONFIG_FILE info
   assert_success
   local second_pid=$(pgrep -f "virtiofsd.*--socket-path=.goose/virtiofs.sock")
 
@@ -148,7 +148,7 @@ EOF
   # Simulate staleness by deleting a socket
   sudo rm -f ".goose/virtiofs.sock"
 
-  run timeout 300 $SCRIPT --serial --config $CONFIG_FILE info --no-trap
+  run timeout 300 $SCRIPT --serial --config $CONFIG_FILE info
   assert_success
   assert_output --partial "Setup stale or missing. Recreating..."
 

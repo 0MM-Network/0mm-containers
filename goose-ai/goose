@@ -25,6 +25,13 @@ LOG_FILE=""
 VM_LOG="vm_log.txt"
 MAX_TIMEOUT_IP=${MAX_TIMEOUT_IP:-60}  # Configurable via env var, default 60s for dev/test
 
+# Detect if running in BATS test environment
+if [ -n "$BATS_TEST_FILENAME" ]; then
+    MAX_TIMEOUT_IP=10
+    set -x  # Enable verbose
+    NO_TRAP=true  # Disable trap in test mode
+fi
+
 # Function to display help
 show_help() {
     echo "Usage: $0 --config <path/to/config.yaml> [subcommand] [--interactive] [-v] [--log <file>]"
@@ -203,7 +210,13 @@ check_setup() {
         return 1
     fi
 
-    # Check if sockets exist and are responsive
+    # Check if sockets exist and are responsive with retry
+    for i in {1..5}; do
+        if [ -S "$VIRTIOFS_SOCK" ]; then
+            break
+        fi
+        sleep 1
+    done
     if [ ! -S "$VIRTIOFS_SOCK" ]; then
         return 1
     fi
