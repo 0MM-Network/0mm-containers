@@ -93,7 +93,8 @@ EOF
   cat "$EXPECT_SCRIPT"
 
   # Poll for serial socket existence
-  for i in {1..10}; do
+  for i in {1..30}; do
+    echo "Checking socket (attempt $i): $([ -S .goose/serial.sock ] && echo found || echo missing)"
     if [ -S .goose/serial.sock ]; then
       break
     fi
