@@ -13,12 +13,11 @@ setup_file() {
     command -v "$dep" >/dev/null || skip "$dep not installed"
   done
 
-  # Ensure setup script is executable
-  chmod +x "$SETUP_SCRIPT"
-
-  # Run persistent setup once per suite with timeout to prevent hangs
-  run timeout 10s sudo "$SETUP_SCRIPT" --setup
-  assert_success
+  # Check if setup is complete
+  if [ ! -f ".goose/setup.lock" ] || ! source ".goose/setup.lock" 2>/dev/null || [ -z "$VIRTIOFSD_PID" ]; then
+    echo "Setup not detected. Please run 'sudo ./goose-setup.sh --setup' before tests and try again."
+    fail "Setup required"
+  fi
 
   # Assertions post-setup
   grep -q "export VIRTIOFSD_PID=" .goose/setup.lock || fail "Invalid lock file format"
@@ -26,10 +25,6 @@ setup_file() {
 }
 
 teardown_file() {
-  # Run persistent teardown once per suite with timeout
-  run timeout 10s sudo "$SETUP_SCRIPT" --teardown
-  assert_success
-
   # Additional cleanup
   rm -f vm_root_id_rsa vm_root_id_rsa.pub
   rm -f jammy-server-cloudimg-amd64.img jammy-server-cloudimg-amd64.raw
@@ -38,6 +33,8 @@ teardown_file() {
   rm -rf .goose || true
   rm -rf /tmp/goose_test.* || true
   rm -f /tmp/test_config.*.yaml || true
+
+  echo "Teardown not automatic. Please run 'sudo ./goose-setup.sh --teardown' after tests if needed."
 }
 
 setup() {
