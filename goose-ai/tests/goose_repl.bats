@@ -59,7 +59,7 @@ teardown() {
   EXPECT_SCRIPT=$(mktemp)
   cat > "$EXPECT_SCRIPT" <<EOF
 set timeout 300
-spawn -- $SCRIPT --serial --config $CONFIG_FILE repl --no-trap
+spawn $SCRIPT --serial --config $CONFIG_FILE repl --no-trap
 expect {
   "root@vm:~#" { }
   timeout { exit 1 }
@@ -72,6 +72,10 @@ expect {
 send "exit\\r"
 expect eof
 EOF
+
+  # Debug: Print the generated Expect script
+  echo "Generated Expect script:"
+  cat "$EXPECT_SCRIPT"
 
   run expect -f "$EXPECT_SCRIPT"
   assert_success
