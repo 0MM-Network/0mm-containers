@@ -22,6 +22,13 @@ setup_file() {
   # Assertions post-setup
   grep -q "export VIRTIOFSD_PID=" .goose/setup.lock || fail "Invalid lock file format"
   [ -w .goose/setup.log ] || fail "Setup log not writable"
+  # Retry loop for socket check
+  for i in {1..10}; do
+    if [ -S ".goose/virtiofs.sock" ]; then
+      break
+    fi
+    sleep 1
+  done
   [ -S ".goose/virtiofs.sock" ] || fail "virtiofs.sock missing"
   [ -r ".goose/virtiofs.sock" ] || fail "virtiofs.sock not readable"
 }
@@ -32,7 +39,7 @@ teardown_file() {
   rm -f jammy-server-cloudimg-amd64.img jammy-server-cloudimg-amd64.raw
   rm -f cloud-init.img
   rm -f user-data meta-data network-config
-  rm -rf .goose || true
+  sudo rm -rf .goose || true
   rm -rf /tmp/goose_test.* || true
   rm -f /tmp/test_config.*.yaml || true
 

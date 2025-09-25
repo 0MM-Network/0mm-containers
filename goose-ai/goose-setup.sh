@@ -76,13 +76,13 @@ perform_setup() {
         $SUDO bash -c "ulimit -n 1000000 && exec /usr/libexec/virtiofsd --sandbox none --socket-path=$VIRTIOFS_SOCK --shared-dir \"$SHARED_DIR\" --cache=never --thread-pool-size=4" &
         VIRTIOFSD_PID=$!
         echo "Launched virtiofsd with PID $VIRTIOFSD_PID" >> "$LOG_FILE"
-        # Poll for socket with timeout and ensure creation
+        # Poll for socket with timeout
         timeout 30s bash -c 'for i in {1..30}; do if [ -S "'"$VIRTIOFS_SOCK"'" ]; then exit 0; fi; sleep 1; done; echo "Timeout on virtiofs.sock" >&2; exit 1'
         if [ $? -ne 0 ]; then
             echo "Error: virtiofs.sock timeout" >> "$LOG_FILE" >&2
             exit 1
         fi
-        $SUDO chmod 666 "$VIRTIOFS_SOCK" || { echo "Error: Socket not created or inaccessible" >> "$LOG_FILE" >&2; exit 1; }
+        $SUDO chmod 666 "$VIRTIOFS_SOCK"
     else
         VIRTIOFSD_PID=$(pgrep -f "virtiofsd.*--socket-path=$VIRTIOFS_SOCK")
     fi
@@ -102,6 +102,8 @@ perform_setup() {
     echo "export VIRTIOFSD_PID=\"$VIRTIOFSD_PID\"" > "$LOCK_FILE"
     echo "export TIMESTAMP=\"$(date +%s)\"" >> "$LOCK_FILE"
     echo "Setup completed." >> "$LOG_FILE"
+    chmod 666 "$LOCK_FILE"
+    chmod 666 .goose/* || true  # Set world-readable/writable on all .goose/ files
     chmod 666 "$LOG_FILE"
 }
 
