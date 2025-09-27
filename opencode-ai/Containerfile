@@ -1,0 +1,53 @@
+FROM node:20-slim AS base
+
+# Install system dependencies (including Playwright/Chromium deps)
+RUN apt-get update && \
+    apt-get install --no-install-recommends -y \
+    git libnss3 libnspr4 libatk1.0-0 libatk-bridge2.0-0 libcups2 libdrm2 libxkbcommon0 \
+    libxcomposite1 libxdamage1 libxfixes3 libxrandr2 libgbm1 libpango-1.0-0 \
+    libcairo2 libasound2 libatspi2.0-0 libgtk-3-0 fonts-liberation fonts-noto-color-emoji && \
+    rm -rf /var/lib/apt/lists/*
+
+# Create app user with UID 1000
+RUN useradd -m -u 1000 -s /bin/bash appuser
+
+WORKDIR /home/appuser
+
+# Playwright browser settings
+ENV PLAYWRIGHT_BROWSERS_PATH=/home/appuser/pw-browsers
+ENV PLAYWRIGHT_SKIP_BROWSER_GC=1
+
+# Create directories with proper permissions (default 755 is sufficient)
+RUN mkdir -p /home/appuser/.local/share/opencode /home/appuser/pw-browsers && \
+    chown -R appuser:appuser /home/appuser
+
+# So git doesn't complain about unusual permissions
+RUN git config --system --add safe.directory /home/appuser
+
+# This puts the container's ~/.local/share/opencode into the host's project directory (usually host's cwd).
+# That way caches, version checks, etc get stored in the host filesystem not
+# simply discarded every time the container exits.
+ENV HOME=/home/appuser
+
+#########################
+FROM base AS opencode-full
+
+USER appuser
+
+ENV OPENCODE_DOCKER_IMAGE=localhost/opencode
+
+RUN npm install -g opencode-ai@latest playwright && \
+    playwright install chromium
+
+ENTRYPOINT ["/usr/local/bin/opencode"]
+
+#########################
+FROM base AS opencode
+
+USER appuser
+
+ENV OPENCODE_DOCKER_IMAGE=localhost/opencode-lite
+
+RUN npm install -g opencode-ai@latest
+
+ENTRYPOINT ["/usr/local/bin/opencode"]
