@@ -19,7 +19,6 @@ fi
 # Define paths and defaults
 GOOSE_DIR=".goose"
 LOCK_FILE="$GOOSE_DIR/setup.lock"
-VIRTIOFS_SOCK="$GOOSE_DIR/virtiofs.sock"
 API_SOCK="$GOOSE_DIR/api.sock"
 SERIAL_SOCK="$GOOSE_DIR/serial.sock"
 LOG_FILE="$GOOSE_DIR/setup.log"
@@ -67,45 +66,6 @@ perform_setup() {
         chown $ORIGINAL_UID:$ORIGINAL_GID "$IMG_FILE" "$IMAGE_FILE" || { echo "Error: Failed to chown image files" >> "$LOG_FILE" >&2; exit 1; }
     fi
 
-    # Preemptively kill any matching old virtiofsd processes using socket path filters
-    echo "Checking for existing virtiofsd processes..." >> "$LOG_FILE"
-    for attempt in {1..3}; do
-        pkill -TERM -f "bash.*virtiofsd.*--socket-path=(virtiofs.sock|.goose/virtiofs.sock)" || true
-        pkill -TERM -f "virtiofsd.*--socket-path=(virtiofs.sock|.goose/virtiofs.sock)" || true
-        sleep 3
-        pkill -9 -f "bash.*virtiofsd.*--socket-path=(virtiofs.sock|.goose/virtiofs.sock)" || true
-        pkill -9 -f "virtiofsd.*--socket-path=(virtiofs.sock|.goose/virtiofs.sock)" || true
-        if ! pgrep -f "(bash.*virtiofsd|virtiofsd).*--socket-path=(virtiofs.sock|.goose/virtiofs.sock)" > /dev/null; then
-            break
-        fi
-        echo "Retry $attempt: Lingering virtiofsd detected, retrying kill..." >> "$LOG_FILE"
-    done
-    KILLED_PIDS=$(pgrep -f "(bash.*virtiofsd|virtiofsd).*--socket-path=(virtiofs.sock|.goose/virtiofs.sock)" || true)
-    if [ -n "$KILLED_PIDS" ]; then
-        echo "Killed lingering virtiofsd PIDs: $KILLED_PIDS" >> "$LOG_FILE"
-    else
-        echo "No lingering virtiofsd found" >> "$LOG_FILE"
-    fi
-    if pgrep -f "(bash.*virtiofsd|virtiofsd).*--socket-path=(virtiofs.sock|.goose/virtiofs.sock)" > /dev/null; then
-        echo "Warning: Lingering virtiofsd processes after kill" >> "$LOG_FILE" >&2
-    fi
-
-    # Setup virtiofsd if not running
-    if ! pgrep -f "virtiofsd.*--socket-path=$VIRTIOFS_SOCK" > /dev/null; then
-        $SUDO bash -c "ulimit -n 1000000 && exec /usr/libexec/virtiofsd --sandbox none --socket-path=$VIRTIOFS_SOCK --shared-dir \"$SHARED_DIR\" --cache=never --thread-pool-size=4" &
-        VIRTIOFSD_PID=$!
-        echo "Launched virtiofsd with PID $VIRTIOFSD_PID" >> "$LOG_FILE"
-        # Poll for socket with timeout
-        timeout 30s bash -c 'for i in {1..30}; do if [ -S "'"$VIRTIOFS_SOCK"'" ]; then exit 0; fi; sleep 1; done; echo "Timeout on virtiofs.sock" >&2; exit 1'
-        if [ $? -ne 0 ]; then
-            echo "Error: virtiofs.sock timeout" >> "$LOG_FILE" >&2
-            exit 1
-        fi
-        $SUDO chmod 666 "$VIRTIOFS_SOCK"
-    else
-        VIRTIOFSD_PID=$(pgrep -f "virtiofsd.*--socket-path=$VIRTIOFS_SOCK")
-    fi
-
     # Setup MACVTAP if not exists
     if ! ip link show macvtap0 > /dev/null 2>&1; then
         timeout 10s $SUDO ip link add link "$HOST_IFACE" name macvtap0 type macvtap || { echo "Timeout on MACVTAP add" >> "$LOG_FILE" >&2; exit 1; }
@@ -118,7 +78,6 @@ perform_setup() {
     fi
 
     # Write lock file with safe export
-    echo "export VIRTIOFSD_PID=\"$VIRTIOFSD_PID\"" > "$LOCK_FILE"
     echo "export TIMESTAMP=\"$(date +%s)\"" >> "$LOCK_FILE"
     echo "Setup completed." >> "$LOG_FILE"
     chown -R $ORIGINAL_UID:$ORIGINAL_GID $GOOSE_DIR
