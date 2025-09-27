@@ -345,6 +345,9 @@ start_hypervisor() {
     fi
 
     prepare_virtiofsd
+
+    touch "$VM_LOG"
+    chmod 666 "$VM_LOG"
     
     cloud-hypervisor --cpus boot=$VM_CPUS \
         --memory size=$VM_MEMORY,shared=on \
@@ -370,9 +373,19 @@ start_hypervisor() {
         exit 1
     fi
 
+    sleep 2
+
+    sleep 8
+    if [ ! -s "$VM_LOG" ]; then
+        echo "Error: No output from hypervisor" >> "$VM_LOG" >&2
+        exit 1
+    fi
+
     # Capture PTY path from VM_LOG with poll loop
     PTY_PATH=""
-    for i in {1..10}; do
+    for i in {1..30}; do
+        echo "Debug: Current VM_LOG content:"
+        cat "$VM_LOG"
         PTY_PATH=$(grep -oE 'Serial console on /dev/pts/[0-9]+' "$VM_LOG" | awk '{print $NF}' | tail -1)
         if [ -n "$PTY_PATH" ]; then
             break
@@ -380,6 +393,11 @@ start_hypervisor() {
         sleep 1
     done
     if [ -z "$PTY_PATH" ]; then
+        if kill -0 $VM_PID 2>/dev/null; then
+            echo "Hypervisor PID $VM_PID alive, but no PTY in log" >> "$VM_LOG"
+        else
+            echo "Hypervisor PID $VM_PID not alive" >> "$VM_LOG"
+        fi
         echo "Error: Failed to capture PTY path" >> "$VM_LOG" >&2
         exit 1
     fi
