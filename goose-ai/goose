@@ -231,12 +231,14 @@ check_setup() {
 
     # Check if sockets exist and are responsive with retry
     local socket_exists=false
-    for i in {1..5}; do
-        if [ -S "$VIRTIOFS_SOCK" ]; then
+    SOCKET_PATH=$(pwd)/.goose/virtiofs.sock
+    for i in {1..60}; do
+        echo "Checking socket (attempt $i): $(ls -l "$SOCKET_PATH" 2>/dev/null || echo missing)" >> "$VM_LOG"
+        if [ -S "$SOCKET_PATH" ]; then
             socket_exists=true
             break
         fi
-        sleep 1
+        sleep 0.5
     done
 
     if ! $socket_exists || [ -z "$VIRTIOFSD_PID" ]; then
@@ -318,7 +320,7 @@ prepare_virtiofsd() {
     # Setup virtiofsd if not running
     if ! pgrep -f "virtiofsd.*--socket-path=$VIRTIOFS_SOCK" > /dev/null; then
         # Note: If high file limits needed, consider sudo wrapper for virtiofsd
-        /usr/libexec/virtiofsd --sandbox none --socket-path=$VIRTIOFS_SOCK --shared-dir "$SHARED_DIR" --cache=never --thread-pool-size=4 &
+        /usr/libexec/virtiofsd --sandbox none --socket-path=$VIRTIOFS_SOCK --shared-dir "$SHARED_DIR" --cache=never --thread-pool-size=8 --syslog &
         VIRTIOFSD_PID=$!
         echo "Launched virtiofsd with PID $VIRTIOFSD_PID" >> "${LOG_FILE:-/dev/null}"
         sleep 2
@@ -400,9 +402,19 @@ start_hypervisor() {
         exit 1
     fi
 
+    # Check for vhost-user errors
+    if grep -qi 'vhost-user' "$VM_LOG"; then
+        echo "Error: vhost-user related crash detected in hypervisor log" >> "$VM_LOG" >&2
+        exit 1
+    fi
+
     # Capture PTY path from VM_LOG with poll loop
     PTY_PATH=""
     for i in {1..30}; do
+        if ! kill -0 $VM_PID 2>/dev/null; then
+            echo "Hypervisor PID $VM_PID not alive during PTY poll (attempt $i)" >> "$VM_LOG"
+            exit 1
+        fi
         echo "Debug: Current VM_LOG content:"
         cat "$VM_LOG"
         PTY_PATH=$(grep -oE 'Serial console on /dev/pts/[0-9]+' "$VM_LOG" | awk '{print $NF}' | tail -1)
