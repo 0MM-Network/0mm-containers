@@ -303,7 +303,7 @@ start_hypervisor() {
         serial_opt="--serial pty"
     fi
 
-    prepare_virtiofsd()
+    prepare_virtiofsd
     
     cloud-hypervisor --cpus boot=$VM_CPUS \
         --memory size=$VM_MEMORY,shared=on \
