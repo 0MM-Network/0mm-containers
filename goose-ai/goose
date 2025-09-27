@@ -363,8 +363,9 @@ start_hypervisor() {
         $serial_opt \
         --console off \
         --api-socket "$API_SOCK" \
-        --net fd=3,mac=$MAC 3<>"$TAP_DEVICE" > "$VM_LOG" 2>&1 &
+        --net fd=3,mac=$MAC 3<>"$TAP_DEVICE" | tee -a "$VM_LOG" 2>&1 &
     VM_PID=$!
+    disown $VM_PID
 
     # Check if launch succeeded
     if [ $? -ne 0 ]; then
@@ -381,9 +382,21 @@ start_hypervisor() {
 
     sleep 2
 
-    sleep 8
+    # Loop to wait until VM_LOG has content
+    for i in {1..30}; do
+        cat "$VM_LOG" >> /tmp/debug.log
+        if [ -s "$VM_LOG" ]; then
+            break
+        fi
+        sleep 1
+    done
     if [ ! -s "$VM_LOG" ]; then
-        echo "Error: No output from hypervisor" >> "$VM_LOG" >&2
+        echo "Error: No output from hypervisor after 30s" >> "$VM_LOG" >&2
+        ps -p $VM_PID -o pid,ppid,cmd >> "$VM_LOG" >&2
+        if command -v strace >/dev/null; then
+            strace -p $VM_PID -s 1000 -e trace=all -o /tmp/strace.log || true
+            cat /tmp/strace.log >> "$VM_LOG" >&2
+        fi
         exit 1
     fi
 
