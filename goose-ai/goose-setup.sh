@@ -51,7 +51,7 @@ perform_setup() {
     # Download and prepare image idempotently with integrity check
     echo "Image check: .img exists? $([ -f "$IMG_FILE" ] && echo yes || echo no)" >> "$LOG_FILE"
     echo "Image check: .raw exists? $([ -f "$IMAGE_FILE" ] && echo yes || echo no)" >> "$LOG_FILE"
-    if [ -f "$IMG_FILE" ] && [ $(stat -c %s "$IMG_FILE") -eq $KNOWN_IMG_SIZE ]; then
+    if [ -f "$IMG_FILE" ] && [ $(stat -c %s "$IMG_FILE") -eq $KNOWN_IMG_SIZE ] && [ -f "$IMAGE_FILE" ]; then
         echo "Image files exist and integrity verified, skipping download" >> "$LOG_FILE"
     else
         if [ ! -f "jammy-server-cloudimg-amd64.img" ]; then
@@ -78,7 +78,7 @@ perform_setup() {
     fi
 
     # Write lock file with safe export
-    echo "export TIMESTAMP=\"$(date +%s)\"" >> "$LOCK_FILE"
+    echo "export TIMESTAMP=\"$(date +%s)\"" > "$LOCK_FILE"
     echo "Setup completed." >> "$LOG_FILE"
     chown -R $ORIGINAL_UID:$ORIGINAL_GID $GOOSE_DIR
     chmod 666 "$LOCK_FILE"

@@ -172,7 +172,7 @@ EOF
 
   run timeout 300 $SCRIPT --serial --config $CONFIG_FILE info
   assert_success
-  assert_output --partial "Setup stale or missing. Recreating..."
+  assert_output --partial "virtiofsd missing, attempting to launch."
 
   # Verify re-setup occurred
   [ -S ".goose/virtiofs.sock" ]

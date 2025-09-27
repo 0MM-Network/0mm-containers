@@ -48,7 +48,7 @@ show_help() {
 
 # Function to check dependencies and portability
 check_deps() {
-    local deps=("cloud-hypervisor" "virtiofsd" "socat" "mkdosfs" "mcopy" "qemu-img" "curl" "expect" "ip" "wget" "md5sum")
+    local deps=("cloud-hypervisor" "virtiofsd" "socat" "mkdosfs" "mcopy" "qemu-img" "curl" "expect" "ip" "wget" "md5sum" "ssh" "ssh-keygen" "nc" "pkill")
     for dep in "${deps[@]}"; do
         if ! command -v "$dep" &> /dev/null; then
             echo "Error: $dep is required but not installed." >&2
@@ -202,30 +202,45 @@ check_setup() {
     if [ ! -f "$LOCK_FILE" ]; then
         return 1
     fi
-    source "$LOCK_FILE" && [ -n "$VIRTIOFSD_PID" ] || { echo "Error: Invalid or corrupted lock file" >> "$VM_LOG" >&2; exit 1; }
+    source "$LOCK_FILE" || return 1
 
-    # Permission-agnostic check for process existence
-    if ps -p "$VIRTIOFSD_PID" > /dev/null 2>&1; then
-        echo "Checked PID $VIRTIOFSD_PID: exists" >> "$VM_LOG"
-    else
-        echo "Checked PID $VIRTIOFSD_PID: missing" >> "$VM_LOG"
+    original_pid="$VIRTIOFSD_PID"
+
+    if ! ip link show macvtap0 > /dev/null 2>&1; then
         return 1
     fi
 
+    # Check timestamp for staleness (e.g., >1 hour old)
+    current_time=$(date +%s)
+    if [ -n "$TIMESTAMP" ] && [ $((current_time - TIMESTAMP)) -gt 3600 ]; then
+        echo "Warning: Setup timestamp is stale (>1 hour)" >> "$VM_LOG"
+    fi
+
+    # Check virtiofsd using pgrep primarily
+    unset VIRTIOFSD_PID
+    local found_pid=$(pgrep -f "virtiofsd.*--socket-path=$VIRTIOFS_SOCK" | head -1)
+    if [ -n "$found_pid" ]; then
+        VIRTIOFSD_PID="$found_pid"
+        echo "Found running virtiofsd: $VIRTIOFSD_PID" >> "$VM_LOG"
+    elif [ -n "$original_pid" ] && ps -p "$original_pid" > /dev/null 2>&1; then
+        VIRTIOFSD_PID="$original_pid"
+        echo "Using lock PID: $VIRTIOFSD_PID" >> "$VM_LOG"
+    else
+        echo "Warning: No running virtiofsd found" >> "$VM_LOG"
+    fi
+
     # Check if sockets exist and are responsive with retry
+    local socket_exists=false
     for i in {1..5}; do
         if [ -S "$VIRTIOFS_SOCK" ]; then
+            socket_exists=true
             break
         fi
         sleep 1
     done
-    if [ ! -S "$VIRTIOFS_SOCK" ]; then
-        return 1
-    fi
 
-    # Check MACVTAP
-    if ! ip link show macvtap0 > /dev/null 2>&1; then
-        return 1
+    if ! $socket_exists || [ -z "$VIRTIOFSD_PID" ]; then
+        return 2  # Missing due to virtiofsd PID or socket
     fi
 
     return 0
@@ -234,8 +249,27 @@ check_setup() {
 # Function to handle setup (reuse or recreate if stale)
 handle_setup() {
     [ -w "$VM_LOG" ] || { echo "Error: Cannot write to log - check permissions" >&2; exit 1; }
-    if check_setup; then
+    local code=0
+    check_setup || code=$?
+    if [ $code -eq 0 ]; then
         echo "Reusing existing setup." >> "$VM_LOG"
+        # Update lock if PID was recovered differently
+        if [ "$original_pid" != "$VIRTIOFSD_PID" ] && [ -n "$VIRTIOFSD_PID" ]; then
+            if grep -q "export VIRTIOFSD_PID" "$LOCK_FILE"; then
+                sed -i "s/export VIRTIOFSD_PID=.*/export VIRTIOFSD_PID=\"$VIRTIOFSD_PID\"/g" "$LOCK_FILE"
+            else
+                echo "export VIRTIOFSD_PID=\"$VIRTIOFSD_PID\"" >> "$LOCK_FILE"
+            fi
+        fi
+    elif [ $code -eq 2 ]; then
+        echo "virtiofsd missing, attempting to launch." >> "$VM_LOG"
+        prepare_virtiofsd
+        # Append/update lock file
+        if grep -q "export VIRTIOFSD_PID" "$LOCK_FILE"; then
+            sed -i "s/export VIRTIOFSD_PID=.*/export VIRTIOFSD_PID=\"$VIRTIOFSD_PID\"/g" "$LOCK_FILE"
+        else
+            echo "export VIRTIOFSD_PID=\"$VIRTIOFSD_PID\"" >> "$LOCK_FILE"
+        fi
     else
         echo "Stale setup detected. Please run 'sudo ./goose-setup.sh --teardown' followed by 'sudo ./goose-setup.sh --setup' and then retry this command."
         exit 1
@@ -253,7 +287,13 @@ prepare_resources() {
 }
 
 prepare_virtiofsd() {
-    
+    # Check if already running properly
+    if pgrep -f "virtiofsd.*--socket-path=$VIRTIOFS_SOCK" > /dev/null && [ -S "$VIRTIOFS_SOCK" ]; then
+        VIRTIOFSD_PID=$(pgrep -f "virtiofsd.*--socket-path=$VIRTIOFS_SOCK" | head -1)
+        echo "virtiofsd already running with PID $VIRTIOFSD_PID" >> "$LOG_FILE"
+        return
+    fi
+
     # Preemptively kill any matching old virtiofsd processes using socket path filters
     echo "Checking for existing virtiofsd processes..." >> "$LOG_FILE"
     for attempt in {1..3}; do
@@ -292,7 +332,6 @@ prepare_virtiofsd() {
         VIRTIOFSD_PID=$(pgrep -f "virtiofsd.*--socket-path=$VIRTIOFS_SOCK")
     fi
 
-    echo "export VIRTIOFSD_PID=\"$VIRTIOFSD_PID\"" >> "$LOCK_FILE"
     export VIRTIOFSD_PID VIRTIOFSD_SOCK
 }
 
