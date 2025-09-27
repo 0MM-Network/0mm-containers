@@ -320,13 +320,18 @@ prepare_virtiofsd() {
     # Setup virtiofsd if not running
     if ! pgrep -f "virtiofsd.*--socket-path=$VIRTIOFS_SOCK" > /dev/null; then
         # Note: If high file limits needed, consider sudo wrapper for virtiofsd
-        /usr/libexec/virtiofsd --sandbox none --socket-path=$VIRTIOFS_SOCK --shared-dir "$SHARED_DIR" --cache=never --thread-pool-size=8 --syslog &
+        SOCKET_PATH=$(pwd)/.goose/virtiofs.sock
+        SHARED_ABS=$(pwd)
+        if $TEST_MODE; then
+            /usr/libexec/virtiofsd --sandbox none --socket-path="$SOCKET_PATH" --shared-dir "$SHARED_ABS" --cache=never --thread-pool-size=8 &>> "$VM_LOG"
+        else
+            /usr/libexec/virtiofsd --sandbox none --socket-path="$SOCKET_PATH" --shared-dir "$SHARED_ABS" --cache=never --thread-pool-size=8 &>> "$VM_LOG" &
+        fi
         VIRTIOFSD_PID=$!
         echo "Launched virtiofsd with PID $VIRTIOFSD_PID" >> "${LOG_FILE:-/dev/null}"
         sleep 2
         kill -0 $VIRTIOFSD_PID || { echo "Error: virtiofsd failed to start" >> "${LOG_FILE:-/dev/null}"; exit 1; }
         # Poll for socket with timeout
-        SOCKET_PATH=$(pwd)/.goose/virtiofs.sock
         sleep 1; ls -l "$SOCKET_PATH" >> "$VM_LOG" 2>&1 || echo 'Socket missing pre-poll' >> "$VM_LOG"
         timeout 60s bash -c 'for i in {1..120}; do echo "Checking socket (attempt $i): $(ls -l "'"$SOCKET_PATH"'" 2>/dev/null || echo missing)" >> "'"$VM_LOG"'"; if [ -S "'"$SOCKET_PATH"'" ]; then chmod 666 "'"$SOCKET_PATH"'"; chown $USER: "'"$SOCKET_PATH"'"; exit 0; fi; sleep 0.5; done; echo "Timeout on virtiofs.sock" >&2; ls -ld .goose/ >&2; exit 1'
         if [ $? -ne 0 ]; then
@@ -338,6 +343,7 @@ prepare_virtiofsd() {
             echo "Error: virtiofs.sock timeout" >> "${LOG_FILE:-/dev/null}" >&2
             exit 1
         fi
+        sleep 5; if [ ! -S "$SOCKET_PATH" ]; then tail -n 20 "$VM_LOG"; echo 'virtiofsd logs:'; exit 1; fi
     else
         VIRTIOFSD_PID=$(pgrep -f "virtiofsd.*--socket-path=$VIRTIOFS_SOCK")
     fi
