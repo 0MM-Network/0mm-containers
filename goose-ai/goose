@@ -322,15 +322,26 @@ prepare_virtiofsd() {
         # Note: If high file limits needed, consider sudo wrapper for virtiofsd
         SOCKET_PATH=$(pwd)/.goose/virtiofs.sock
         SHARED_ABS=$(pwd)
-        if $TEST_MODE; then
-            /usr/libexec/virtiofsd --socket-path="$SOCKET_PATH" --shared-dir "$SHARED_ABS" --thread-pool-size=1 &>> "$VM_LOG"
-        else
-            /usr/libexec/virtiofsd --socket-path="$SOCKET_PATH" --shared-dir "$SHARED_ABS" --thread-pool-size=1 &>> "$VM_LOG" &
+        for retry in {1..3}; do
+            if $TEST_MODE; then
+                /usr/libexec/virtiofsd --socket-path="$SOCKET_PATH" --shared-dir "$SHARED_ABS" --thread-pool-size=1 &>> "$VM_LOG"
+            else
+                /usr/libexec/virtiofsd --socket-path="$SOCKET_PATH" --shared-dir "$SHARED_ABS" --thread-pool-size=1 &>> "$VM_LOG" &
+            fi
+            VIRTIOFSD_PID=$!
+            echo "Launched virtiofsd with PID $VIRTIOFSD_PID (attempt $retry)" >> "${LOG_FILE:-/dev/null}"
+            sleep 2
+            wait $VIRTIOFSD_PID || { echo "virtiofsd exited with code $?" >> "$VM_LOG"; continue; }
+            if [ -S "$SOCKET_PATH" ] && kill -0 $VIRTIOFSD_PID 2>/dev/null; then
+                break
+            fi
+            echo "Retry $retry failed; socket or PID invalid" >> "$VM_LOG"
+        done
+        if ! [ -S "$SOCKET_PATH" ] || ! kill -0 $VIRTIOFSD_PID 2>/dev/null; then
+            echo "Error: virtiofsd failed after 3 retries" >> "$VM_LOG" >&2
+            # If still failing, check virtiofsd version with virtiofsd --version
+            exit 1
         fi
-        VIRTIOFSD_PID=$!
-        echo "Launched virtiofsd with PID $VIRTIOFSD_PID" >> "${LOG_FILE:-/dev/null}"
-        sleep 2
-        wait $VIRTIOFSD_PID || { echo "virtiofsd exited with code $?" >> "$VM_LOG"; exit 1; }
         # Poll for socket with timeout
         sleep 1; ls -l "$SOCKET_PATH" >> "$VM_LOG" 2>&1 || echo 'Socket missing pre-poll' >> "$VM_LOG"
         timeout 60s bash -c 'for i in {1..120}; do echo "Checking socket (attempt $i): $(ls -l "'"$SOCKET_PATH"'" 2>/dev/null || echo missing)" >> "'"$VM_LOG"'"; if [ -S "'"$SOCKET_PATH"'" ]; then chmod 666 "'"$SOCKET_PATH"'"; chown $USER: "'"$SOCKET_PATH"'"; exit 0; fi; sleep 0.5; done; echo "Timeout on virtiofs.sock" >&2; ls -ld .goose/ >&2; exit 1'
