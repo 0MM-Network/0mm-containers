@@ -30,8 +30,8 @@ BUILD_CONTEXT="$SCRIPTS_DIR"
 
 # Build the container images
 echo "Building Opencode container images..."
-podman build --target opencode-full -t $OPENCODE_IMAGE -f "$SCRIPTS_DIR/Containerfile" "$BUILD_CONTEXT" || error_exit "Failed to build opencode container image"
-podman build --target opencode -t $OPENCODE_LITE_IMAGE -f "$SCRIPTS_DIR/Containerfile" "$BUILD_CONTEXT" || error_exit "Failed to build opencode-lite container image"
+podman build --target opencode -t $OPENCODE_IMAGE -f "$SCRIPTS_DIR/Containerfile" "$BUILD_CONTEXT" || error_exit "Failed to build opencode container image"
+podman build --target opencode-lite -t $OPENCODE_LITE_IMAGE -f "$SCRIPTS_DIR/Containerfile" "$BUILD_CONTEXT" || error_exit "Failed to build opencode-lite container image"
 
 # Create wrapper scripts
 echo "Creating wrapper scripts..."
@@ -82,7 +82,37 @@ fi
 # Prepare volume mounts
 MOUNTS="-v \"\$PWD:/home/appuser:Z\" -v \"\$HOME/.local/share/opencode:/home/appuser/.local/share/opencode:Z\""
 
-# Server mode logic
+NETWORK_NAME="opencode-net"
+
+# Create network if not exists
+if ! podman network exists "\$NETWORK_NAME"; then
+  if podman network create "\$NETWORK_NAME"; then
+    :
+  else
+    echo "Warning: Failed to create network \$NETWORK_NAME, using bridge as fallback"
+    NETWORK_NAME="bridge"
+  fi
+fi
+
+if [ "\$NETWORK_NAME" == "bridge" ]; then
+  eval podman run --rm \$TTY_FLAG \\
+    --network bridge \\
+    --uidmap +\${CUID}:@\${HUID}:1 \\
+    --gidmap +\${CGID}:@\${HGID}:1 \\
+    \$MOUNTS \\
+    -e USER="\$USER" \\
+    -e ANTHROPIC_API_KEY \\
+    -e OPENAI_API_KEY \\
+    -e GEMINI_API_KEY \\
+    -e GROQ_API_KEY \\
+    -e OPENROUTER_API_KEY \\
+    "\$IMAGE" "\$@"
+  exit 0
+fi
+
+CONTAINER_NAME="opencode-server"
+
+# Determine if serve is in args
 SERVER_MODE=false
 NEW_ARGS=()
 for arg in "\$@"; do
@@ -93,37 +123,17 @@ for arg in "\$@"; do
   fi
 done
 
-if [ "\$SERVER_MODE" = true ]; then
-  NETWORK_NAME="opencode-net"
-  CONTAINER_NAME="opencode-server"
-
-  # Create network if not exists
-  if ! podman network exists "\$NETWORK_NAME"; then
-    podman network create "\$NETWORK_NAME" || error_exit "Failed to create network"
+# Start server if not running
+if ! podman ps -q --filter name="\$CONTAINER_NAME" --filter status=running | grep -q . ; then
+  PUBLISH=""
+  if [ "\$SERVER_MODE" = true ]; then
+    PUBLISH="--publish 4096:4096"
   fi
-
-  # Check if server container is running
-  if ! podman ps -q --filter name="\$CONTAINER_NAME" --filter status=running | grep -q . ; then
-    # Start detached server
-    eval podman run -d --name "\$CONTAINER_NAME" \\
-      --network "\$NETWORK_NAME" \\
-      --uidmap + \${CUID}:@ \${HUID}:1 \\
-      --gidmap + \${CGID}:@ \${HGID}:1 \\
-      \$MOUNTS \\
-      -e USER="\$USER" \\
-      -e ANTHROPIC_API_KEY \\
-      -e OPENAI_API_KEY \\
-      -e GEMINI_API_KEY \\
-      -e GROQ_API_KEY \\
-      -e OPENROUTER_API_KEY \\
-      "\$IMAGE" serve || error_exit "Failed to start server"
-  fi
-
-  # Now run the client
-  eval podman run --rm \$TTY_FLAG \\
+  eval podman run -d --name "\$CONTAINER_NAME" \\
     --network "\$NETWORK_NAME" \\
-    --uidmap + \${CUID}:@ \${HUID}:1 \\
-    --gidmap + \${CGID}:@ \${HGID}:1 \\
+    \$PUBLISH \\
+    --uidmap +\${CUID}:@\${HUID}:1 \\
+    --gidmap +\${CGID}:@\${HGID}:1 \\
     \$MOUNTS \\
     -e USER="\$USER" \\
     -e ANTHROPIC_API_KEY \\
@@ -131,21 +141,35 @@ if [ "\$SERVER_MODE" = true ]; then
     -e GEMINI_API_KEY \\
     -e GROQ_API_KEY \\
     -e OPENROUTER_API_KEY \\
-    "\$IMAGE" "\${NEW_ARGS[@]}"
-else
-  # Normal run
-  eval podman run --rm \$TTY_FLAG \\
-    --uidmap + \${CUID}:@ \${HUID}:1 \\
-    --gidmap + \${CGID}:@ \${HGID}:1 \\
-    \$MOUNTS \\
-    -e USER="\$USER" \\
-    -e ANTHROPIC_API_KEY \\
-    -e OPENAI_API_KEY \\
-    -e GEMINI_API_KEY \\
-    -e GROQ_API_KEY \\
-    -e OPENROUTER_API_KEY \\
-    "\$IMAGE" "\$@"
+    "\$IMAGE" serve || error_exit "Failed to start server"
 fi
+
+# If only serve was requested (NEW_ARGS empty and SERVER_MODE true), exit
+if [ "\$SERVER_MODE" = true ] && [ \${#NEW_ARGS[@]} -eq 0 ]; then
+  echo "Opencode server started."
+  exit 0
+fi
+
+# Get server IP
+SERVER_IP=\$(podman inspect "\$CONTAINER_NAME" --format '{{.NetworkSettings.Networks.\$NETWORK_NAME.IPAddress}}')
+
+if [ -z "\$SERVER_IP" ]; then
+  error_exit "Failed to get server IP"
+fi
+
+# Run the client
+eval podman run --rm \$TTY_FLAG \\
+  --network "\$NETWORK_NAME" \\
+  --uidmap +\${CUID}:@\${HUID}:1 \\
+  --gidmap +\${CGID}:@\${HGID}:1 \\
+  \$MOUNTS \\
+  -e USER="\$USER" \\
+  -e ANTHROPIC_API_KEY \\
+  -e OPENAI_API_KEY \\
+  -e GEMINI_API_KEY \\
+  -e GROQ_API_KEY \\
+  -e OPENROUTER_API_KEY \\
+  "\$IMAGE" --server-url "http://\$SERVER_IP:4096" "\${NEW_ARGS[@]}"
 EOF
     chmod +x "$SCRIPTS_DIR/$cmd"
     echo "Created wrapper script for $cmd"
@@ -158,26 +182,41 @@ SUCCESS_COUNT=0
 FAILED_COMMANDS=()
 
 for cmd in "${OPENCODE_COMMANDS[@]}"; do
-    echo -n "Testing $cmd... "
+    echo -n "Testing $cmd --version... "
     if "$SCRIPTS_DIR/$cmd" --version &>/dev/null; then
         echo "✅ Success"
         SUCCESS_COUNT=$((SUCCESS_COUNT + 1))
     else
         echo "❌ Failed"
-        FAILED_COMMANDS+=("$cmd")
+        FAILED_COMMANDS+=("$cmd --version")
     fi
 done
 
+# Test opencode serve
+echo -n "Testing opencode serve... "
+"$SCRIPTS_DIR/opencode" serve
+sleep 2
+if podman ps --filter name=opencode-server --filter status=running | grep -q opencode-server ; then
+  echo "✅ Success"
+  SUCCESS_COUNT=$((SUCCESS_COUNT + 1))
+  podman stop opencode-server >/dev/null
+  podman rm opencode-server >/dev/null
+else
+  echo "❌ Failed"
+  FAILED_COMMANDS+=("opencode serve")
+fi
+
 # Print summary
+TOTAL_TESTS=$((${#OPENCODE_COMMANDS[@]} + 1))
 echo "============================"
-echo "Test summary: $SUCCESS_COUNT/${#OPENCODE_COMMANDS[@]} commands available"
+echo "Test summary: $SUCCESS_COUNT/$TOTAL_TESTS tests passed"
 
 if [ ${#FAILED_COMMANDS[@]} -eq 0 ]; then
     echo "All Opencode commands are available!"
 else
-    echo "Failed commands:"
-    for cmd in "${FAILED_COMMANDS[@]}"; do
-        echo "- $cmd"
+    echo "Failed tests:"
+    for test in "${FAILED_COMMANDS[@]}"; do
+        echo "- $test"
     done
     echo
     echo "Troubleshooting tips:"
@@ -191,7 +230,9 @@ echo "Opencode CLI container solution installed successfully."
 echo "You can now use Opencode CLI commands directly from this folder."
 echo
 echo "Examples:"
-echo "  ./opencode file.js           # Run opencode on a file"
-echo "  ./opencode-lite --help       # Show help for opencode-lite"
+echo "  ./opencode                # Run Opencode TUI"
+echo "  ./opencode serve          # Start Opencode server"
+echo "  ./opencode auth login     # Run Opencode CLI command"
+echo "  ./opencode-lite --help    # Show help for opencode-lite"
 echo "Note: Ensure API keys are set in your environment, e.g., export OPENAI_API_KEY=your_key"
 exit 0
