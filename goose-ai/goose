@@ -331,9 +331,11 @@ prepare_virtiofsd() {
             VIRTIOFSD_PID=$!
             echo "Launched virtiofsd with PID $VIRTIOFSD_PID (attempt $retry)" >> "${LOG_FILE:-/dev/null}"
             sleep 2
-            wait $VIRTIOFSD_PID || { echo "virtiofsd exited with code $?" >> "$VM_LOG"; continue; }
-            if [ -S "$SOCKET_PATH" ] && kill -0 $VIRTIOFSD_PID 2>/dev/null; then
+            if kill -0 $VIRTIOFSD_PID 2>/dev/null; then
+                # Success, PID is running
                 break
+            else
+                wait $VIRTIOFSD_PID || { echo "virtiofsd exited with code $?" >> "$VM_LOG"; continue; }
             fi
             echo "Retry $retry failed; socket or PID invalid" >> "$VM_LOG"
         done
