@@ -323,10 +323,10 @@ prepare_virtiofsd() {
         echo "Launched virtiofsd with PID $VIRTIOFSD_PID" >> "${LOG_FILE:-/dev/null}"
         sleep 2
         kill -0 $VIRTIOFSD_PID || { echo "Error: virtiofsd failed to start" >> "${LOG_FILE:-/dev/null}"; exit 1; }
-        chmod 666 "$VIRTIOFS_SOCK"
         # Poll for socket with timeout
         SOCKET_PATH=$(pwd)/.goose/virtiofs.sock
-        timeout 30s bash -c 'for i in {1..60}; do echo "Checking socket (attempt $i): $(ls -l "'"$SOCKET_PATH"'" 2>/dev/null || echo missing)" >> "'"$VM_LOG"'"; if [ -S "'"$SOCKET_PATH"'" ]; then exit 0; fi; sleep 0.5; done; echo "Timeout on virtiofs.sock" >&2; exit 1'
+        sleep 1; ls -l "$SOCKET_PATH" >> "$VM_LOG" 2>&1 || echo 'Socket missing pre-poll' >> "$VM_LOG"
+        timeout 60s bash -c 'for i in {1..120}; do echo "Checking socket (attempt $i): $(ls -l "'"$SOCKET_PATH"'" 2>/dev/null || echo missing)" >> "'"$VM_LOG"'"; if [ -S "'"$SOCKET_PATH"'" ]; then chmod 666 "'"$SOCKET_PATH"'"; chown $USER: "'"$SOCKET_PATH"'"; exit 0; fi; sleep 0.5; done; echo "Timeout on virtiofs.sock" >&2; ls -ld .goose/ >&2; exit 1'
         if [ $? -ne 0 ]; then
             if kill -0 $VIRTIOFSD_PID 2>/dev/null; then
                 echo "virtiofsd PID $VIRTIOFSD_PID still alive: $(ps -p $VIRTIOFSD_PID -o pid,ppid,cmd)" >> "${LOG_FILE:-/dev/null}" >&2
