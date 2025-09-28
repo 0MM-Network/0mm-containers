@@ -6,20 +6,17 @@ RUN apt-get update && \
     git libnss3 curl && \
     rm -rf /var/lib/apt/lists/*
 
-# Create app user with UID 1000
-RUN useradd -m -u 1000 -s /bin/bash appuser
-
-WORKDIR /home/appuser
+WORKDIR /home/node
 
 # Create directories with proper permissions
-RUN mkdir -p /home/appuser/.local/share/opencode && \
-    chown -R appuser:appuser /home/appuser
+RUN mkdir -p /home/node/.local/share/opencode && \
+    chown -R node:node /home/node
 
 # So git doesn't complain about unusual permissions
-RUN git config --system --add safe.directory /home/appuser
+RUN git config --system --add safe.directory /home/node
 
 # Set home for cache persistence
-ENV HOME=/home/appuser
+ENV HOME=/home/node
 
 #########################
 FROM base AS opencode
@@ -33,14 +30,14 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/*
 
 # Playwright browser settings
-ENV PLAYWRIGHT_BROWSERS_PATH=/home/appuser/pw-browsers
+ENV PLAYWRIGHT_BROWSERS_PATH=/home/node/pw-browsers
 ENV PLAYWRIGHT_SKIP_BROWSER_GC=1
 
 # Create Playwright browsers directory
-RUN mkdir -p /home/appuser/pw-browsers && \
-    chown -R appuser:appuser /home/appuser/pw-browsers
+RUN mkdir -p /home/node/pw-browsers && \
+    chown -R node:node /home/node/pw-browsers
 
-USER appuser
+USER node
 
 ENV OPENCODE_DOCKER_IMAGE=localhost/opencode
 
@@ -54,7 +51,7 @@ HEALTHCHECK --interval=30s --timeout=3s CMD curl -f http://localhost:4096/doc ||
 #########################
 FROM base AS opencode-lite
 
-USER appuser
+USER node
 
 ENV OPENCODE_DOCKER_IMAGE=localhost/opencode-lite
 
