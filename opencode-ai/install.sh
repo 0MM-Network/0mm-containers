@@ -58,10 +58,6 @@ for cmd in "${OPENCODE_COMMANDS[@]}"; do
 
 # Define variables
 IMAGE="$IMAGE"
-HUID=\$(id -u)
-HGID=\$(id -g)
-CUID=\$(podman run --rm --entrypoint /usr/bin/id \$IMAGE -u)
-CGID=\$(podman run --rm --entrypoint /usr/bin/id \$IMAGE -g)
 
 # Error handling
 set -e
@@ -109,8 +105,7 @@ done
 if ! podman ps -q --filter name="\$CONTAINER_NAME" --filter status=running | grep -q . ; then
   eval podman run -d --replace --name "\$CONTAINER_NAME" \\
     --net host \\
-    --uidmap \${CUID}:\${HUID}:1 \\
-    --gidmap \${CGID}:\${HGID}:1 \\
+    --userns=keep-id \\
     \$MOUNTS \\
     -e USER="\$USER" \\
     -e ANTHROPIC_API_KEY \\
@@ -133,8 +128,7 @@ SERVER_IP="localhost"
 # Run the client
 eval podman run --rm \$TTY_FLAG \\
   --net host \\
-  --uidmap \${CUID}:\${HUID}:1 \\
-  --gidmap \${CGID}:\${HGID}:1 \\
+  --userns=keep-id \\
   \$MOUNTS \\
   -e USER="\$USER" \\
   -e ANTHROPIC_API_KEY \\
