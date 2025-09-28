@@ -101,15 +101,15 @@ if ! podman network exists "\$NETWORK_NAME"; then
   if podman network create "\$NETWORK_NAME"; then
     :
   else
-    echo "Warning: Failed to create network \$NETWORK_NAME, using bridge as fallback"
-    NETWORK_NAME="bridge"
+    echo "Warning: Failed to create network \$NETWORK_NAME, using host as fallback"
+    NETWORK_NAME="host"
   fi
 fi
 
 # Test network
-if [ "\$NETWORK_NAME" != "bridge" ] && ! podman run --rm --network="\$NETWORK_NAME" busybox true &>/dev/null; then
-  echo "Fallback to bridge network due to custom network error."
-  NETWORK_NAME="bridge"
+if [ "\$NETWORK_NAME" != "host" ] && ! podman run --rm --network="\$NETWORK_NAME" busybox true &>/dev/null; then
+  echo "Fallback to host network due to custom network error."
+  NETWORK_NAME="host"
 fi
 
 CONTAINER_NAME="opencode-server"
@@ -158,9 +158,9 @@ if ! podman ps -q --filter name="\$CONTAINER_NAME" --filter status=running | gre
       ERR=\$(cat /tmp/opencode_err.log)
       rm /tmp/opencode_err.log
       error_exit "\$ERR"
-      echo "Retried with bridge network due to opencode-net failure."
-      NETWORK_NAME="bridge"
-      eval "podman run -d --replace --name \"\$CONTAINER_NAME\" --network bridge --publish 0.0.0.0:\$PORT:\$PORT --userns=keep-id \$MOUNTS -e USER=\"\$USER\" -e ANTHROPIC_API_KEY -e OPENAI_API_KEY -e GEMINI_API_KEY -e GROQ_API_KEY -e OPENROUTER_API_KEY \"\$IMAGE\" serve \"\${NEW_ARGS[@]}\"" || error_exit "Failed to start server even with bridge"
+      echo "Retried with host network due to opencode-net failure."
+      NETWORK_NAME="host"
+      eval "podman run -d --replace --name \"\$CONTAINER_NAME\" --net host --userns=keep-id \$MOUNTS -e USER=\"\$USER\" -e ANTHROPIC_API_KEY -e OPENAI_API_KEY -e GEMINI_API_KEY -e GROQ_API_KEY -e OPENROUTER_API_KEY \"\$IMAGE\" serve \"\${NEW_ARGS[@]}\"" || error_exit "Failed to start server even with host"
     fi
   else
     # For auto-start, parse NEW_ARGS for --port and --hostname, set variables, remove from NEW_ARGS, add to serve command
@@ -189,9 +189,9 @@ if ! podman ps -q --filter name="\$CONTAINER_NAME" --filter status=running | gre
       ERR=\$(cat /tmp/opencode_err.log)
       rm /tmp/opencode_err.log
       error_exit "\$ERR"
-      echo "Retried with bridge network due to opencode-net failure."
-      NETWORK_NAME="bridge"
-      eval "podman run -d --replace --name \"\$CONTAINER_NAME\" --network bridge --publish 0.0.0.0:\$PORT:\$PORT --userns=keep-id \$MOUNTS -e USER=\"\$USER\" -e ANTHROPIC_API_KEY -e OPENAI_API_KEY -e GEMINI_API_KEY -e GROQ_API_KEY -e OPENROUTER_API_KEY \"\$IMAGE\" serve --port \$PORT --hostname \"\$SERVER_BIND_HOST\"" || error_exit "Failed to start server even with bridge"
+      echo "Retried with host network due to opencode-net failure."
+      NETWORK_NAME="host"
+      eval "podman run -d --replace --name \"\$CONTAINER_NAME\" --net host --userns=keep-id \$MOUNTS -e USER=\"\$USER\" -e ANTHROPIC_API_KEY -e OPENAI_API_KEY -e GEMINI_API_KEY -e GROQ_API_KEY -e OPENROUTER_API_KEY \"\$IMAGE\" serve --port \$PORT --hostname \"\$SERVER_BIND_HOST\"" || error_exit "Failed to start server even with host"
     fi
   fi
 fi
@@ -208,7 +208,9 @@ if [ "\$SERVER_MODE" = true ] && [ \${#NEW_ARGS[@]} -eq 0 ]; then
 fi
 
 # Get server IP for client
-if [ "\$NETWORK_NAME" == "bridge" ]; then
+if [ "\$NETWORK_NAME" == "host" ]; then
+  SERVER_IP="127.0.0.1"
+elif [ "\$NETWORK_NAME" == "bridge" ]; then
   SERVER_IP="localhost"
 else
   SERVER_IP=\$(podman inspect "\$CONTAINER_NAME" --format "{{.NetworkSettings.Networks.\$NETWORK_NAME.IPAddress}}")
