@@ -1,0 +1,99 @@
+#!/bin/bash
+
+# Define variables
+IMAGE="localhost/opencode-lite"
+
+# Error handling
+set -e
+set -x
+
+# Function to display error messages
+error_exit() {
+    echo "Error: $1" >&2
+    exit 1
+}
+
+# Check if the container image exists
+if ! podman image exists "$IMAGE"; then
+    error_exit "Opencode container image not found. Please run the installation script again."
+fi
+
+# Check if stdin is a TTY and set flags accordingly
+TTY_FLAG=""
+if [ -t 0 ] && [ -t 1 ]; then
+    TTY_FLAG="-it"
+else
+    TTY_FLAG="-i"
+fi
+
+# Ensure cache directory exists
+mkdir -p "$HOME/.local/share/opencode"
+
+# Prepare volume mounts
+MOUNTS="-v \"$PWD:/home/node/project:Z\" -v \"$HOME/.local/share/opencode:/home/node/.local/share/opencode:Z\""
+
+CONTAINER_NAME="opencode-server"
+
+# Determine if serve is in args
+SERVER_MODE=false
+NEW_ARGS=()
+for arg in "$@"; do
+  if [ "$arg" == "serve" ]; then
+    SERVER_MODE=true
+  else
+    NEW_ARGS+=("$arg")
+  fi
+done
+
+# Start server if not running
+if ! podman ps -q --filter name="$CONTAINER_NAME" --filter status=running | grep -q . ; then
+  eval podman run -d --replace --name "$CONTAINER_NAME" \
+    --net host \
+    --userns=keep-id \
+    $MOUNTS \
+    -e USER="$USER" \
+    -e ANTHROPIC_API_KEY \
+    -e OPENAI_API_KEY \
+    -e GEMINI_API_KEY \
+    -e GROQ_API_KEY \
+    -e OPENROUTER_API_KEY \
+    "$IMAGE" serve || error_exit "Failed to start server"
+fi
+
+# If only serve was requested (NEW_ARGS empty and SERVER_MODE true), exit
+if [ "$SERVER_MODE" = true ] && [ ${#NEW_ARGS[@]} -eq 0 ]; then
+  echo "Opencode server started."
+  exit 0
+fi
+
+# Set server URL to localhost
+SERVER_IP="localhost"
+
+# Run the client
+if [ ${#NEW_ARGS[@]} -eq 1 ] && [ "${NEW_ARGS[0]}" == "--version" ] || [ "${NEW_ARGS[0]}" == "--help" ]; then
+  eval podman run --rm $TTY_FLAG \
+    --userns=keep-id \
+    $MOUNTS \
+    -e USER="$USER" \
+    -e ANTHROPIC_API_KEY \
+    -e OPENAI_API_KEY \
+    -e GEMINI_API_KEY \
+    -e GROQ_API_KEY \
+    -e OPENROUTER_API_KEY \
+    "$IMAGE" "${NEW_ARGS[@]}"
+else
+  if [ ${#NEW_ARGS[@]} -eq 0 ]; then
+    NEW_ARGS=("/home/node/project")
+  fi
+  eval podman run --rm $TTY_FLAG \
+    --net host \
+    --userns=keep-id \
+    $MOUNTS \
+    -e USER="$USER" \
+    -e ANTHROPIC_API_KEY \
+    -e OPENAI_API_KEY \
+    -e GEMINI_API_KEY \
+    -e GROQ_API_KEY \
+    -e OPENROUTER_API_KEY \
+    "$IMAGE" attach "http://$SERVER_IP:4096" "${NEW_ARGS[@]}"
+fi
