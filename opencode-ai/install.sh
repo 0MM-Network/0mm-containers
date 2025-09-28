@@ -88,9 +88,26 @@ mkdir -p "\$HOME/.local/share/opencode"
 # Prepare volume mounts
 MOUNTS="-v \"\$PWD:/home/node/project:Z\" -v \"\$HOME/.local/share/opencode:/home/node/.local/share/opencode:Z\""
 
+NETWORK_NAME="opencode-net"
+
+# Create network if not exists
+if ! podman network exists "\$NETWORK_NAME"; then
+  if podman network create "\$NETWORK_NAME"; then
+    :
+  else
+    echo "Warning: Failed to create network \$NETWORK_NAME, using bridge as fallback"
+    NETWORK_NAME="bridge"
+  fi
+fi
+
 CONTAINER_NAME="opencode-server"
 
-# Determine if serve is in args
+# Default values
+PORT=4096
+SERVER_BIND_HOST="0.0.0.0"
+CLIENT_HOST="localhost"
+
+# Determine if serve is in args and collect NEW_ARGS
 SERVER_MODE=false
 NEW_ARGS=()
 for arg in "\$@"; do
@@ -102,18 +119,78 @@ for arg in "\$@"; do
 done
 
 # Start server if not running
+STARTED_SERVER=false
 if ! podman ps -q --filter name="\$CONTAINER_NAME" --filter status=running | grep -q . ; then
-  eval podman run -d --replace --name "\$CONTAINER_NAME" \\
-    --net host \\
-    --userns=keep-id \\
-    \$MOUNTS \\
-    -e USER="\$USER" \\
-    -e ANTHROPIC_API_KEY \\
-    -e OPENAI_API_KEY \\
-    -e GEMINI_API_KEY \\
-    -e GROQ_API_KEY \\
-    -e OPENROUTER_API_KEY \\
-    "\$IMAGE" serve || error_exit "Failed to start server"
+  STARTED_SERVER=true
+  if [ "\$SERVER_MODE" = true ]; then
+    # For explicit serve, parse NEW_ARGS for PORT and SERVER_BIND_HOST (for publish and message), but pass all NEW_ARGS to serve
+    j=0
+    while [ \$j -lt \${#NEW_ARGS[@]} ]; do
+      if [ "\${NEW_ARGS[\$j]}" == "--port" ]; then
+        PORT="\${NEW_ARGS[\$j+1]}"
+        j=\$((j+2))
+      elif [ "\${NEW_ARGS[\$j]}" == "--hostname" ]; then
+        SERVER_BIND_HOST="\${NEW_ARGS[\$j+1]}"
+        CLIENT_HOST="\${NEW_ARGS[\$j+1]}"
+        j=\$((j+2))
+      else
+        j=\$((j+1))
+      fi
+    done
+    if [ "\$SERVER_BIND_HOST" == "0.0.0.0" ]; then
+      CLIENT_HOST="localhost"
+    fi
+    eval podman run -d --replace --name "\$CONTAINER_NAME" \\
+      --network "\$NETWORK_NAME" \\
+      --publish \$PORT:\$PORT \\
+      --userns=keep-id \\
+      \$MOUNTS \\
+      -e USER="\$USER" \\
+      -e ANTHROPIC_API_KEY \\
+      -e OPENAI_API_KEY \\
+      -e GEMINI_API_KEY \\
+      -e GROQ_API_KEY \\
+      -e OPENROUTER_API_KEY \\
+      "\$IMAGE" serve "\${NEW_ARGS[@]}" || error_exit "Failed to start server"
+  else
+    # For auto-start, parse NEW_ARGS for --port and --hostname, set variables, remove from NEW_ARGS, add to serve command
+    j=0
+    TEMP_ARGS=()
+    while [ \$j -lt \${#NEW_ARGS[@]} ]; do
+      if [ "\${NEW_ARGS[\$j]}" == "--port" ]; then
+        PORT="\${NEW_ARGS[\$j+1]}"
+        j=\$((j+2))
+      elif [ "\${NEW_ARGS[\$j]}" == "--hostname" ]; then
+        SERVER_BIND_HOST="\${NEW_ARGS[\$j+1]}"
+        CLIENT_HOST="\${NEW_ARGS[\$j+1]}"
+        j=\$((j+2))
+      else
+        TEMP_ARGS+=("\${NEW_ARGS[\$j]}")
+        j=\$((j+1))
+      fi
+    done
+    NEW_ARGS=("\${TEMP_ARGS[@]}")
+    if [ "\$SERVER_BIND_HOST" == "0.0.0.0" ]; then
+      CLIENT_HOST="localhost"
+    fi
+    eval podman run -d --replace --name "\$CONTAINER_NAME" \\
+      --network "\$NETWORK_NAME" \\
+      --publish \$PORT:\$PORT \\
+      --userns=keep-id \\
+      \$MOUNTS \\
+      -e USER="\$USER" \\
+      -e ANTHROPIC_API_KEY \\
+      -e OPENAI_API_KEY \\
+      -e GEMINI_API_KEY \\
+      -e GROQ_API_KEY \\
+      -e OPENROUTER_API_KEY \\
+      "\$IMAGE" serve --port \$PORT --hostname "\$SERVER_BIND_HOST" || error_exit "Failed to start server"
+  fi
+fi
+
+# Echo message if started server
+if [ "\$STARTED_SERVER" = true ]; then
+  echo "Server at http://\${CLIENT_HOST}:\$PORT (API docs at /doc)"
 fi
 
 # If only serve was requested (NEW_ARGS empty and SERVER_MODE true), exit
@@ -122,8 +199,15 @@ if [ "\$SERVER_MODE" = true ] && [ \${#NEW_ARGS[@]} -eq 0 ]; then
   exit 0
 fi
 
-# Set server URL to localhost
-SERVER_IP="localhost"
+# Get server IP for client
+if [ "\$NETWORK_NAME" == "bridge" ]; then
+  SERVER_IP="localhost"
+else
+  SERVER_IP=\$(podman inspect "\$CONTAINER_NAME" --format "{{.NetworkSettings.Networks.\$NETWORK_NAME.IPAddress}}")
+  if [ -z "\$SERVER_IP" ]; then
+    error_exit "Failed to get server IP"
+  fi
+fi
 
 # Run the client
 if [ \${#NEW_ARGS[@]} -eq 1 ] && [ "\${NEW_ARGS[0]}" == "--version" ] || [ "\${NEW_ARGS[0]}" == "--help" ]; then
@@ -142,7 +226,7 @@ else
     NEW_ARGS=("/home/node/project")
   fi
   eval podman run --rm \$TTY_FLAG \\
-    --net host \\
+    --network "\$NETWORK_NAME" \\
     --userns=keep-id \\
     \$MOUNTS \\
     -e USER="\$USER" \\
@@ -151,7 +235,7 @@ else
     -e GEMINI_API_KEY \\
     -e GROQ_API_KEY \\
     -e OPENROUTER_API_KEY \\
-    "\$IMAGE" attach "http://\$SERVER_IP:4096" "\${NEW_ARGS[@]}"
+    "\$IMAGE" --server-url "http://\$SERVER_IP:\$PORT" "\${NEW_ARGS[@]}"
 fi
 EOF
     chmod +x "$SCRIPTS_DIR/$cmd"
