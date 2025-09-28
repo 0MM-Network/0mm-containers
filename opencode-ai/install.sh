@@ -85,7 +85,7 @@ else
 fi
 
 # Prepare volume mounts
-MOUNTS="-v \"\$PWD:/home/node:Z\" -v \"\$HOME/.local/share/opencode:/home/node/.local/share/opencode:Z\""
+MOUNTS="-v \"\$PWD:/home/node/project:Z\" -v \"\$HOME/.local/share/opencode:/home/node/.local/share/opencode:Z\""
 
 NETWORK_NAME="opencode-net"
 

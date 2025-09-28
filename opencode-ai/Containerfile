@@ -6,14 +6,15 @@ RUN apt-get update && \
     git libnss3 curl && \
     rm -rf /var/lib/apt/lists/*
 
-WORKDIR /home/node
+# Set working directory
+WORKDIR /home/node/project
 
 # Create directories with proper permissions
 RUN mkdir -p /home/node/.local/share/opencode && \
     chown -R node:node /home/node
 
 # So git doesn't complain about unusual permissions
-RUN git config --system --add safe.directory /home/node
+RUN git config --system --add safe.directory /home/node/project
 
 # Set home for cache persistence
 ENV HOME=/home/node
@@ -29,20 +30,21 @@ RUN apt-get update && \
     libcairo2 libasound2 libatspi2.0-0 libgtk-3-0 fonts-liberation fonts-noto-color-emoji && \
     rm -rf /var/lib/apt/lists/*
 
-# Playwright browser settings
+# Install npm packages as root
+RUN npm install -g opencode-ai@latest playwright
+
+# Set Playwright settings
 ENV PLAYWRIGHT_BROWSERS_PATH=/home/node/pw-browsers
 ENV PLAYWRIGHT_SKIP_BROWSER_GC=1
 
-# Create Playwright browsers directory
+# Create Playwright browsers directory and install chromium as root
 RUN mkdir -p /home/node/pw-browsers && \
-    chown -R node:node /home/node/pw-browsers
-
-USER node
+    playwright install chromium && \
+    chown -R node:node /home/node
 
 ENV OPENCODE_DOCKER_IMAGE=localhost/opencode
 
-RUN npm install -g opencode-ai@latest playwright && \
-    playwright install chromium
+USER node
 
 ENTRYPOINT ["/usr/local/bin/opencode"]
 
@@ -51,11 +53,12 @@ HEALTHCHECK --interval=30s --timeout=3s CMD curl -f http://localhost:4096/doc ||
 #########################
 FROM base AS opencode-lite
 
-USER node
+# Install npm package as root
+RUN npm install -g opencode-ai@latest
 
 ENV OPENCODE_DOCKER_IMAGE=localhost/opencode-lite
 
-RUN npm install -g opencode-ai@latest
+USER node
 
 ENTRYPOINT ["/usr/local/bin/opencode"]
 
