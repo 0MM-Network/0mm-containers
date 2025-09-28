@@ -3,6 +3,7 @@
 
 # Error handling
 set -e
+set -x
 
 # Function to display error messages
 error_exit() {
@@ -70,6 +71,7 @@ CGID=\$(podman run --rm --entrypoint /usr/bin/id \$IMAGE -g)
 
 # Error handling
 set -e
+set -x
 
 # Function to display error messages
 error_exit() {
@@ -89,6 +91,10 @@ if [ -t 0 ] && [ -t 1 ]; then
 else
     TTY_FLAG="-i"
 fi
+
+# Ensure config file exists
+mkdir -p "\$(dirname "\$HOME/.aider.conf.yml")"
+[ -f "\$HOME/.aider.conf.yml" ] || touch "\$HOME/.aider.conf.yml"
 
 # Prepare volume mounts
 MOUNTS="-v \"\$PWD:/app:Z\" -v \"\$HOME/.aider.conf.yml:/app/.aider.conf.yml:Z\""

@@ -3,6 +3,7 @@
 
 # Error handling
 set -e
+set -x
 
 # Function to display error messages
 error_exit() {
@@ -64,6 +65,7 @@ CGID=\$(podman run --rm --entrypoint /usr/bin/id \$IMAGE -g)
 
 # Error handling
 set -e
+set -x
 
 # Function to display error messages
 error_exit() {
@@ -83,6 +85,9 @@ if [ -t 0 ] && [ -t 1 ]; then
 else
     TTY_FLAG="-i"
 fi
+
+# Ensure cache directory exists
+mkdir -p "\$HOME/.local/share/opencode"
 
 # Prepare volume mounts
 MOUNTS="-v \"\$PWD:/home/node/project:Z\" -v \"\$HOME/.local/share/opencode:/home/node/.local/share/opencode:Z\""
@@ -179,6 +184,9 @@ EOF
     chmod +x "$SCRIPTS_DIR/$cmd"
     echo "Created wrapper script for $cmd"
 done
+
+# Ensure cache directory exists for testing
+mkdir -p "$HOME/.local/share/opencode"
 
 # Test commands
 echo "Testing ${#OPENCODE_COMMANDS[@]} Opencode commands..."
