@@ -92,34 +92,6 @@ mkdir -p "\$HOME/.local/share/opencode"
 # Prepare volume mounts
 MOUNTS="-v \"\$PWD:/home/node/project:Z\" -v \"\$HOME/.local/share/opencode:/home/node/.local/share/opencode:Z\""
 
-NETWORK_NAME="opencode-net"
-
-# Create network if not exists
-if ! podman network exists "\$NETWORK_NAME"; then
-  if podman network create "\$NETWORK_NAME"; then
-    :
-  else
-    echo "Warning: Failed to create network \$NETWORK_NAME, using bridge as fallback"
-    NETWORK_NAME="bridge"
-  fi
-fi
-
-if [ "\$NETWORK_NAME" == "bridge" ]; then
-  eval podman run --rm \$TTY_FLAG \\
-    --network bridge \\
-    --uidmap +\${CUID}:@\${HUID}:1 \\
-    --gidmap +\${CGID}:@\${HGID}:1 \\
-    \$MOUNTS \\
-    -e USER="\$USER" \\
-    -e ANTHROPIC_API_KEY \\
-    -e OPENAI_API_KEY \\
-    -e GEMINI_API_KEY \\
-    -e GROQ_API_KEY \\
-    -e OPENROUTER_API_KEY \\
-    "\$IMAGE" "\$@"
-  exit 0
-fi
-
 CONTAINER_NAME="opencode-server"
 
 # Determine if serve is in args
@@ -135,15 +107,10 @@ done
 
 # Start server if not running
 if ! podman ps -q --filter name="\$CONTAINER_NAME" --filter status=running | grep -q . ; then
-  PUBLISH=""
-  if [ "\$SERVER_MODE" = true ]; then
-    PUBLISH="--publish 4096:4096"
-  fi
   eval podman run -d --replace --name "\$CONTAINER_NAME" \\
-    --network "\$NETWORK_NAME" \\
-    \$PUBLISH \\
-    --uidmap +\${CUID}:@\${HUID}:1 \\
-    --gidmap +\${CGID}:@\${HGID}:1 \\
+    --net host \\
+    --uidmap \${CUID}:\${HUID}:1 \\
+    --gidmap \${CGID}:\${HGID}:1 \\
     \$MOUNTS \\
     -e USER="\$USER" \\
     -e ANTHROPIC_API_KEY \\
@@ -160,18 +127,14 @@ if [ "\$SERVER_MODE" = true ] && [ \${#NEW_ARGS[@]} -eq 0 ]; then
   exit 0
 fi
 
-# Get server IP
-SERVER_IP=\$(podman inspect "\$CONTAINER_NAME" --format "{{.NetworkSettings.Networks.\${NETWORK_NAME}.IPAddress}}")
-
-if [ -z "\$SERVER_IP" ]; then
-  error_exit "Failed to get server IP"
-fi
+# Set server URL to localhost
+SERVER_IP="localhost"
 
 # Run the client
 eval podman run --rm \$TTY_FLAG \\
-  --network "\$NETWORK_NAME" \\
-  --uidmap +\${CUID}:@\${HUID}:1 \\
-  --gidmap +\${CGID}:@\${HGID}:1 \\
+  --net host \\
+  --uidmap \${CUID}:\${HUID}:1 \\
+  --gidmap \${CGID}:\${HGID}:1 \\
   \$MOUNTS \\
   -e USER="\$USER" \\
   -e ANTHROPIC_API_KEY \\
