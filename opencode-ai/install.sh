@@ -80,6 +80,15 @@ fi
 # Check for aardvark-dns
 command -v aardvark-dns >/dev/null || echo "Warning: aardvark-dns not found; custom DNS may fail. Install via package manager."
 
+# Check rootless netns directory permissions
+ROOTLESS_DIR="/var/cache/\$UID/containers/storage/networks/rootless-netns"
+if [ ! -d "\$ROOTLESS_DIR" ]; then
+  mkdir -p "\$ROOTLESS_DIR" || error_exit "Failed to create \$ROOTLESS_DIR"
+fi
+if [ ! -w "\$ROOTLESS_DIR" ]; then
+  error_exit "Permission denied on \$ROOTLESS_DIR. Run: sudo chown -R \$USER: /var/cache/\$UID/containers/storage && sudo chmod -R 755 /var/cache/\$UID/containers/storage"
+fi
+
 # Check if stdin is a TTY and set flags accordingly
 TTY_FLAG=""
 if [ -t 0 ] && [ -t 1 ]; then
