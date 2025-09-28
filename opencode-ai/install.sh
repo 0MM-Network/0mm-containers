@@ -47,6 +47,11 @@ for cmd in "${OPENCODE_COMMANDS[@]}"; do
         IMAGE=$OPENCODE_LITE_IMAGE
     fi
 
+    if [ -f "$SCRIPTS_DIR/$cmd" ]; then
+        echo "Warning: $cmd already exists. Delete the shim if you want it regenerated."
+        continue
+    fi
+
     cat > "$SCRIPTS_DIR/$cmd" << EOF
 #!/bin/bash
 
