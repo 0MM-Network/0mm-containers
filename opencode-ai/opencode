@@ -10,6 +10,9 @@ set -x
 # Function to display error messages
 error_exit() {
     echo "Error: $1" >&2
+    if echo "$1" | grep -q "Permission denied\|Pasta failed"; then
+        echo "Rootless Podman storage permission issue. Run: sudo chown -R $USER: /var/cache/$UID/containers/storage && sudo chmod -R 755 /var/cache/$UID/containers/storage"
+    fi
     exit 1
 }
 
@@ -17,6 +20,9 @@ error_exit() {
 if ! podman image exists "$IMAGE"; then
     error_exit "Opencode container image not found. Please run the installation script again."
 fi
+
+# Check for aardvark-dns
+command -v aardvark-dns >/dev/null || echo "Warning: aardvark-dns not found; custom DNS may fail. Install via package manager."
 
 # Check if stdin is a TTY and set flags accordingly
 TTY_FLAG=""
@@ -42,6 +48,12 @@ if ! podman network exists "$NETWORK_NAME"; then
     echo "Warning: Failed to create network $NETWORK_NAME, using bridge as fallback"
     NETWORK_NAME="bridge"
   fi
+fi
+
+# Test network
+if [ "$NETWORK_NAME" != "bridge" ] && ! podman run --rm --network="$NETWORK_NAME" busybox true &>/dev/null; then
+  echo "Fallback to bridge network due to custom network error."
+  NETWORK_NAME="bridge"
 fi
 
 CONTAINER_NAME="opencode-server"
@@ -84,18 +96,16 @@ if ! podman ps -q --filter name="$CONTAINER_NAME" --filter status=running | grep
     if [ "$SERVER_BIND_HOST" == "0.0.0.0" ]; then
       CLIENT_HOST="localhost"
     fi
-    eval podman run -d --replace --name "$CONTAINER_NAME" \
-      --network "$NETWORK_NAME" \
-      --publish $PORT:$PORT \
-      --userns=keep-id \
-      $MOUNTS \
-      -e USER="$USER" \
-      -e ANTHROPIC_API_KEY \
-      -e OPENAI_API_KEY \
-      -e GEMINI_API_KEY \
-      -e GROQ_API_KEY \
-      -e OPENROUTER_API_KEY \
-      "$IMAGE" serve "${NEW_ARGS[@]}" || error_exit "Failed to start server"
+    # Retry logic
+    SERVER_CMD="podman run -d --replace --name \"$CONTAINER_NAME\" --network \"$NETWORK_NAME\" --publish $PORT:$PORT --userns=keep-id $MOUNTS -e USER=\"$USER\" -e ANTHROPIC_API_KEY -e OPENAI_API_KEY -e GEMINI_API_KEY -e GROQ_API_KEY -e OPENROUTER_API_KEY \"$IMAGE\" serve \"${NEW_ARGS[@]}\""
+    if ! eval "$SERVER_CMD" 2>&1 | tee /tmp/opencode_err.log; then
+      ERR=$(cat /tmp/opencode_err.log)
+      rm /tmp/opencode_err.log
+      error_exit "$ERR"
+      echo "Retried with bridge network due to opencode-net failure."
+      NETWORK_NAME="bridge"
+      eval "podman run -d --replace --name \"$CONTAINER_NAME\" --network bridge --publish 0.0.0.0:$PORT:$PORT --userns=keep-id $MOUNTS -e USER=\"$USER\" -e ANTHROPIC_API_KEY -e OPENAI_API_KEY -e GEMINI_API_KEY -e GROQ_API_KEY -e OPENROUTER_API_KEY \"$IMAGE\" serve \"${NEW_ARGS[@]}\"" || error_exit "Failed to start server even with bridge"
+    fi
   else
     # For auto-start, parse NEW_ARGS for --port and --hostname, set variables, remove from NEW_ARGS, add to serve command
     j=0
@@ -117,18 +127,16 @@ if ! podman ps -q --filter name="$CONTAINER_NAME" --filter status=running | grep
     if [ "$SERVER_BIND_HOST" == "0.0.0.0" ]; then
       CLIENT_HOST="localhost"
     fi
-    eval podman run -d --replace --name "$CONTAINER_NAME" \
-      --network "$NETWORK_NAME" \
-      --publish $PORT:$PORT \
-      --userns=keep-id \
-      $MOUNTS \
-      -e USER="$USER" \
-      -e ANTHROPIC_API_KEY \
-      -e OPENAI_API_KEY \
-      -e GEMINI_API_KEY \
-      -e GROQ_API_KEY \
-      -e OPENROUTER_API_KEY \
-      "$IMAGE" serve --port $PORT --hostname "$SERVER_BIND_HOST" || error_exit "Failed to start server"
+    # Retry logic
+    SERVER_CMD="podman run -d --replace --name \"$CONTAINER_NAME\" --network \"$NETWORK_NAME\" --publish $PORT:$PORT --userns=keep-id $MOUNTS -e USER=\"$USER\" -e ANTHROPIC_API_KEY -e OPENAI_API_KEY -e GEMINI_API_KEY -e GROQ_API_KEY -e OPENROUTER_API_KEY \"$IMAGE\" serve --port $PORT --hostname \"$SERVER_BIND_HOST\""
+    if ! eval "$SERVER_CMD" 2>&1 | tee /tmp/opencode_err.log; then
+      ERR=$(cat /tmp/opencode_err.log)
+      rm /tmp/opencode_err.log
+      error_exit "$ERR"
+      echo "Retried with bridge network due to opencode-net failure."
+      NETWORK_NAME="bridge"
+      eval "podman run -d --replace --name \"$CONTAINER_NAME\" --network bridge --publish 0.0.0.0:$PORT:$PORT --userns=keep-id $MOUNTS -e USER=\"$USER\" -e ANTHROPIC_API_KEY -e OPENAI_API_KEY -e GEMINI_API_KEY -e GROQ_API_KEY -e OPENROUTER_API_KEY \"$IMAGE\" serve --port $PORT --hostname \"$SERVER_BIND_HOST\"" || error_exit "Failed to start server even with bridge"
+    fi
   fi
 fi
 
