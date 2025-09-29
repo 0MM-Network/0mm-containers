@@ -103,6 +103,18 @@ mkdir -p "\$HOME/.local/share/opencode"
 # Prepare volume mounts
 MOUNTS="-v \"\$PWD:/home/node/project:Z\" -v \"\$HOME/.local/share/opencode:/home/node/.local/share/opencode:Z\""
 
+# Handle OPENCODE_CONFIG
+CONFIG_MOUNT=""
+CONFIG_ENV=""
+if [ -n "\${OPENCODE_CONFIG:-}" ]; then
+  if [ -f "\$OPENCODE_CONFIG" ]; then
+    CONFIG_MOUNT="-v \"\$OPENCODE_CONFIG:/tmp/opencode-custom-config.json:ro,Z\""
+    CONFIG_ENV="-e OPENCODE_CONFIG=/tmp/opencode-custom-config.json"
+  else
+    echo "Warning: OPENCODE_CONFIG file not found"
+  fi
+fi
+
 NETWORK_NAME="opencode-net"
 
 # Create network if not exists
@@ -156,7 +168,7 @@ if ! podman ps -q --filter name="\$CONTAINER_NAME" --filter status=running | gre
     CLIENT_HOST="localhost"
   fi
   # Retry logic
-  SERVER_CMD="podman run -d --replace --name \"\$CONTAINER_NAME\" --network \"\$NETWORK_NAME\" --publish \$PORT:\$PORT --userns=keep-id \$MOUNTS -e USER=\"\$USER\" -e ANTHROPIC_API_KEY -e OPENAI_API_KEY -e GEMINI_API_KEY -e GROQ_API_KEY -e OPENROUTER_API_KEY \"\$IMAGE\" serve --hostname \"\$HOSTNAME\" --port \$PORT"
+  SERVER_CMD="podman run -d --replace --name \"\$CONTAINER_NAME\" --network \"\$NETWORK_NAME\" --publish \$PORT:\$PORT --userns=keep-id \$MOUNTS \$CONFIG_MOUNT \$CONFIG_ENV -e USER=\"\$USER\" -e ANTHROPIC_API_KEY -e OPENAI_API_KEY -e GEMINI_API_KEY -e GROQ_API_KEY -e OPENROUTER_API_KEY \"\$IMAGE\" serve --hostname \"\$HOSTNAME\" --port \$PORT"
   if [ \${#NEW_ARGS[@]} -gt 0 ]; then
     SERVER_CMD="\$SERVER_CMD \"\${NEW_ARGS[@]}\""
   fi
@@ -166,7 +178,7 @@ if ! podman ps -q --filter name="\$CONTAINER_NAME" --filter status=running | gre
     error_exit "\$ERR"
     echo "Retried with host network due to opencode-net failure."
     NETWORK_NAME="host"
-    SERVER_CMD="podman run -d --replace --name \"\$CONTAINER_NAME\" --net host --userns=keep-id \$MOUNTS -e USER=\"\$USER\" -e ANTHROPIC_API_KEY -e OPENAI_API_KEY -e GEMINI_API_KEY -e GROQ_API_KEY -e OPENROUTER_API_KEY \"\$IMAGE\" serve --hostname \"\$HOSTNAME\" --port \$PORT"
+    SERVER_CMD="podman run -d --replace --name \"\$CONTAINER_NAME\" --net host --userns=keep-id \$MOUNTS \$CONFIG_MOUNT \$CONFIG_ENV -e USER=\"\$USER\" -e ANTHROPIC_API_KEY -e OPENAI_API_KEY -e GEMINI_API_KEY -e GROQ_API_KEY -e OPENROUTER_API_KEY \"\$IMAGE\" serve --hostname \"\$HOSTNAME\" --port \$PORT"
     if [ \${#NEW_ARGS[@]} -gt 0 ]; then
       SERVER_CMD="\$SERVER_CMD \"\${NEW_ARGS[@]}\""
     fi
@@ -201,7 +213,7 @@ fi
 if [ \${#NEW_ARGS[@]} -eq 1 ] && [ "\${NEW_ARGS[0]}" == "--version" ] || [ "\${NEW_ARGS[0]}" == "--help" ]; then
   eval podman run --rm \$TTY_FLAG \\
     --userns=keep-id \\
-    \$MOUNTS \\
+    \$MOUNTS \$CONFIG_MOUNT \$CONFIG_ENV \\
     -e USER="\$USER" \\
     -e ANTHROPIC_API_KEY \\
     -e OPENAI_API_KEY \\
@@ -214,7 +226,7 @@ else
     eval podman run --rm \$TTY_FLAG \\
       --network "\$NETWORK_NAME" \\
       --userns=keep-id \\
-      \$MOUNTS \\
+      \$MOUNTS \$CONFIG_MOUNT \$CONFIG_ENV \\
       -e USER="\$USER" \\
       -e ANTHROPIC_API_KEY \\
       -e OPENAI_API_KEY \\
@@ -226,7 +238,7 @@ else
     eval podman run --rm \$TTY_FLAG \\
       --network "\$NETWORK_NAME" \\
       --userns=keep-id \\
-      \$MOUNTS \\
+      \$MOUNTS \$CONFIG_MOUNT \$CONFIG_ENV \\
       -e USER="\$USER" \\
       -e ANTHROPIC_API_KEY \\
       -e OPENAI_API_KEY \\
@@ -313,5 +325,6 @@ echo "  ./opencode                # Run Opencode TUI"
 echo "  ./opencode serve          # Start Opencode server"
 echo "  ./opencode auth login     # Run Opencode CLI command"
 echo "  ./opencode-lite --help    # Show help for opencode-lite"
+echo "  export OPENCODE_CONFIG=/path/to/custom.json; ./opencode  # Use custom config"
 echo "Note: Ensure API keys are set in your environment, e.g., export OPENAI_API_KEY=your_key"
 exit 0

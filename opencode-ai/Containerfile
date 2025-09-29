@@ -19,6 +19,10 @@ RUN git config --system --add safe.directory /home/node/project
 # Set home for cache persistence
 ENV HOME=/home/node
 
+# Note: OPENCODE_CONFIG can be set at runtime to specify a custom config file path.
+# If set to a host path, the wrapper scripts will mount it read-only at /tmp/opencode-custom-config.json
+# and set OPENCODE_CONFIG to that path inside the container.
+
 #########################
 FROM base AS opencode
 
