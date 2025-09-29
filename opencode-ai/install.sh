@@ -131,22 +131,21 @@ CLIENT_HOST="localhost"
 # Determine if serve is in args and collect NEW_ARGS
 SERVER_MODE=false
 NEW_ARGS=()
-i=0
-while [ \$i -lt \${#@} ]; do
-  arg="\${@:\$i:1}"
+while [ \$# -gt 0 ]; do
+  arg="\$1"
   if [ "\$arg" == "serve" ]; then
     SERVER_MODE=true
   elif [ "\$arg" == "--port" ]; then
-    PORT="\${@:\$((i+1)):1}"
-    i=\$((i+1))
+    PORT="\$2"
+    shift
   elif [ "\$arg" == "--hostname" ]; then
-    HOSTNAME="\${@:\$((i+1)):1}"
+    HOSTNAME="\$2"
     CLIENT_HOST="\$HOSTNAME"
-    i=\$((i+1))
+    shift
   else
     NEW_ARGS+=("\$arg")
   fi
-  i=\$((i+1))
+  shift
 done
 
 # Start server if not running
