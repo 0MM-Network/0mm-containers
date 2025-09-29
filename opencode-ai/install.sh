@@ -258,7 +258,16 @@ done
 # Test opencode serve
 echo -n "Testing opencode serve... "
 "$SCRIPTS_DIR/opencode" serve
-sleep 2
+elapsed=0
+while ! podman ps --filter name=opencode-server --filter status=running | grep -q opencode-server; do
+  sleep 1
+  elapsed=$((elapsed+1))
+  if [ $elapsed -ge 10 ]; then
+    echo "❌ Failed"
+    FAILED_COMMANDS+=("opencode serve")
+    break
+  fi
+done
 if podman ps --filter name=opencode-server --filter status=running | grep -q opencode-server ; then
   echo "✅ Success"
   SUCCESS_COUNT=$((SUCCESS_COUNT + 1))
