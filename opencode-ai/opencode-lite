@@ -111,21 +111,6 @@ if ! podman ps -q --filter name="$CONTAINER_NAME" --filter status=running | grep
   fi
 fi
 
-# Poll for server readiness if started
-if [ "$STARTED_SERVER" = true ]; then
-  RETRIES=10
-  while [ $RETRIES -gt 0 ]; do
-    if curl -f -s "http://$SERVER_IP:$PORT/doc" >/dev/null; then
-      break
-    fi
-    sleep 1
-    RETRIES=$((RETRIES-1))
-  done
-  if [ $RETRIES -eq 0 ]; then
-    error_exit "Server failed to start"
-  fi
-fi
-
 # Echo message if started server
 if [ "$STARTED_SERVER" = true ]; then
   echo "Server at http://${CLIENT_HOST}:$PORT (API docs at /doc)"
@@ -189,72 +174,3 @@ else
   fi
   echo "Connect programmatically via API at http://${CLIENT_HOST}:$PORT"
 fi
-EOF
-    chmod +x "$SCRIPTS_DIR/$cmd"
-    echo "Created wrapper script for $cmd"
-done
-
-# Ensure cache directory exists for testing
-mkdir -p "$HOME/.local/share/opencode"
-
-# Test commands
-echo "Testing ${#OPENCODE_COMMANDS[@]} Opencode commands..."
-echo "============================"
-SUCCESS_COUNT=0
-FAILED_COMMANDS=()
-
-for cmd in "${OPENCODE_COMMANDS[@]}"; do
-    echo -n "Testing $cmd --version... "
-    if "$SCRIPTS_DIR/$cmd" --version &>/dev/null; then
-        echo "✅ Success"
-        SUCCESS_COUNT=$((SUCCESS_COUNT + 1))
-    else
-        echo "❌ Failed"
-        FAILED_COMMANDS+=("$cmd --version")
-    fi
-done
-
-# Test opencode serve
-echo -n "Testing opencode serve... "
-"$SCRIPTS_DIR/opencode" serve
-sleep 2
-if podman ps --filter name=opencode-server --filter status=running | grep -q opencode-server ; then
-  echo "✅ Success"
-  SUCCESS_COUNT=$((SUCCESS_COUNT + 1))
-  podman stop opencode-server >/dev/null
-  podman rm -f opencode-server >/dev/null
-else
-  echo "❌ Failed"
-  FAILED_COMMANDS+=("opencode serve")
-fi
-
-# Print summary
-TOTAL_TESTS=$((${#OPENCODE_COMMANDS[@]} + 1))
-echo "============================"
-echo "Test summary: $SUCCESS_COUNT/$TOTAL_TESTS tests passed"
-
-if [ ${#FAILED_COMMANDS[@]} -eq 0 ]; then
-    echo "All Opencode commands are available!"
-else
-    echo "Failed tests:"
-    for test in "${FAILED_COMMANDS[@]}"; do
-        echo "- $test"
-    done
-    echo
-    echo "Troubleshooting tips:"
-    echo "1. Check if the container images were built successfully"
-    echo "2. Try running 'podman run --rm localhost/opencode --version' for opencode or 'podman run --rm localhost/opencode-lite --version' for opencode-lite"
-    echo "3. Check permissions on the wrapper scripts"
-fi
-
-echo
-echo "Opencode CLI container solution installed successfully."
-echo "You can now use Opencode CLI commands directly from this folder."
-echo
-echo "Examples:"
-echo "  ./opencode                # Run Opencode TUI"
-echo "  ./opencode serve          # Start Opencode server"
-echo "  ./opencode auth login     # Run Opencode CLI command"
-echo "  ./opencode-lite --help    # Show help for opencode-lite"
-echo "Note: Ensure API keys are set in your environment, e.g., export OPENAI_API_KEY=your_key"
-exit 0

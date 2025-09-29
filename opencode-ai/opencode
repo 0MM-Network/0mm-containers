@@ -111,21 +111,6 @@ if ! podman ps -q --filter name="$CONTAINER_NAME" --filter status=running | grep
   fi
 fi
 
-# Poll for server readiness if started
-if [ "$STARTED_SERVER" = true ]; then
-  RETRIES=10
-  while [ \$RETRIES -gt 0 ]; do
-    if curl -f -s "http://\$SERVER_IP:\$PORT/doc" >/dev/null; then
-      break
-    fi
-    sleep 1
-    RETRIES=\$((RETRIES-1))
-  done
-  if [ \$RETRIES -eq 0 ]; then
-    error_exit "Server failed to start"
-  fi
-fi
-
 # Echo message if started server
 if [ "$STARTED_SERVER" = true ]; then
   echo "Server at http://${CLIENT_HOST}:$PORT (API docs at /doc)"
