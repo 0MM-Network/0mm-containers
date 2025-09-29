@@ -264,7 +264,7 @@ if podman ps --filter name=opencode-server --filter status=running | grep -q ope
   echo "✅ Success"
   SUCCESS_COUNT=$((SUCCESS_COUNT + 1))
   podman stop opencode-server >/dev/null
-  podman rm opencode-server >/dev/null
+  podman rm -f opencode-server >/dev/null
 else
   echo "❌ Failed"
   FAILED_COMMANDS+=("opencode serve")
