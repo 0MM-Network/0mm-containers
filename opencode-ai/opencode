@@ -159,7 +159,7 @@ else
       -e GEMINI_API_KEY \
       -e GROQ_API_KEY \
       -e OPENROUTER_API_KEY \
-      "$IMAGE" attach "http://$SERVER_IP:$PORT" /home/node/project
+      "$IMAGE" attach "http://$SERVER_IP:$PORT"
   else
     eval podman run --rm $TTY_FLAG \
       --network "$NETWORK_NAME" \
