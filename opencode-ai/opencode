@@ -100,14 +100,21 @@ if ! podman ps -q --filter name="$CONTAINER_NAME" --filter status=running | grep
     CLIENT_HOST="localhost"
   fi
   # Retry logic
-  SERVER_CMD="podman run -d --replace --name \"$CONTAINER_NAME\" --network \"$NETWORK_NAME\" --publish $PORT:$PORT --userns=keep-id $MOUNTS -e USER=\"$USER\" -e ANTHROPIC_API_KEY -e OPENAI_API_KEY -e GEMINI_API_KEY -e GROQ_API_KEY -e OPENROUTER_API_KEY \"$IMAGE\" serve --hostname \"$HOSTNAME\" --port $PORT \"${NEW_ARGS[@]}\""
+  SERVER_CMD="podman run -d --replace --name \"$CONTAINER_NAME\" --network \"$NETWORK_NAME\" --publish $PORT:$PORT --userns=keep-id $MOUNTS -e USER=\"$USER\" -e ANTHROPIC_API_KEY -e OPENAI_API_KEY -e GEMINI_API_KEY -e GROQ_API_KEY -e OPENROUTER_API_KEY \"$IMAGE\" serve --hostname \"$HOSTNAME\" --port $PORT"
+  if [ ${#NEW_ARGS[@]} -gt 0 ]; then
+    SERVER_CMD="$SERVER_CMD \"${NEW_ARGS[@]}\""
+  fi
   if ! eval "$SERVER_CMD" 2>&1 | tee /tmp/opencode_err.log; then
     ERR=$(cat /tmp/opencode_err.log)
     rm /tmp/opencode_err.log
     error_exit "$ERR"
     echo "Retried with host network due to opencode-net failure."
     NETWORK_NAME="host"
-    eval "podman run -d --replace --name \"$CONTAINER_NAME\" --net host --userns=keep-id $MOUNTS -e USER=\"$USER\" -e ANTHROPIC_API_KEY -e OPENAI_API_KEY -e GEMINI_API_KEY -e GROQ_API_KEY -e OPENROUTER_API_KEY \"$IMAGE\" serve --hostname \"$HOSTNAME\" --port $PORT \"${NEW_ARGS[@]}\"" || error_exit "Failed to start server even with host"
+    SERVER_CMD="podman run -d --replace --name \"$CONTAINER_NAME\" --net host --userns=keep-id $MOUNTS -e USER=\"$USER\" -e ANTHROPIC_API_KEY -e OPENAI_API_KEY -e GEMINI_API_KEY -e GROQ_API_KEY -e OPENROUTER_API_KEY \"$IMAGE\" serve --hostname \"$HOSTNAME\" --port $PORT"
+    if [ ${#NEW_ARGS[@]} -gt 0 ]; then
+      SERVER_CMD="$SERVER_CMD \"${NEW_ARGS[@]}\""
+    fi
+    eval "$SERVER_CMD" || error_exit "Failed to start server even with host"
   fi
 fi
 
