@@ -20,8 +20,10 @@ RUN git config --system --add safe.directory /home/node/project
 ENV HOME=/home/node
 
 # Note: OPENCODE_CONFIG can be set at runtime to specify a custom config file path.
-# If set to a host path, the wrapper scripts will mount it read-only at /tmp/opencode-custom-config.json
-# and set OPENCODE_CONFIG to that path inside the container.
+# If set to a host path, the wrapper scripts will mount the dirname of OPENCODE_CONFIG
+# read-only at /home/node/.config/opencode/ and set OPENCODE_CONFIG to the mounted file path.
+# If OPENCODE_CONFIG is a directory, it sets to /home/node/.config/opencode/opencode.json.
+# This ensures custom config takes precedence over global/project configs.
 
 #########################
 FROM base AS opencode

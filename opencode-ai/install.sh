@@ -107,11 +107,18 @@ MOUNTS="-v \"\$PWD:/home/node/project:Z\" -v \"\$HOME/.local/share/opencode:/hom
 CONFIG_MOUNT=""
 CONFIG_ENV=""
 if [ -n "\${OPENCODE_CONFIG:-}" ]; then
-  if [ -f "\$OPENCODE_CONFIG" ]; then
-    CONFIG_MOUNT="-v \"\$OPENCODE_CONFIG:/tmp/opencode-custom-config.json:ro,Z\""
-    CONFIG_ENV="-e OPENCODE_CONFIG=/tmp/opencode-custom-config.json"
+  if [ -e "\$OPENCODE_CONFIG" ]; then
+    HOST_DIR=\$(dirname "\$OPENCODE_CONFIG")
+    MOUNT_PATH="/home/node/.config/opencode"
+    CONFIG_MOUNT="-v \"\$HOST_DIR:\$MOUNT_PATH:ro,Z\""
+    if [ -d "\$OPENCODE_CONFIG" ]; then
+      CONFIG_ENV="-e OPENCODE_CONFIG=\$MOUNT_PATH/opencode.json"
+    else
+      CONFIG_FILE=\$(basename "\$OPENCODE_CONFIG")
+      CONFIG_ENV="-e OPENCODE_CONFIG=\$MOUNT_PATH/\$CONFIG_FILE"
+    fi
   else
-    echo "Warning: OPENCODE_CONFIG file not found"
+    error_exit "OPENCODE_CONFIG path does not exist"
   fi
 fi
 
@@ -325,6 +332,6 @@ echo "  ./opencode                # Run Opencode TUI"
 echo "  ./opencode serve          # Start Opencode server"
 echo "  ./opencode auth login     # Run Opencode CLI command"
 echo "  ./opencode-lite --help    # Show help for opencode-lite"
-echo "  export OPENCODE_CONFIG=/path/to/custom.json; ./opencode  # Use custom config"
+echo "  export OPENCODE_CONFIG=~/.config/zide/config/opencode/explore.jsonc; ./opencode # Use custom config"
 echo "Note: Ensure API keys are set in your environment, e.g., export OPENAI_API_KEY=your_key"
 exit 0
