@@ -3,7 +3,8 @@
 
 # Except the .gitignore file itself
 !.gitignore
-
+!.aiderignore
+ 
 # And these specific files
 !Containerfile
 !install.sh
@@ -13,6 +14,8 @@
 !LICENSE
 !aider
 !goose
+!opencode
+!opencode-lite
 !*-setup.sh
 !**/artifacts/**/*
 !**/bats/**/*
@@ -30,6 +33,10 @@
 !goose-ai/
 !goose-ai/artifacts/
 !goose-ai/tests/
+
+!opencode-ai/
+!opencode-ai/artifacts
+!opencode-ai/tests/
 
 !python/
 
