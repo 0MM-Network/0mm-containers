@@ -211,7 +211,9 @@ done
 # Prepare secrets
 SECRETS=""
 for key in "\${KNOWN_API_KEYS[@]}"; do
-  SECRETS+=" --secret opencode_\${key},type=env,target=\${key}"
+  if podman secret exists "opencode_\${key}" 2>/dev/null; then
+    SECRETS+=" --secret opencode_\${key},type=env,target=\${key}"
+  fi
 done
 
 # Start server if not running
