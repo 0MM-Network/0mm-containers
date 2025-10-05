@@ -34,6 +34,26 @@ echo "Building Opencode container images..."
 podman build --target opencode -t $OPENCODE_IMAGE -f "$SCRIPTS_DIR/Containerfile" "$BUILD_CONTEXT" || error_exit "Failed to build opencode container image"
 podman build --target opencode-lite -t $OPENCODE_LITE_IMAGE -f "$SCRIPTS_DIR/Containerfile" "$BUILD_CONTEXT" || error_exit "Failed to build opencode-lite container image"
 
+# Tag images with trusted label
+podman tag $OPENCODE_IMAGE trusted/opencode:latest
+podman tag $OPENCODE_LITE_IMAGE trusted/opencode-lite:latest
+
+# Verify image existence
+podman image inspect trusted/opencode:latest || error_exit "Image verification failed for trusted/opencode:latest"
+podman image inspect trusted/opencode-lite:latest || error_exit "Image verification failed for trusted/opencode-lite:latest"
+
+# Define known API keys
+KNOWN_API_KEYS=("XAI_API_KEY" "ANTHROPIC_API_KEY" "OPENAI_API_KEY" "GEMINI_API_KEY" "GROQ_API_KEY" "OPENROUTER_API_KEY")
+
+# Store API keys as Podman secrets if set
+for key in "${KNOWN_API_KEYS[@]}"; do
+    if [ -n "${!key:-}" ]; then
+        echo -n "${!key}" | podman secret create "opencode_${key}" - --driver=file || error_exit "Failed to create secret for $key"
+    else
+        echo "Warning: $key is not set; opencode may not work with this provider."
+    fi
+done
+
 # Create wrapper scripts
 echo "Creating wrapper scripts..."
 OPENCODE_COMMANDS=(
@@ -43,9 +63,9 @@ OPENCODE_COMMANDS=(
 
 for cmd in "${OPENCODE_COMMANDS[@]}"; do
     if [ "$cmd" == "opencode" ]; then
-        IMAGE=$OPENCODE_IMAGE
+        IMAGE="trusted/opencode:latest"
     else
-        IMAGE=$OPENCODE_LITE_IMAGE
+        IMAGE="trusted/opencode-lite:latest"
     fi
 
     if [ -f "$SCRIPTS_DIR/$cmd" ]; then
@@ -167,6 +187,12 @@ while [ \$# -gt 0 ]; do
   shift
 done
 
+# Prepare secrets
+SECRETS=""
+for key in ${KNOWN_API_KEYS[*]}; do
+  SECRETS+=" --secret opencode_\${key},type=env,target=\${key}"
+done
+
 # Start server if not running
 STARTED_SERVER=false
 if ! podman ps -q --filter name="\$CONTAINER_NAME" --filter status=running | grep -q . ; then
@@ -175,7 +201,7 @@ if ! podman ps -q --filter name="\$CONTAINER_NAME" --filter status=running | gre
     CLIENT_HOST="localhost"
   fi
   # Retry logic
-  SERVER_CMD="podman run -d --replace --name \"\$CONTAINER_NAME\" --network \"\$NETWORK_NAME\" --publish \$PORT:\$PORT --userns=keep-id \$MOUNTS \$CONFIG_MOUNT \$CONFIG_ENV -e USER=\"\$USER\" -e ANTHROPIC_API_KEY -e OPENAI_API_KEY -e GEMINI_API_KEY -e GROQ_API_KEY -e OPENROUTER_API_KEY \"\$IMAGE\" serve --hostname \"\$HOSTNAME\" --port \$PORT"
+  SERVER_CMD="podman run -d --replace --name \"\$CONTAINER_NAME\" --network \"\$NETWORK_NAME\" --publish \$PORT:\$PORT --userns=keep-id --security-opt=label=disable --cap-drop=ALL --cap-add=NET_BIND_SERVICE \$MOUNTS \$CONFIG_MOUNT \$CONFIG_ENV \$SECRETS -e USER=\"\$USER\" \"\$IMAGE\" serve --hostname \"\$HOSTNAME\" --port \$PORT"
   if [ \${#NEW_ARGS[@]} -gt 0 ]; then
     SERVER_CMD="\$SERVER_CMD \"\${NEW_ARGS[@]}\""
   fi
@@ -183,9 +209,9 @@ if ! podman ps -q --filter name="\$CONTAINER_NAME" --filter status=running | gre
     ERR=\$(cat /tmp/opencode_err.log)
     rm /tmp/opencode_err.log
     error_exit "\$ERR"
-    echo "Retried with host network due to opencode-net failure."
+    echo "Hardened fallback: Using host network due to error."
     NETWORK_NAME="host"
-    SERVER_CMD="podman run -d --replace --name \"\$CONTAINER_NAME\" --net host --userns=keep-id \$MOUNTS \$CONFIG_MOUNT \$CONFIG_ENV -e USER=\"\$USER\" -e ANTHROPIC_API_KEY -e OPENAI_API_KEY -e GEMINI_API_KEY -e GROQ_API_KEY -e OPENROUTER_API_KEY \"\$IMAGE\" serve --hostname \"\$HOSTNAME\" --port \$PORT"
+    SERVER_CMD="podman run -d --replace --name \"\$CONTAINER_NAME\" --net host --userns=keep-id --security-opt=label=disable --cap-drop=ALL --cap-add=NET_BIND_SERVICE \$MOUNTS \$CONFIG_MOUNT \$CONFIG_ENV \$SECRETS -e USER=\"\$USER\" \"\$IMAGE\" serve --hostname \"\$HOSTNAME\" --port \$PORT"
     if [ \${#NEW_ARGS[@]} -gt 0 ]; then
       SERVER_CMD="\$SERVER_CMD \"\${NEW_ARGS[@]}\""
     fi
@@ -219,39 +245,24 @@ fi
 # Run the client
 if [ \${#NEW_ARGS[@]} -eq 1 ] && [ "\${NEW_ARGS[0]}" == "--version" ] || [ "\${NEW_ARGS[0]}" == "--help" ]; then
   eval podman run --rm \$TTY_FLAG \\
-    --userns=keep-id \\
+    --userns=keep-id --security-opt=label=disable --network=none \\
     \$MOUNTS \$CONFIG_MOUNT \$CONFIG_ENV \\
-    -e USER="\$USER" \\
-    -e ANTHROPIC_API_KEY \\
-    -e OPENAI_API_KEY \\
-    -e GEMINI_API_KEY \\
-    -e GROQ_API_KEY \\
-    -e OPENROUTER_API_KEY \\
+    \$SECRETS -e USER="\$USER" \\
     "\$IMAGE" "\${NEW_ARGS[@]}"
 else
   if [ \${#NEW_ARGS[@]} -eq 0 ]; then
     eval podman run --rm \$TTY_FLAG \\
       --network "\$NETWORK_NAME" \\
-      --userns=keep-id \\
+      --userns=keep-id --security-opt=label=disable \\
       \$MOUNTS \$CONFIG_MOUNT \$CONFIG_ENV \\
-      -e USER="\$USER" \\
-      -e ANTHROPIC_API_KEY \\
-      -e OPENAI_API_KEY \\
-      -e GEMINI_API_KEY \\
-      -e GROQ_API_KEY \\
-      -e OPENROUTER_API_KEY \\
+      \$SECRETS -e USER="\$USER" \\
       "\$IMAGE" attach "http://\$SERVER_IP:\$PORT"
   else
     eval podman run --rm \$TTY_FLAG \\
       --network "\$NETWORK_NAME" \\
-      --userns=keep-id \\
+      --userns=keep-id --security-opt=label=disable \\
       \$MOUNTS \$CONFIG_MOUNT \$CONFIG_ENV \\
-      -e USER="\$USER" \\
-      -e ANTHROPIC_API_KEY \\
-      -e OPENAI_API_KEY \\
-      -e GEMINI_API_KEY \\
-      -e GROQ_API_KEY \\
-      -e OPENROUTER_API_KEY \\
+      \$SECRETS -e USER="\$USER" \\
       "\$IMAGE" "\${NEW_ARGS[@]}"
   fi
   echo "Connect programmatically via API at http://\${CLIENT_HOST}:\$PORT"
