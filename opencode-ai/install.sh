@@ -46,13 +46,26 @@ podman image inspect trusted/opencode-lite:latest || error_exit "Image verificat
 KNOWN_API_KEYS=("XAI_API_KEY" "ANTHROPIC_API_KEY" "OPENAI_API_KEY" "GEMINI_API_KEY" "GROQ_API_KEY" "OPENROUTER_API_KEY")
 
 # Store API keys as Podman secrets if set
+any_key_set=false
 for key in "${KNOWN_API_KEYS[@]}"; do
     if [ -n "${!key:-}" ]; then
-        echo -n "${!key}" | podman secret create "opencode_${key}" - --driver=file || error_exit "Failed to create secret for $key"
+        if podman secret exists "opencode_${key}" 2>/dev/null; then
+            echo "Secret for $key already exists, skipping creation."
+        else
+            echo -n "${!key}" | podman secret create "opencode_${key}" - --driver=file || error_exit "Failed to create secret for $key"
+        fi
+        any_key_set=true
     else
-        echo "Warning: $key is not set; opencode may not work with this provider."
+        if podman secret exists "opencode_${key}" 2>/dev/null; then
+            any_key_set=true
+        else
+            echo "Warning: $key is not set; opencode may not work with this provider."
+        fi
     fi
 done
+if ! $any_key_set; then
+    error_exit "No API keys are set or stored as secrets; at least one is required for opencode to function."
+fi
 
 # Create wrapper scripts
 echo "Creating wrapper scripts..."
@@ -155,8 +168,8 @@ if ! podman network exists "\$NETWORK_NAME"; then
 fi
 
 # Test network
-if [ "\$NETWORK_NAME" != "host" ] && ! podman run --rm --network="\$NETWORK_NAME" busybox true &>/dev/null; then
-  echo "Fallback to host network due to custom network error."
+if [ "\$NETWORK_NAME" != "host" ] && ! podman run --rm --network="\$NETWORK_NAME" --userns=keep-id busybox wget -q --spider http://example.com &>/dev/null; then
+  echo "Hardened fallback: Using host network due to connectivity error."
   NETWORK_NAME="host"
 fi
 
@@ -187,9 +200,17 @@ while [ \$# -gt 0 ]; do
   shift
 done
 
+# Define known API keys and warn if unset
+KNOWN_API_KEYS=("XAI_API_KEY" "ANTHROPIC_API_KEY" "OPENAI_API_KEY" "GEMINI_API_KEY" "GROQ_API_KEY" "OPENROUTER_API_KEY")
+for key in "\${KNOWN_API_KEYS[@]}"; do
+  if [ -z "\${!key:-}" ] && ! podman secret exists "opencode_\${key}"; then
+    echo "Warning: \$key is not set; opencode may not work with this provider."
+  fi
+done
+
 # Prepare secrets
 SECRETS=""
-for key in ${KNOWN_API_KEYS[*]}; do
+for key in "\${KNOWN_API_KEYS[@]}"; do
   SECRETS+=" --secret opencode_\${key},type=env,target=\${key}"
 done
 
@@ -208,7 +229,7 @@ if ! podman ps -q --filter name="\$CONTAINER_NAME" --filter status=running | gre
   if ! eval "\$SERVER_CMD" 2>&1 | tee /tmp/opencode_err.log; then
     ERR=\$(cat /tmp/opencode_err.log)
     rm /tmp/opencode_err.log
-    error_exit "\$ERR"
+    echo "\$ERR"
     echo "Hardened fallback: Using host network due to error."
     NETWORK_NAME="host"
     SERVER_CMD="podman run -d --replace --name \"\$CONTAINER_NAME\" --net host --userns=keep-id --security-opt=label=disable --cap-drop=ALL --cap-add=NET_BIND_SERVICE \$MOUNTS \$CONFIG_MOUNT \$CONFIG_ENV \$SECRETS -e USER=\"\$USER\" \"\$IMAGE\" serve --hostname \"\$HOSTNAME\" --port \$PORT"

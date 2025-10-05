@@ -79,8 +79,8 @@ if ! podman network exists "$NETWORK_NAME"; then
 fi
 
 # Test network
-if [ "$NETWORK_NAME" != "host" ] && ! podman run --rm --network="$NETWORK_NAME" busybox true &>/dev/null; then
-  echo "Fallback to host network due to custom network error."
+if [ "$NETWORK_NAME" != "host" ] && ! podman run --rm --network="$NETWORK_NAME" --userns=keep-id busybox wget -q --spider http://example.com &>/dev/null; then
+  echo "Hardened fallback: Using host network due to connectivity error."
   NETWORK_NAME="host"
 fi
 
@@ -140,7 +140,7 @@ if ! podman ps -q --filter name="$CONTAINER_NAME" --filter status=running | grep
   if ! eval "$SERVER_CMD" 2>&1 | tee /tmp/opencode_err.log; then
     ERR=$(cat /tmp/opencode_err.log)
     rm /tmp/opencode_err.log
-    error_exit "$ERR"
+    echo "$ERR"
     echo "Hardened fallback: Using host network due to error."
     NETWORK_NAME="host"
     SERVER_CMD="podman run -d --replace --name \"$CONTAINER_NAME\" --net host --userns=keep-id --security-opt=label=disable --cap-drop=ALL --cap-add=NET_BIND_SERVICE $MOUNTS $CONFIG_MOUNT $CONFIG_ENV $SECRETS -e USER=\"$USER\" \"$IMAGE\" serve --hostname \"$HOSTNAME\" --port $PORT"
