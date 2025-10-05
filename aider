@@ -9,7 +9,7 @@ CGID=$(podman run --rm --entrypoint /usr/bin/id $IMAGE -g)
 
 # Error handling
 set -e
-
+echo "XAI api key: $XAI_API_KEY"
 # Function to display error messages
 error_exit() {
     echo "Error: $1" >&2
