@@ -111,6 +111,14 @@ while [ $# -gt 0 ]; do
   shift
 done
 
+# Determine attach mode
+ATTACH_MODE=false
+if [ ${#NEW_ARGS[@]} -eq 0 ] && [ "$SERVER_MODE" != "true" ]; then
+  ATTACH_MODE=true
+elif [ ${#NEW_ARGS[@]} -gt 0 ] && [ "${NEW_ARGS[0]}" == "attach" ]; then
+  ATTACH_MODE=true
+fi
+
 # Define known API keys and warn if unset
 KNOWN_API_KEYS=("XAI_API_KEY" "ANTHROPIC_API_KEY" "OPENAI_API_KEY" "GEMINI_API_KEY" "GROQ_API_KEY" "OPENROUTER_API_KEY")
 for key in "${KNOWN_API_KEYS[@]}"; do
@@ -129,14 +137,21 @@ done
 
 # Start server if not running
 STARTED_SERVER=false
-if ! podman ps -q --filter name="$CONTAINER_NAME" --filter status=running | grep -q . ; then
+if [ "$ATTACH_MODE" = true ]; then
+  podman stop "$CONTAINER_NAME" >/dev/null 2>&1 || true
+  podman rm -f "$CONTAINER_NAME" >/dev/null 2>&1 || true
   STARTED_SERVER=true
+elif ! podman ps -q --filter name="$CONTAINER_NAME" --filter status=running | grep -q . ; then
+  STARTED_SERVER=true
+fi
+
+if [ "$STARTED_SERVER" = true ]; then
   if [ "$HOSTNAME" == "0.0.0.0" ]; then
     CLIENT_HOST="localhost"
   fi
   # Retry logic
   SERVER_CMD="podman run -d --replace --name \"$CONTAINER_NAME\" --network \"$NETWORK_NAME\" --publish $PORT:$PORT --userns=keep-id --security-opt=label=disable --cap-drop=ALL --cap-add=NET_BIND_SERVICE $MOUNTS $CONFIG_MOUNT $CONFIG_ENV $SECRETS -e USER=\"$USER\" \"$IMAGE\" serve --hostname \"$HOSTNAME\" --port $PORT"
-  if [ ${#NEW_ARGS[@]} -gt 0 ]; then
+  if [ "$SERVER_MODE" = true ] && [ ${#NEW_ARGS[@]} -gt 0 ]; then
     SERVER_CMD="$SERVER_CMD \"${NEW_ARGS[@]}\""
   fi
   if ! eval "$SERVER_CMD" 2>&1 | tee /tmp/opencode_err.log; then
@@ -146,7 +161,7 @@ if ! podman ps -q --filter name="$CONTAINER_NAME" --filter status=running | grep
     echo "Hardened fallback: Using host network due to error."
     NETWORK_NAME="host"
     SERVER_CMD="podman run -d --replace --name \"$CONTAINER_NAME\" --net host --userns=keep-id --security-opt=label=disable --cap-drop=ALL --cap-add=NET_BIND_SERVICE $MOUNTS $CONFIG_MOUNT $CONFIG_ENV $SECRETS -e USER=\"$USER\" \"$IMAGE\" serve --hostname \"$HOSTNAME\" --port $PORT"
-    if [ ${#NEW_ARGS[@]} -gt 0 ]; then
+    if [ "$SERVER_MODE" = true ] && [ ${#NEW_ARGS[@]} -gt 0 ]; then
       SERVER_CMD="$SERVER_CMD \"${NEW_ARGS[@]}\""
     fi
     eval "$SERVER_CMD" || error_exit "Failed to start server even with host"
