@@ -155,6 +155,15 @@ if [ -n "\${OPENCODE_CONFIG:-}" ]; then
   fi
 fi
 
+# Network setup section:
+# This section handles the creation and testing of a custom network for the container.
+# It attempts to create a dedicated network for isolation and connectivity.
+# If creation fails or connectivity test fails, it falls back to the host network.
+# To extend for other MCP servers (e.g., Serena):
+# - Modify NETWORK_NAME to a unique name if multiple networks are needed.
+# - Add custom network options (e.g., --subnet) in podman network create for specific MCP requirements.
+# - For MCP servers requiring specific ports or protocols, adjust the connectivity test (e.g., test MCP-specific endpoints).
+# - Ensure fallback to 'host' maintains MCP stdio/HTTP compatibility without breaking existing opencode behavior.
 NETWORK_NAME="opencode-net"
 
 # Create network if not exists
@@ -234,6 +243,15 @@ elif ! podman ps -q --filter name="\$CONTAINER_NAME" --filter status=running | g
   STARTED_SERVER=true
 fi
 
+# Server startup section:
+# This section constructs and executes the SERVER_CMD to start the opencode-server container.
+# It handles forced restarts for attach mode and fallback to host network on errors.
+# To extend for other MCP servers (e.g., Serena):
+# - Modify SERVER_CMD to include alternative entrypoints or commands (e.g., replace 'serve' with 'serena start-mcp-server' for Serena integration).
+# - Add MCP-specific flags or environment variables (e.g., -e SERENA_CONTEXT=ide-assistant) without altering existing opencode logic.
+# - For modes, append custom args to SERVER_CMD based on SERVER_MODE (e.g., add --mode planning for Serena modes).
+# - Ensure fallback logic preserves original behavior; test that opencode 'serve' remains unchanged.
+# - To add new entrypoints, conditionally build SERVER_CMD based on NEW_ARGS (e.g., if NEW_ARGS includes 'serena', reroute to Serena command).
 if [ "\$STARTED_SERVER" = true ]; then
   if [ "\$HOSTNAME" == "0.0.0.0" ]; then
     CLIENT_HOST="localhost"
@@ -280,6 +298,14 @@ else
   fi
 fi
 
+# Command execution section:
+# This section runs the client container based on parsed arguments (e.g., attach, version, help).
+# It handles special cases like --version/--help with network=none, and defaults to attach if no args.
+# To extend for other MCP servers (e.g., Serena):
+# - Add conditional logic based on NEW_ARGS to exec alternative commands (e.g., if NEW_ARGS[0] == 'serena', replace "\"\$IMAGE\" \"\${NEW_ARGS[@]}\"" with Serena-specific podman run).
+# - For modes or entrypoints, parse additional flags in the while loop and adjust the eval command accordingly.
+# - Ensure existing behaviors (e.g., attach to opencode-server) remain unchanged; extensions should be opt-in via specific args.
+# - For MCP HTTP mode, modify --network and add port mappings if needed, without affecting stdio-based commands.
 # Run the client
 if [ \${#NEW_ARGS[@]} -eq 1 ] && [ "\${NEW_ARGS[0]}" == "--version" ] || [ "\${NEW_ARGS[0]}" == "--help" ]; then
   eval podman run --rm \$TTY_FLAG \\

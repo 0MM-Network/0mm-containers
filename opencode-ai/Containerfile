@@ -1,9 +1,10 @@
 FROM node:20-slim AS base
 
-# Install minimal system dependencies
+# Install minimal system dependencies, including Python and uv for Serena
 RUN apt-get update && \
     apt-get install --no-install-recommends -y \
-    git libnss3 curl && \
+    git libnss3 curl python3 python3-pip && \
+    pip install uv && \
     rm -rf /var/lib/apt/lists/*
 
 # Set working directory
@@ -39,6 +40,19 @@ RUN apt-get update && \
 # Install npm packages as root
 RUN npm install -g opencode-ai@latest playwright
 
+# Install Serena using uv
+RUN uv venv /opt/serena-venv && \
+    . /opt/serena-venv/bin/activate && \
+    uv pip install git+https://github.com/oraios/serena && \
+    deactivate
+
+# Provide default Serena MCP configuration (YAML file in ~/.serena)
+RUN mkdir -p /home/node/.serena && \
+    echo "context: ide-assistant" > /home/node/.serena/serena_config.yml && \
+    echo "included_optional_tools:" >> /home/node/.serena/serena_config.yml && \
+    echo "  - execute_shell_command" >> /home/node/.serena/serena_config.yml && \
+    chown -R node:node /home/node/.serena
+
 # Set Playwright settings
 ENV PLAYWRIGHT_BROWSERS_PATH=/home/node/pw-browsers
 ENV PLAYWRIGHT_SKIP_BROWSER_GC=1
@@ -51,6 +65,9 @@ RUN mkdir -p /home/node/pw-browsers && \
 ENV OPENCODE_DOCKER_IMAGE=localhost/opencode
 
 USER node
+
+# Allow running Serena via 'serena start-mcp-server' (e.g., for stdio or --transport streamable-http for HTTP mode)
+ENV PATH="/opt/serena-venv/bin:$PATH"
 
 ENTRYPOINT ["/usr/local/bin/opencode"]
 
