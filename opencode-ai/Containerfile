@@ -38,7 +38,7 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/*
 
 # Install npm packages as root
-RUN npm install -g opencode-ai@latest playwright
+RUN npm install -g opencode-ai@latest playwright chrome-devtools-mcp@latest
 
 # Install Serena using uv
 RUN uv venv /opt/serena-venv && \
