@@ -133,8 +133,12 @@ fi
 # Ensure cache directory exists
 mkdir -p "\$HOME/.config/zide/log/opencode"
 
+# Ensure Serena config directory and file exist on host
+mkdir -p "\$HOME/.config/zide/config/opencode/mcps"
+touch "\$HOME/.config/zide/config/opencode/mcps/serena_config.yml"
+
 # Prepare volume mounts
-MOUNTS="-v \"\$PWD:/home/node/project:Z\" -v \"\$HOME/.config/zide/log/opencode:/home/node/.local/share/opencode:Z\" -v \"\$HOME/.config/zide/config/opencode/mcps/serena:/home/node/.serena:Z\""
+MOUNTS="-v \"\$PWD:/home/node/project:Z\" -v \"\$HOME/.config/zide/log/opencode:/home/node/.local/share/opencode:Z\" -v \"\$HOME/.config/zide/config/opencode/mcps/serena_config.yml:/home/node/.serena/serena_config.yml:Z\""
 
 # Handle OPENCODE_CONFIG
 CONFIG_MOUNT=""
