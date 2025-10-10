@@ -131,10 +131,10 @@ else
 fi
 
 # Ensure cache directory exists
-mkdir -p "\$HOME/.local/share/opencode"
+mkdir -p "\$HOME/.config/zide/log/opencode"
 
 # Prepare volume mounts
-MOUNTS="-v \"\$PWD:/home/node/project:Z\" -v \"\$HOME/.local/share/opencode:/home/node/.local/share/opencode:Z\""
+MOUNTS="-v \"\$PWD:/home/node/project:Z\" -v \"\$HOME/.config/zide/log/opencode:/home/node/.local/share/opencode:Z\""
 
 # Handle OPENCODE_CONFIG
 CONFIG_MOUNT=""
@@ -337,7 +337,7 @@ EOF
 done
 
 # Ensure cache directory exists for testing
-mkdir -p "$HOME/.local/share/opencode"
+mkdir -p "$HOME/.config/zide/log/opencode"
 
 # Test commands
 echo "Testing ${#OPENCODE_COMMANDS[@]} Opencode commands..."
