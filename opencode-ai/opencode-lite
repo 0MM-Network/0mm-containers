@@ -45,7 +45,7 @@ fi
 mkdir -p "$HOME/.config/zide/log/opencode"
 
 # Prepare volume mounts
-MOUNTS="-v \"$PWD:/home/node/project:Z\" -v \"$HOME/.config/zide/log/opencode:/home/node/.local/share/opencode:Z\""
+MOUNTS="-v \"$PWD:/home/node/project:Z\" -v \"$HOME/.config/zide/log/opencode:/home/node/.local/share/opencode:Z\" -v \"$HOME/.config/zide/config/opencode/mcps/serena:/home/node/.serena:Z\""
 
 # Handle OPENCODE_CONFIG
 CONFIG_MOUNT=""
@@ -149,10 +149,21 @@ if [ "$STARTED_SERVER" = true ]; then
   if [ "$HOSTNAME" == "0.0.0.0" ]; then
     CLIENT_HOST="localhost"
   fi
-  # Retry logic
-  SERVER_CMD="podman run -d --replace --name \"$CONTAINER_NAME\" --network \"$NETWORK_NAME\" --publish $PORT:$PORT --userns=keep-id --security-opt=label=disable --cap-drop=ALL --cap-add=NET_BIND_SERVICE $MOUNTS $CONFIG_MOUNT $CONFIG_ENV $SECRETS -e USER=\"$USER\" \"$IMAGE\" serve --hostname \"$HOSTNAME\" --port $PORT"
-  if [ "$SERVER_MODE" = true ] && [ ${#NEW_ARGS[@]} -gt 0 ]; then
-    SERVER_CMD="$SERVER_CMD \"${NEW_ARGS[@]}\""
+  # Check for serena mode and use installed path for startup
+  if [ ${#NEW_ARGS[@]} -gt 0 ] && [ "${NEW_ARGS[0]}" == "serena" ]; then
+    # Fix for Serena startup: Use the installed path in the container for persistence and to avoid uvx dependency
+    # This ensures config persistence via the mounted volume and consistent launching
+    SERVER_CMD="podman run -d --replace --name \"$CONTAINER_NAME\" --network \"$NETWORK_NAME\" --publish $PORT:$PORT --userns=keep-id --security-opt=label=disable --cap-drop=ALL --cap-add=NET_BIND_SERVICE $MOUNTS $CONFIG_MOUNT $CONFIG_ENV $SECRETS -e USER=\"$USER\" \"$IMAGE\" /opt/serena-venv/bin/serena start-mcp-server \"${NEW_ARGS[@]:1}\""
+  # Check for sqlite-mcp mode
+  elif [ ${#NEW_ARGS[@]} -gt 0 ] && [ "${NEW_ARGS[0]}" == "sqlite-mcp" ]; then
+    # Reroute to sqlite-mcp-server-enhanced with default db-path
+    SERVER_CMD="podman run -d --replace --name \"$CONTAINER_NAME\" --network \"$NETWORK_NAME\" --publish $PORT:$PORT --userns=keep-id --security-opt=label=disable --cap-drop=ALL --cap-add=NET_BIND_SERVICE $MOUNTS $CONFIG_MOUNT $CONFIG_ENV $SECRETS -e USER=\"$USER\" \"$IMAGE\" python -m sqlite_mcp_server_enhanced.start_sqlite_mcp --db-path /home/node/project/mcp.db \"${NEW_ARGS[@]:1}\""
+  else
+    # Default opencode serve command
+    SERVER_CMD="podman run -d --replace --name \"$CONTAINER_NAME\" --network \"$NETWORK_NAME\" --publish $PORT:$PORT --userns=keep-id --security-opt=label=disable --cap-drop=ALL --cap-add=NET_BIND_SERVICE $MOUNTS $CONFIG_MOUNT $CONFIG_ENV $SECRETS -e USER=\"$USER\" \"$IMAGE\" serve --hostname \"$HOSTNAME\" --port $PORT"
+    if [ "$SERVER_MODE" = true ] && [ ${#NEW_ARGS[@]} -gt 0 ]; then
+      SERVER_CMD="$SERVER_CMD \"${NEW_ARGS[@]}\""
+    fi
   fi
   if ! eval "$SERVER_CMD" 2>&1 | tee /tmp/opencode_err.log; then
     ERR=$(cat /tmp/opencode_err.log)
@@ -160,9 +171,16 @@ if [ "$STARTED_SERVER" = true ]; then
     echo "$ERR"
     echo "Hardened fallback: Using host network due to error."
     NETWORK_NAME="host"
-    SERVER_CMD="podman run -d --replace --name \"$CONTAINER_NAME\" --net host --userns=keep-id --security-opt=label=disable --cap-drop=ALL --cap-add=NET_BIND_SERVICE $MOUNTS $CONFIG_MOUNT $CONFIG_ENV $SECRETS -e USER=\"$USER\" \"$IMAGE\" serve --hostname \"$HOSTNAME\" --port $PORT"
-    if [ "$SERVER_MODE" = true ] && [ ${#NEW_ARGS[@]} -gt 0 ]; then
-      SERVER_CMD="$SERVER_CMD \"${NEW_ARGS[@]}\""
+    # Fallback command, similarly check for serena or sqlite-mcp
+    if [ ${#NEW_ARGS[@]} -gt 0 ] && [ "${NEW_ARGS[0]}" == "serena" ]; then
+      SERVER_CMD="podman run -d --replace --name \"$CONTAINER_NAME\" --net host --userns=keep-id --security-opt=label=disable --cap-drop=ALL --cap-add=NET_BIND_SERVICE $MOUNTS $CONFIG_MOUNT $CONFIG_ENV $SECRETS -e USER=\"$USER\" \"$IMAGE\" /opt/serena-venv/bin/serena start-mcp-server \"${NEW_ARGS[@]:1}\""
+    elif [ ${#NEW_ARGS[@]} -gt 0 ] && [ "${NEW_ARGS[0]}" == "sqlite-mcp" ]; then
+      SERVER_CMD="podman run -d --replace --name \"$CONTAINER_NAME\" --net host --userns=keep-id --security-opt=label=disable --cap-drop=ALL --cap-add=NET_BIND_SERVICE $MOUNTS $CONFIG_MOUNT $CONFIG_ENV $SECRETS -e USER=\"$USER\" \"$IMAGE\" python -m sqlite_mcp_server_enhanced.start_sqlite_mcp --db-path /home/node/project/mcp.db \"${NEW_ARGS[@]:1}\""
+    else
+      SERVER_CMD="podman run -d --replace --name \"$CONTAINER_NAME\" --net host --userns=keep-id --security-opt=label=disable --cap-drop=ALL --cap-add=NET_BIND_SERVICE $MOUNTS $CONFIG_MOUNT $CONFIG_ENV $SECRETS -e USER=\"$USER\" \"$IMAGE\" serve --hostname \"$HOSTNAME\" --port $PORT"
+      if [ "$SERVER_MODE" = true ] && [ ${#NEW_ARGS[@]} -gt 0 ]; then
+        SERVER_CMD="$SERVER_CMD \"${NEW_ARGS[@]}\""
+      fi
     fi
     eval "$SERVER_CMD" || error_exit "Failed to start server even with host"
   fi

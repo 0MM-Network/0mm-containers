@@ -134,7 +134,7 @@ fi
 mkdir -p "\$HOME/.config/zide/log/opencode"
 
 # Prepare volume mounts
-MOUNTS="-v \"\$PWD:/home/node/project:Z\" -v \"\$HOME/.config/zide/log/opencode:/home/node/.local/share/opencode:Z\""
+MOUNTS="-v \"\$PWD:/home/node/project:Z\" -v \"\$HOME/.config/zide/log/opencode:/home/node/.local/share/opencode:Z\" -v \"\$HOME/.config/zide/config/opencode/mcps/serena:/home/node/.serena:Z\""
 
 # Handle OPENCODE_CONFIG
 CONFIG_MOUNT=""

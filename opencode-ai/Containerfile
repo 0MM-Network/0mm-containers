@@ -54,6 +54,7 @@ RUN mkdir -p /home/node/.serena && \
     echo "context: ide-assistant" > /home/node/.serena/serena_config.yml && \
     echo "included_optional_tools:" >> /home/node/.serena/serena_config.yml && \
     echo "  - execute_shell_command" >> /home/node/.serena/serena_config.yml && \
+    echo "projects: []" >> /home/node/.serena/serena_config.yml && \
     chown -R node:node /home/node/.serena
 
 # Set Playwright settings
