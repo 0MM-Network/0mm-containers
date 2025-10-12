@@ -62,9 +62,13 @@ RUN npm install -g typescript typescript-language-server
 
 # Go: gopls via go install
 # Use the default packaged Go from the newer base image (node:22-trixie-slim) for better compatibility with modern gopls
+# Explicitly set GOPATH for compatibility with newer Go versions in trixie
 RUN apt-get update && apt-get install -y golang-go && \
+    export GOPATH=/root/go && \
+    export PATH="$GOPATH/bin:$PATH" && \
     go install golang.org/x/tools/gopls@latest && \
-    mv /root/go/bin/gopls /usr/local/bin/
+    [ -f "$(go env GOPATH)/bin/gopls" ] || { echo "gopls not found" && exit 1; } && \
+    mv "$(go env GOPATH)/bin/gopls" /usr/local/bin/
 
 # Rust: rustup and rust-analyzer
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y && \
