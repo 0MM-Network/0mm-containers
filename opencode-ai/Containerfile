@@ -1,4 +1,4 @@
-FROM node:20-slim AS base
+FROM node:22-trixie-slim AS base
 
 # Install minimal system dependencies, including Python and uv for Serena, and build tools for LSP compilation
 RUN apt-get update && \
@@ -61,11 +61,8 @@ RUN npm install -g pyright
 RUN npm install -g typescript typescript-language-server
 
 # Go: gopls via go install
-# Install a newer Go version (1.24) from golang.org instead of outdated Debian package for compatibility with modern gopls
-RUN curl -L https://go.dev/dl/go1.24.8.linux-amd64.tar.gz -o /tmp/go.tar.gz && \
-    tar -C /usr/local -xzf /tmp/go.tar.gz && \
-    rm /tmp/go.tar.gz && \
-    export PATH="/usr/local/go/bin:$PATH" && \
+# Use the default packaged Go from the newer base image (node:22-trixie-slim) for better compatibility with modern gopls
+RUN apt-get update && apt-get install -y golang-go && \
     go install golang.org/x/tools/gopls@latest && \
     mv /root/go/bin/gopls /usr/local/bin/
 
