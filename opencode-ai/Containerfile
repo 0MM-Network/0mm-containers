@@ -40,11 +40,15 @@ RUN apt-get update && \
 # Install npm packages as root
 RUN npm install -g opencode-ai@latest playwright chrome-devtools-mcp@latest
 
-# Install Serena using uv (pinned to a stable version, e.g., from PyPI if available, or git commit)
-RUN uv venv /opt/serena-venv && \
+# Install Serena by cloning the repository locally for reliability over direct Git fetch
+# This approach ensures a stable installation process and avoids potential issues with direct pip install from Git
+RUN git clone --depth 1 https://github.com/oraios/serena /tmp/serena && \
+    cd /tmp/serena && \
+    uv venv /opt/serena-venv && \
     . /opt/serena-venv/bin/activate && \
-    uv pip install git+https://github.com/oraios/serena@75de0fa && \
-    deactivate
+    uv pip install . && \
+    deactivate && \
+    rm -rf /tmp/serena
 
 # Install sqlite-mcp-server-enhanced using pip
 RUN pip install sqlite-mcp-server-enhanced --break-system-packages
