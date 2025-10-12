@@ -137,8 +137,8 @@ mkdir -p "\$HOME/.config/zide/log/opencode"
 mkdir -p "\$HOME/.config/zide/config/opencode/mcps"
 touch "\$HOME/.config/zide/config/opencode/mcps/serena_config.yml"
 
-# Prepare volume mounts
-MOUNTS="-v \"\$PWD:/home/node/project:Z\" -v \"\$HOME/.config/zide/log/opencode:/home/node/.local/share/opencode:Z\" -v \"\$HOME/.config/zide/config/opencode/mcps/serena_config.yml:/home/node/.serena/serena_config.yml:Z\""
+# Prepare volume mounts with persistent Serena config and caches
+MOUNTS="-v \"\$PWD:/home/node/project:Z\" -v \"\$HOME/.config/zide/log/opencode:/home/node/.local/share/opencode:Z\" -v \"\$PWD/.serena:/home/node/.serena:Z\" -v \"\$HOME/.config/zide/config/opencode/mcps/serena_config.yml:/home/node/.serena/serena_config.yml:Z\" -v \"\$HOME/.rustup:/home/node/.rustup:Z\" -v \"\$HOME/.cargo:/home/node/.cargo:Z\" -v \"\$HOME/go:/home/node/go:Z\""
 
 # Handle OPENCODE_CONFIG
 CONFIG_MOUNT=""
