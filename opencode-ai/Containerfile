@@ -80,7 +80,7 @@ RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y && \
 RUN apt-get update && apt-get install -y clangd
 
 # Ruby: ruby-lsp via gem (install ruby)
-RUN apt-get update && apt-get install -y ruby && \
+RUN apt-get update && apt-get install -y ruby ruby-dev && \
     gem install ruby-lsp
 
 # Swift: sourcekit-lsp (requires swift installation, but swift is complex on Debian; assume manual or skip if not possible)
