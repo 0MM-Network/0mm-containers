@@ -61,7 +61,11 @@ RUN npm install -g pyright
 RUN npm install -g typescript typescript-language-server
 
 # Go: gopls via go install
-RUN apt-get update && apt-get install -y golang-go && \
+# Install a newer Go version (1.23) from golang.org instead of outdated Debian package for compatibility with modern gopls
+RUN curl -L https://go.dev/dl/go1.23.2.linux-amd64.tar.gz -o /tmp/go.tar.gz && \
+    tar -C /usr/local -xzf /tmp/go.tar.gz && \
+    rm /tmp/go.tar.gz && \
+    export PATH="/usr/local/go/bin:$PATH" && \
     go install golang.org/x/tools/gopls@latest && \
     mv /root/go/bin/gopls /usr/local/bin/
 
