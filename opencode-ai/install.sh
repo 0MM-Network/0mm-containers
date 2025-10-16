@@ -237,6 +237,37 @@ for key in "\${KNOWN_API_KEYS[@]}"; do
   fi
 done
 
+# Subcommand routing section:
+# This section checks if the command is a subcommand like 'specify' or 'serena'.
+# If so, it runs a temporary (--rm) podman container to execute the tool without starting a persistent server.
+# This provides easy access to project-specific CLI tools (e.g., specify init) with isolation and no shared state.
+# Paths like '.' are adjusted to '/home/node/project' for container-internal execution.
+# Errors are logged using the existing error_exit function.
+# For 'specify', run as one-off command; preserves existing server logic for other cases.
+if [ \${#NEW_ARGS[@]} -gt 0 ]; then
+  SUBCMD="\${NEW_ARGS[0]}"
+  if [ "\$SUBCMD" == "specify" ]; then
+    # Adjust paths in arguments (e.g., replace '.' with '/home/node/project')
+    ADJUSTED_ARGS=("\${NEW_ARGS[@]:1}")
+    for i in "\${!ADJUSTED_ARGS[@]}"; do
+      if [ "\${ADJUSTED_ARGS[\$i]}" == "." ]; then
+        ADJUSTED_ARGS[\$i]="/home/node/project"
+      fi
+    done
+    eval podman run --rm \$TTY_FLAG \
+      --network "\$NETWORK_NAME" \
+      --userns=keep-id --security-opt=label=disable \
+      \$MOUNTS \$CONFIG_MOUNT \$CONFIG_ENV \
+      \$SECRETS -e USER="\$USER" \
+      "\$IMAGE" specify "\${ADJUSTED_ARGS[@]}" || error_exit "Failed to run specify subcommand"
+    exit 0
+  elif [ "\$SUBCMD" == "serena" ]; then
+    # Existing serena handling (as server), but if it's CLI-like, could adjust to --rm if needed
+    # For now, preserve as is
+    :
+  fi
+fi
+
 # Start server if not running
 STARTED_SERVER=false
 if [ "\$ATTACH_MODE" = true ]; then
