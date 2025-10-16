@@ -91,6 +91,10 @@ USER node
 # Pre-create npm cache dir with correct ownership
 RUN mkdir -p /home/node/.npm && chown -R node:node /home/node/.npm
 
+ENV NPM_CONFIG_PREFIX=/home/node/.npm-global
+ENV PATH=$PATH:/home/node/.npm-global/bin
+RUN mkdir -p /home/node/.npm-global && npm config set prefix '/home/node/.npm-global'
+
 # Bash: bash-language-server via npm
 # Cucumber: cucumber-language-server via npm (assuming from npm as README 404, standard install)
 RUN npm install -g bash-language-server @cucumber/language-server task-master-ai @byterover/cipher markdownlint-cli2
