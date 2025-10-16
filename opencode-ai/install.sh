@@ -82,8 +82,8 @@ for cmd in "${OPENCODE_COMMANDS[@]}"; do
     fi
 
     if [ -f "$SCRIPTS_DIR/$cmd" ]; then
-        echo "Warning: $cmd already exists. Delete the shim if you want it regenerated."
-        continue
+        rm "$SCRIPTS_DIR/$cmd"
+        echo "Overwrote existing shim for $cmd"
     fi
 
     cat > "$SCRIPTS_DIR/$cmd" << EOF
@@ -137,8 +137,19 @@ mkdir -p "\$HOME/.config/zide/log/opencode"
 mkdir -p "\$HOME/.config/zide/config/opencode/mcps"
 touch "\$HOME/.config/zide/config/opencode/mcps/serena_config.yml"
 
+# Ensure optional persistent directories exist
+for dir in "\$PWD/.serena" "\$HOME/.rustup" "\$HOME/.cargo" "\$HOME/go"; do
+  if [ ! -d "\$dir" ]; then
+    mkdir -p "\$dir" || echo "Warning: Failed to create \$dir for persistence."
+  fi
+done
+
 # Prepare volume mounts with persistent Serena config and caches
-MOUNTS="-v \"\$PWD:/home/node/project:Z\" -v \"\$HOME/.config/zide/log/opencode:/home/node/.local/share/opencode:Z\" -v \"\$PWD/.serena:/home/node/.serena:Z\" -v \"\$HOME/.config/zide/config/opencode/mcps/serena_config.yml:/home/node/.serena/serena_config.yml:Z\" -v \"\$HOME/.rustup:/home/node/.rustup:Z\" -v \"\$HOME/.cargo:/home/node/.cargo:Z\" -v \"\$HOME/go:/home/node/go:Z\""
+MOUNTS="-v \"\$PWD:/home/node/project:Z\" -v \"\$HOME/.config/zide/log/opencode:/home/node/.local/share/opencode:Z\" -v \"\$HOME/.config/zide/config/opencode/mcps/serena_config.yml:/home/node/.serena/serena_config.yml:Z\""
+[ -d "\$PWD/.serena" ] && MOUNTS+=" -v \"\$PWD/.serena:/home/node/.serena:Z\""
+[ -d "\$HOME/.rustup" ] && MOUNTS+=" -v \"\$HOME/.rustup:/home/node/.rustup:Z\""
+[ -d "\$HOME/.cargo" ] && MOUNTS+=" -v \"\$HOME/.cargo:/home/node/.cargo:Z\""
+[ -d "\$HOME/go" ] && MOUNTS+=" -v \"\$HOME/go:/home/node/go:Z\""
 
 # Handle OPENCODE_CONFIG
 CONFIG_MOUNT=""
