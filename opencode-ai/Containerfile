@@ -105,7 +105,7 @@ RUN npm install -g bash-language-server
 RUN npm install -g @cucumber/language-server
 
 # OpenTofu/Terraform: terraform-ls (download binary, pinned version)
-RUN curl -L https://github.com/hashicorp/terraform-ls/releases/download/v0.34.0/terraform-ls_0.34.0_linux_amd64.zip -o /tmp/terraform-ls.zip && \
+RUN curl -L https://releases.hashicorp.com/terraform-ls/0.38.2/terraform-ls_0.38.2_linux_amd64.zip -o /tmp/terraform-ls.zip && \
     unzip /tmp/terraform-ls.zip -d /usr/local/bin/ && \
     rm /tmp/terraform-ls.zip
 
@@ -122,6 +122,18 @@ RUN mkdir -p /home/node/pw-browsers && \
     playwright install chromium && \
     chown -R node:node /home/node
 
+RUN npm install -g task-master-ai @byterover/cipher
+
+RUN export GOPATH=/home/node/go && \
+    export PATH="$GOPATH/bin:$PATH" && \
+    curl -fsSL https://raw.githubusercontent.com/steveyegge/beads/main/install.sh | bash && \
+    [ -f "$(go env GOPATH)/bin/bd" ] || { echo "bd not found" && exit 1; } && \
+    mv "$(go env GOPATH)/bin/bd" /usr/local/bin/
+
+RUN npm install -g markdownlint-cli2
+
+RUN uv tool install specify-cli --from git+https://github.com/github/spec-kit.git
+
 # Environment variables for LSP caches (to be mounted persistently)
 ENV RUSTUP_HOME=/home/node/.rustup
 ENV CARGO_HOME=/home/node/.cargo
@@ -132,10 +144,9 @@ RUN gopls version && \
     rust-analyzer --version && \
     clangd --version && \
     ruby-lsp --version && \
-    kotlin-language-server --version && \
-    jdtls --version && \
     bash-language-server --version && \
-    terraform-ls --version
+    terraform-ls --version && \
+    chown -R node:node /home/node/.npm
 
 ENV OPENCODE_DOCKER_IMAGE=localhost/opencode
 
