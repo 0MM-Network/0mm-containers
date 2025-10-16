@@ -266,11 +266,12 @@ if [ \${#NEW_ARGS[@]} -gt 0 ]; then
       fi
     done
     eval podman run --rm \$TTY_FLAG \
+      --entrypoint specify \
       --network "\$NETWORK_NAME" \
       --userns=keep-id --security-opt=label=disable \
       \$MOUNTS \$CONFIG_MOUNT \$CONFIG_ENV \
       \$SECRETS -e USER="\$USER" \
-      "\$IMAGE" specify "\${ADJUSTED_ARGS[@]}" || error_exit "Failed to run specify subcommand"
+      "\$IMAGE" "\${ADJUSTED_ARGS[@]}" || error_exit "Failed to run specify subcommand"
     exit 0
   elif [ "\$SUBCMD" == "serena" ]; then
     # Existing serena handling (as server), but if it's CLI-like, could adjust to --rm if needed
