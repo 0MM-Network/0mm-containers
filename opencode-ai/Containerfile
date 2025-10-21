@@ -115,7 +115,7 @@ ENV PLAYWRIGHT_SKIP_BROWSER_GC=1
 # Create Playwright browsers directory and install chromium as root
 RUN mkdir -p /home/node/pw-browsers && \
     playwright install chromium && \
-    chown -R node:node /home/node
+    chown -R node:node /home/node || true
 
 RUN export GOPATH=/home/node/go && \
     export PATH="$GOPATH/bin:$PATH" && \
