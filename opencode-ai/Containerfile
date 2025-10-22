@@ -91,6 +91,12 @@ RUN curl -L https://releases.hashicorp.com/terraform-ls/0.38.2/terraform-ls_0.38
     unzip /tmp/terraform-ls.zip -d /usr/local/bin/ && \
     rm /tmp/terraform-ls.zip
 
+RUN export GOPATH=/root/go && \
+    export PATH="$GOPATH/bin:$PATH" && \
+    curl -fsSL https://raw.githubusercontent.com/steveyegge/beads/main/scripts/install.sh | bash && \
+    [ -f "$(go env GOPATH)/bin/bd" ] || { echo "bd not found" && exit 1; } && \
+    mv "$(go env GOPATH)/bin/bd" /usr/local/bin/
+
 USER node
 
 # Pre-create npm cache dir with correct ownership
@@ -116,12 +122,6 @@ ENV PLAYWRIGHT_SKIP_BROWSER_GC=1
 RUN mkdir -p /home/node/pw-browsers && \
     playwright install chromium && \
     chown -R node:node /home/node || true
-
-RUN export GOPATH=/home/node/go && \
-    export PATH="$GOPATH/bin:$PATH" && \
-    curl -fsSL https://raw.githubusercontent.com/steveyegge/beads/main/scripts/install.sh | bash && \
-    [ -f "$(go env GOPATH)/bin/bd" ] || { echo "bd not found" && exit 1; } && \
-    mv "$(go env GOPATH)/bin/bd" /usr/local/bin/
 
 RUN uv tool install specify-cli --from git+https://github.com/github/spec-kit.git
 ENV PATH="$HOME/.uv/tools/specify-cli/bin:$PATH"
