@@ -119,7 +119,7 @@ RUN mkdir -p /home/node/pw-browsers && \
 
 RUN export GOPATH=/home/node/go && \
     export PATH="$GOPATH/bin:$PATH" && \
-    curl -fsSL https://raw.githubusercontent.com/steveyegge/beads/main/install.sh | bash && \
+    curl -fsSL https://raw.githubusercontent.com/steveyegge/beads/main/scripts/install.sh | bash && \
     [ -f "$(go env GOPATH)/bin/bd" ] || { echo "bd not found" && exit 1; } && \
     mv "$(go env GOPATH)/bin/bd" /usr/local/bin/
 
