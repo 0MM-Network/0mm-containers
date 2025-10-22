@@ -97,6 +97,8 @@ RUN export GOPATH=/root/go && \
     [ -f "$(go env GOPATH)/bin/bd" ] || { echo "bd not found" && exit 1; } && \
     mv "$(go env GOPATH)/bin/bd" /usr/local/bin/
 
+RUN mkdir -p /home/node/.local/share/uv/tools && chown -R node:node /home/node/.local/share/uv
+
 USER node
 
 # Pre-create npm cache dir with correct ownership
