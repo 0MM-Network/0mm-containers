@@ -63,6 +63,7 @@ fi
 
 # Create required directories if they don't exist
 mkdir -p "\$PWD/.python_cache"
+mkdir -p "\$PWD/.python_venv"
 
 # Check if stdin is a TTY and set flags accordingly
 TTY_FLAG=""
@@ -139,6 +140,10 @@ fi
 if [ ! -f "\$1" ]; then
     error_exit "Python script '\$1' not found."
 fi
+
+# Create required directories if they don't exist
+mkdir -p "\$SCRIPT_DIR/.python_cache"
+mkdir -p "\$SCRIPT_DIR/.python_venv"
 
 # Get absolute path for script
 SCRIPT_PATH="\$(realpath "\$1")"
