@@ -87,8 +87,14 @@ if [ -f "\$PWD/requirements.txt" ]; then
     MOUNTS="\$MOUNTS -v \"\$PWD/requirements.txt:/workspace/requirements.txt:ro,Z\""
 fi
 
+# Prepare env file flag
+ENV_FILE_FLAG=""
+if [ -f "\$PWD/.env" ]; then
+  ENV_FILE_FLAG="--env-file=\"\$PWD/.env\""
+fi
+
 # Execute $cmd command in container
-eval podman run --rm \$TTY_FLAG \$PORT_FLAG \\
+eval podman run --rm \$ENV_FILE_FLAG \$TTY_FLAG \$PORT_FLAG \\
     --uidmap +\${CUID}:@\${HUID}:1 \\
     --gidmap +\${CGID}:@\${HGID}:1 \\
     \$MOUNTS \\
@@ -150,6 +156,12 @@ SCRIPT_PATH="\$(realpath "\$1")"
 SCRIPT_DIR="\$(dirname "\$SCRIPT_PATH")"
 SCRIPT_NAME="\$(basename "\$SCRIPT_PATH")"
 
+# Prepare env file flag
+ENV_FILE_FLAG=""
+if [ -f "\$SCRIPT_DIR/.env" ]; then
+  ENV_FILE_FLAG="--env-file=\"\$SCRIPT_DIR/.env\""
+fi
+
 # Check if stdin is a TTY and set flags accordingly
 TTY_FLAG=""
 if [ -t 0 ] && [ -t 1 ]; then
@@ -172,7 +184,7 @@ fi
 shift
 
 # Execute python command in container
-eval podman run --rm \$TTY_FLAG \\
+eval podman run --rm \$ENV_FILE_FLAG \$TTY_FLAG \\
     --uidmap +\${CUID}:@\${HUID}:1 \\
     --gidmap +\${CGID}:@\${HGID}:1 \\
     \$MOUNTS \\
