@@ -127,7 +127,10 @@ RUN mkdir -p /home/node/pw-browsers && \
 
 RUN uv tool install specify-cli --from git+https://github.com/github/spec-kit.git
 ENV PATH="$HOME/.uv/tools/specify-cli/bin:$PATH"
+
+USER root
 RUN ln -s $HOME/.uv/tools/specify-cli/bin/specify /usr/local/bin/specify
+USER node
 
 # Environment variables for LSP caches (to be mounted persistently)
 ENV RUSTUP_HOME=/home/node/.rustup
