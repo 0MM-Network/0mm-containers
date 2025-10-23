@@ -41,6 +41,8 @@ RUN python3 -m venv /home/python/.venv && \
     poetry \
     scipy
 
+RUN cp -r /home/python/.venv /base_venv && chown -R python:python /base_venv
+
 # Ensure venv is owned by python user
 RUN chown -R python:python /home/python
 
@@ -78,6 +80,9 @@ fi' > /usr/local/bin/run-script.sh && \
 # Create a proper entrypoint script
 RUN echo '#!/bin/bash\n\
 # Source the virtual environment\n\
+if [ -z "$(ls -A /home/python/.venv)" ]; then\n\
+  cp -r /base_venv/. /home/python/.venv/\n\
+fi\n\
 source /home/python/.venv/bin/activate\n\
 \n\
 # If no arguments given, show help\n\

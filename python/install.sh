@@ -79,7 +79,7 @@ if [[ "$cmd" == "jupyter" && ("\$*" == *"notebook"* || "\$*" == *"lab"*) ]]; the
 fi
 
 # Prepare volume mounts
-MOUNTS="-v \"\$PWD:/scripts:Z\" -v \"\$PWD/.python_cache:/home/python/.cache:Z\""
+MOUNTS="-v \"\$PWD:/scripts:Z\" -v \"\$PWD/.python_cache:/home/python/.cache:Z\" -v \"\$PWD/.python_venv:/home/python/.venv:Z\""
 
 # Add requirements.txt if it exists
 if [ -f "\$PWD/requirements.txt" ]; then
@@ -154,7 +154,7 @@ else
 fi
 
 # Prepare volume mounts
-MOUNTS="-v \"\$SCRIPT_DIR:/scripts:Z\" -v \"\$PWD/.python_cache:/home/python/.cache:Z\""
+MOUNTS="-v \"\$SCRIPT_DIR:/scripts:Z\" -v \"\$SCRIPT_DIR/.python_cache:/home/python/.cache:Z\" -v \"\$SCRIPT_DIR/.python_venv:/home/python/.venv:Z\""
 
 # Add requirements.txt if it exists
 if [ -f "\$SCRIPT_DIR/requirements.txt" ]; then
