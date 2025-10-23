@@ -131,6 +131,8 @@ ENV PATH="$HOME/.uv/tools/specify-cli/bin:$PATH"
 USER root
 RUN ln -s $HOME/.uv/tools/specify-cli/bin/specify /usr/local/bin/specify
 USER node
+ENV PATH="/usr/local/bin:$PATH"
+RUN test -L /usr/local/bin/specify && echo "Symlink created successfully" || exit 1
 
 # Environment variables for LSP caches (to be mounted persistently)
 ENV RUSTUP_HOME=/home/node/.rustup
