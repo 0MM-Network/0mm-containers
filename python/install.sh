@@ -64,6 +64,7 @@ fi
 # Create required directories if they don't exist
 mkdir -p "\$PWD/.python_cache"
 mkdir -p "\$PWD/.python_venv"
+mkdir -p "\$PWD/.python_local"
 
 # Check if stdin is a TTY and set flags accordingly
 TTY_FLAG=""
@@ -84,6 +85,7 @@ declare -a MOUNTS
 MOUNTS+=("-v" "\$PWD:/scripts:Z")
 MOUNTS+=("-v" "\$PWD/.python_cache:/home/python/.cache:Z")
 MOUNTS+=("-v" "\$PWD/.python_venv:/home/python/.venv:Z")
+MOUNTS+=("-v" "\$PWD/.python_local:/home/python/.local:Z")
 
 # Add requirements.txt if it exists
 if [ -f "\$PWD/requirements.txt" ]; then
@@ -163,6 +165,7 @@ fi
 # Create required directories if they don't exist
 mkdir -p "\$SCRIPT_DIR/.python_cache"
 mkdir -p "\$SCRIPT_DIR/.python_venv"
+mkdir -p "\$SCRIPT_DIR/.python_local"
 
 # Get absolute path for script
 SCRIPT_PATH="\$(realpath "\$1")"
@@ -188,6 +191,7 @@ declare -a MOUNTS
 MOUNTS+=("-v" "\$SCRIPT_DIR:/scripts:Z")
 MOUNTS+=("-v" "\$SCRIPT_DIR/.python_cache:/home/python/.cache:Z")
 MOUNTS+=("-v" "\$SCRIPT_DIR/.python_venv:/home/python/.venv:Z")
+MOUNTS+=("-v" "\$SCRIPT_DIR/.python_local:/home/python/.local:Z")
 
 # Add requirements.txt if it exists
 if [ -f "\$SCRIPT_DIR/requirements.txt" ]; then
