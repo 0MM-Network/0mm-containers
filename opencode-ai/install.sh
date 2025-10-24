@@ -265,7 +265,7 @@ if [ \${#NEW_ARGS[@]} -gt 0 ]; then
         ADJUSTED_ARGS[\$i]="/home/node/project"
       fi
     done
-    if [[ "\$SUBCMD" == "specify" ]]; then PATH_EXTENSION="-e PATH=\"/home/node/.uv/tools/specify-cli/bin:\$PATH\""; else PATH_EXTENSION=""; fi
+    if [[ "\$SUBCMD" == "specify" ]]; then PATH_EXTENSION="-e PATH=\"/home/node/.uv/tools/specify-cli/bin:\\\$PATH\""; else PATH_EXTENSION=""; fi
     eval podman run --rm \$TTY_FLAG \
       --entrypoint specify \
       --network "\$NETWORK_NAME" \
