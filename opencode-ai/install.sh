@@ -265,12 +265,13 @@ if [ \${#NEW_ARGS[@]} -gt 0 ]; then
         ADJUSTED_ARGS[\$i]="/home/node/project"
       fi
     done
+    if [[ "\$SUBCMD" == "specify" ]]; then PATH_EXTENSION="-e PATH=\"/home/node/.uv/tools/specify-cli/bin:\$PATH\""; else PATH_EXTENSION=""; fi
     eval podman run --rm \$TTY_FLAG \
       --entrypoint specify \
       --network "\$NETWORK_NAME" \
       --userns=keep-id --security-opt=label=disable \
       \$MOUNTS \$CONFIG_MOUNT \$CONFIG_ENV \
-      \$SECRETS -e USER="\$USER" \
+      \$SECRETS \$PATH_EXTENSION -e USER="\$USER" \
       "\$IMAGE" "\${ADJUSTED_ARGS[@]}" || error_exit "Failed to run specify subcommand"
     exit 0
   elif [ "\$SUBCMD" == "serena" ]; then
