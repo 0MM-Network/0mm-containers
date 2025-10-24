@@ -94,7 +94,7 @@ if [ -f "\$PWD/.env" ]; then
 fi
 
 # Execute $cmd command in container
-eval podman run --rm \$ENV_FILE_FLAG \$TTY_FLAG \$PORT_FLAG \\
+podman run --rm \$ENV_FILE_FLAG \$TTY_FLAG \$PORT_FLAG \\
     --uidmap +\${CUID}:@\${HUID}:1 \\
     --gidmap +\${CGID}:@\${HGID}:1 \\
     \$MOUNTS \\
@@ -184,7 +184,7 @@ fi
 shift
 
 # Execute python command in container
-eval podman run --rm \$ENV_FILE_FLAG \$TTY_FLAG \\
+podman run --rm \$ENV_FILE_FLAG \$TTY_FLAG \\
     --uidmap +\${CUID}:@\${HUID}:1 \\
     --gidmap +\${CGID}:@\${HGID}:1 \\
     \$MOUNTS \\
