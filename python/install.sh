@@ -93,11 +93,21 @@ fi
 # Prepare env file flag
 ENV_FILE_FLAG=""
 if [ -f "\$PWD/.env" ]; then
-  ENV_FILE_FLAG="--env-file=\"\$PWD/.env\""
+  ENV_FILE_FLAG="--env-file=\$PWD/.env"
+fi
+
+# Prepare flags array
+declare -a FLAGS
+if [ -n "\$ENV_FILE_FLAG" ]; then
+  FLAGS+=("\$ENV_FILE_FLAG")
+fi
+FLAGS+=("\$TTY_FLAG")
+if [ -n "\$PORT_FLAG" ]; then
+  FLAGS+=("\$PORT_FLAG")
 fi
 
 # Execute $cmd command in container
-podman run --rm \$ENV_FILE_FLAG \$TTY_FLAG \$PORT_FLAG \\
+podman run --rm "\${FLAGS[@]}" \\
     --uidmap +\${CUID}:@\${HUID}:1 \\
     --gidmap +\${CGID}:@\${HGID}:1 \\
     "\${MOUNTS[@]}" \\
@@ -162,7 +172,7 @@ SCRIPT_NAME="\$(basename "\$SCRIPT_PATH")"
 # Prepare env file flag
 ENV_FILE_FLAG=""
 if [ -f "\$SCRIPT_DIR/.env" ]; then
-  ENV_FILE_FLAG="--env-file=\"\$SCRIPT_DIR/.env\""
+  ENV_FILE_FLAG="--env-file=\$SCRIPT_DIR/.env"
 fi
 
 # Check if stdin is a TTY and set flags accordingly
@@ -189,8 +199,15 @@ fi
 # Shift the script name out of the arguments
 shift
 
+# Prepare flags array
+declare -a FLAGS
+if [ -n "\$ENV_FILE_FLAG" ]; then
+  FLAGS+=("\$ENV_FILE_FLAG")
+fi
+FLAGS+=("\$TTY_FLAG")
+
 # Execute python command in container
-podman run --rm \$ENV_FILE_FLAG \$TTY_FLAG \\
+podman run --rm "\${FLAGS[@]}" \\
     --uidmap +\${CUID}:@\${HUID}:1 \\
     --gidmap +\${CGID}:@\${HGID}:1 \\
     "\${MOUNTS[@]}" \\
