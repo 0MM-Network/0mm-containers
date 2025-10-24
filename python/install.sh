@@ -80,11 +80,14 @@ if [[ "$cmd" == "jupyter" && ("\$*" == *"notebook"* || "\$*" == *"lab"*) ]]; the
 fi
 
 # Prepare volume mounts
-MOUNTS="-v \"\$PWD:/scripts:Z\" -v \"\$PWD/.python_cache:/home/python/.cache:Z\" -v \"\$PWD/.python_venv:/home/python/.venv:Z\""
+declare -a MOUNTS
+MOUNTS+=("-v" "\$PWD:/scripts:Z")
+MOUNTS+=("-v" "\$PWD/.python_cache:/home/python/.cache:Z")
+MOUNTS+=("-v" "\$PWD/.python_venv:/home/python/.venv:Z")
 
 # Add requirements.txt if it exists
 if [ -f "\$PWD/requirements.txt" ]; then
-    MOUNTS="\$MOUNTS -v \"\$PWD/requirements.txt:/workspace/requirements.txt:ro,Z\""
+    MOUNTS+=("-v" "\$PWD/requirements.txt:/workspace/requirements.txt:ro,Z")
 fi
 
 # Prepare env file flag
@@ -97,7 +100,7 @@ fi
 podman run --rm \$ENV_FILE_FLAG \$TTY_FLAG \$PORT_FLAG \\
     --uidmap +\${CUID}:@\${HUID}:1 \\
     --gidmap +\${CGID}:@\${HGID}:1 \\
-    \$MOUNTS \\
+    "\${MOUNTS[@]}" \\
     -e HOME=/home/python \\
     -e USER="\$USER" \\
     -e PYTHONPATH="/scripts:\$PYTHONPATH" \\
@@ -171,13 +174,16 @@ else
 fi
 
 # Prepare volume mounts
-MOUNTS="-v \"\$SCRIPT_DIR:/scripts:Z\" -v \"\$SCRIPT_DIR/.python_cache:/home/python/.cache:Z\" -v \"\$SCRIPT_DIR/.python_venv:/home/python/.venv:Z\""
+declare -a MOUNTS
+MOUNTS+=("-v" "\$SCRIPT_DIR:/scripts:Z")
+MOUNTS+=("-v" "\$SCRIPT_DIR/.python_cache:/home/python/.cache:Z")
+MOUNTS+=("-v" "\$SCRIPT_DIR/.python_venv:/home/python/.venv:Z")
 
 # Add requirements.txt if it exists
 if [ -f "\$SCRIPT_DIR/requirements.txt" ]; then
-    MOUNTS="\$MOUNTS -v \"\$SCRIPT_DIR/requirements.txt:/workspace/requirements.txt:ro,Z\""
+    MOUNTS+=("-v" "\$SCRIPT_DIR/requirements.txt:/workspace/requirements.txt:ro,Z")
 elif [ -f "\$PWD/requirements.txt" ]; then
-    MOUNTS="\$MOUNTS -v \"\$PWD/requirements.txt:/workspace/requirements.txt:ro,Z\""
+    MOUNTS+=("-v" "\$PWD/requirements.txt:/workspace/requirements.txt:ro,Z")
 fi
 
 # Shift the script name out of the arguments
@@ -187,7 +193,7 @@ shift
 podman run --rm \$ENV_FILE_FLAG \$TTY_FLAG \\
     --uidmap +\${CUID}:@\${HUID}:1 \\
     --gidmap +\${CGID}:@\${HGID}:1 \\
-    \$MOUNTS \\
+    "\${MOUNTS[@]}" \\
     -e HOME=/home/python \\
     -e USER="\$USER" \\
     -e PYTHONPATH="/scripts:\$PYTHONPATH" \\
