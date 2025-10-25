@@ -257,23 +257,71 @@ done
 # For 'specify', run as one-off command; preserves existing server logic for other cases.
 if [ \${#NEW_ARGS[@]} -gt 0 ]; then
   SUBCMD="\${NEW_ARGS[0]}"
-  if [ "\$SUBCMD" == "specify" ]; then
-    # Adjust paths in arguments (e.g., replace '.' with '/home/node/project')
-    ADJUSTED_ARGS=("\${NEW_ARGS[@]:1}")
-    for i in "\${!ADJUSTED_ARGS[@]}"; do
-      if [ "\${ADJUSTED_ARGS[\$i]}" == "." ]; then
-        ADJUSTED_ARGS[\$i]="/home/node/project"
+  if [ "\$SUBCMD" == "init" ]; then
+    if [ -d ".specify" ]; then
+      echo "Project already initialized with .specify directory."
+    else
+      if ! command -v curl >/dev/null || ! command -v unzip >/dev/null; then
+        echo "Warning: curl or unzip not available. Skipping initialization."
+      else
+        ZIP_URL="https://github.com/github/spec-kit/releases/download/v0.0.79/spec-kit-template-opencode-sh-v0.0.79.zip"
+        ZIP_FILE="spec-kit-template.zip"
+        if curl -L "\$ZIP_URL" -o "\$ZIP_FILE"; then
+          if unzip "\$ZIP_FILE"; then
+            rm "\$ZIP_FILE"
+            echo "Project initialized successfully."
+          else
+            echo "Warning: Failed to unzip the template."
+            rm "\$ZIP_FILE"
+          fi
+        else
+          echo "Warning: Failed to download the template zip."
+        fi
       fi
-    done
-    if [[ "\$SUBCMD" == "specify" ]]; then PATH_EXTENSION='-e PATH='\''/home/node/.uv/tools/specify-cli/bin:/usr/local/bin:/usr/local/sbin:/usr/bin:/usr/sbin:/bin:/sbin'\'''; else PATH_EXTENSION=""; fi
-    eval podman run --rm \$TTY_FLAG \
-      --entrypoint specify \
-      --network "\$NETWORK_NAME" \
-      --userns=keep-id --security-opt=label=disable \
-      \$MOUNTS \$CONFIG_MOUNT \$CONFIG_ENV \
-      \$SECRETS \$PATH_EXTENSION -e USER="\$USER" \
-      "\$IMAGE" "\${ADJUSTED_ARGS[@]}" || error_exit "Failed to run specify subcommand"
+    fi
     exit 0
+  elif [ "\$SUBCMD" == "specify" ]; then
+    if [ \${#NEW_ARGS[@]} -ge 3 ] && [ "\${NEW_ARGS[1]}" == "init" ] && [ "\${NEW_ARGS[2]}" == "--here" ]; then
+      if [ -d ".specify" ]; then
+        echo "Project already initialized with .specify directory."
+      else
+        if ! command -v curl >/dev/null || ! command -v unzip >/dev/null; then
+          echo "Warning: curl or unzip not available. Skipping initialization."
+        else
+          ZIP_URL="https://github.com/github/spec-kit/releases/download/v0.0.79/spec-kit-template-opencode-sh-v0.0.79.zip"
+          ZIP_FILE="spec-kit-template.zip"
+          if curl -L "\$ZIP_URL" -o "\$ZIP_FILE"; then
+            if unzip "\$ZIP_FILE"; then
+              rm "\$ZIP_FILE"
+              echo "Project initialized successfully."
+            else
+              echo "Warning: Failed to unzip the template."
+              rm "\$ZIP_FILE"
+            fi
+          else
+            echo "Warning: Failed to download the template zip."
+          fi
+        fi
+      fi
+      exit 0
+    else
+      # Adjust paths in arguments (e.g., replace '.' with '/home/node/project')
+      ADJUSTED_ARGS=("\${NEW_ARGS[@]:1}")
+      for i in "\${!ADJUSTED_ARGS[@]}"; do
+        if [ "\${ADJUSTED_ARGS[\$i]}" == "." ]; then
+          ADJUSTED_ARGS[\$i]="/home/node/project"
+        fi
+      done
+      if [[ "\$SUBCMD" == "specify" ]]; then PATH_EXTENSION='-e PATH='\''/home/node/.uv/tools/specify-cli/bin:/usr/local/bin:/usr/local/sbin:/usr/bin:/usr/sbin:/bin:/sbin'\'''; else PATH_EXTENSION=""; fi
+      eval podman run --rm \$TTY_FLAG \
+        --entrypoint specify \
+        --network "\$NETWORK_NAME" \
+        --userns=keep-id --security-opt=label=disable \
+        \$MOUNTS \$CONFIG_MOUNT \$CONFIG_ENV \
+        \$SECRETS \$PATH_EXTENSION -e USER="\$USER" \
+        "\$IMAGE" "\${ADJUSTED_ARGS[@]}" || error_exit "Failed to run specify subcommand"
+      exit 0
+    fi
   elif [ "\$SUBCMD" == "serena" ]; then
     # Existing serena handling (as server), but if it's CLI-like, could adjust to --rm if needed
     # For now, preserve as is
