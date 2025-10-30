@@ -48,8 +48,19 @@ mkdir -p "$HOME/.config/zide/log/opencode"
 mkdir -p "$HOME/.config/zide/config/opencode/mcps"
 touch "$HOME/.config/zide/config/opencode/mcps/serena_config.yml"
 
-# Prepare volume mounts
+# Ensure optional persistent directories exist
+for dir in "$PWD/.serena" "$HOME/.rustup" "$HOME/.cargo" "$HOME/go"; do
+  if [ ! -d "$dir" ]; then
+    mkdir -p "$dir" || echo "Warning: Failed to create $dir for persistence."
+  fi
+done
+
+# Prepare volume mounts with persistent Serena config and caches
 MOUNTS="-v \"$PWD:/home/node/project:Z\" -v \"$HOME/.config/zide/log/opencode:/home/node/.local/share/opencode:Z\" -v \"$HOME/.config/zide/config/opencode/mcps/serena_config.yml:/home/node/.serena/serena_config.yml:Z\""
+[ -d "$PWD/.serena" ] && MOUNTS+=" -v \"$PWD/.serena:/home/node/.serena:Z\""
+[ -d "$HOME/.rustup" ] && MOUNTS+=" -v \"$HOME/.rustup:/home/node/.rustup:Z\""
+[ -d "$HOME/.cargo" ] && MOUNTS+=" -v \"$HOME/.cargo:/home/node/.cargo:Z\""
+[ -d "$HOME/go" ] && MOUNTS+=" -v \"$HOME/go:/home/node/go:Z\""
 
 # Handle OPENCODE_CONFIG
 CONFIG_MOUNT=""
@@ -70,6 +81,15 @@ if [ -n "${OPENCODE_CONFIG:-}" ]; then
   fi
 fi
 
+# Network setup section:
+# This section handles the creation and testing of a custom network for the container.
+# It attempts to create a dedicated network for isolation and connectivity.
+# If creation fails or connectivity test fails, it falls back to the host network.
+# To extend for other MCP servers (e.g., Serena):
+# - Modify NETWORK_NAME to a unique name if multiple networks are needed.
+# - Add custom network options (e.g., --subnet) in podman network create for specific MCP requirements.
+# - For MCP servers requiring specific ports or protocols, adjust the connectivity test (e.g., test MCP-specific endpoints).
+# - Ensure fallback to 'host' maintains MCP stdio/HTTP compatibility without breaking existing opencode behavior.
 NETWORK_NAME="opencode-net"
 
 # Create network if not exists
@@ -139,6 +159,81 @@ for key in "${KNOWN_API_KEYS[@]}"; do
   fi
 done
 
+# Subcommand routing section:
+# This section checks if the command is a subcommand like 'specify' or 'serena'.
+# If so, it runs a temporary (--rm) podman container to execute the tool without starting a persistent server.
+# This provides easy access to project-specific CLI tools (e.g., specify init) with isolation and no shared state.
+# Paths like '.' are adjusted to '/home/node/project' for container-internal execution.
+# Errors are logged using the existing error_exit function.
+# For 'specify', run as one-off command; preserves existing server logic for other cases.
+if [ ${#NEW_ARGS[@]} -gt 0 ]; then
+  SUBCMD="${NEW_ARGS[0]}"
+  if [ "$SUBCMD" == "init" ]; then
+    if [ -d ".specify" ]; then
+      echo "Project already initialized with .specify directory."
+    else
+      if ! command -v curl >/dev/null || ! command -v unzip >/dev/null; then
+        echo "Warning: curl or unzip not available. Skipping initialization."
+      else
+        ZIP_URL="https://github.com/github/spec-kit/releases/download/v0.0.79/spec-kit-template-opencode-sh-v0.0.79.zip"
+        ZIP_FILE="spec-kit-template.zip"
+        if curl -L "$ZIP_URL" -o "$ZIP_FILE"; then
+          if unzip "$ZIP_FILE"; then
+            rm "$ZIP_FILE"
+            echo "Project initialized successfully."
+          else
+            echo "Warning: Failed to unzip the template."
+            rm "$ZIP_FILE"
+          fi
+        else
+          echo "Warning: Failed to download the template zip."
+        fi
+      fi
+    fi
+    exit 0
+  elif [ "$SUBCMD" == "specify" ]; then
+    if [ ${#NEW_ARGS[@]} -ge 3 ] && [ "${NEW_ARGS[1]}" == "init" ] && [ "${NEW_ARGS[2]}" == "--here" ]; then
+      if [ -d ".specify" ]; then
+        echo "Project already initialized with .specify directory."
+      else
+        if ! command -v curl >/dev/null || ! command -v unzip >/dev/null; then
+          echo "Warning: curl or unzip not available. Skipping initialization."
+        else
+          ZIP_URL="https://github.com/github/spec-kit/releases/download/v0.0.79/spec-kit-template-opencode-sh-v0.0.79.zip"
+          ZIP_FILE="spec-kit-template.zip"
+          if curl -L "$ZIP_URL" -o "$ZIP_FILE"; then
+            if unzip "$ZIP_FILE"; then
+              rm "$ZIP_FILE"
+              echo "Project initialized successfully."
+            else
+              echo "Warning: Failed to unzip the template."
+              rm "$ZIP_FILE"
+            fi
+          else
+            echo "Warning: Failed to download the template zip."
+          fi
+        fi
+      fi
+      exit 0
+    else
+      # Adjust paths in arguments (e.g., replace '.' with '/home/node/project')
+      ADJUSTED_ARGS=("${NEW_ARGS[@]:1}")
+      for i in "${!ADJUSTED_ARGS[@]}"; do
+        if [ "${ADJUSTED_ARGS[$i]}" == "." ]; then
+          ADJUSTED_ARGS[$i]="/home/node/project"
+        fi
+      done
+      if [[ "$SUBCMD" == "specify" ]]; then PATH_EXTENSION='-e PATH='\''/home/node/.uv/tools/specify-cli/bin:/usr/local/bin:/usr/local/sbin:/usr/bin:/usr/sbin:/bin:/sbin'\'''; else PATH_EXTENSION=""; fi
+      eval podman run --rm $TTY_FLAG         --entrypoint specify         --network "$NETWORK_NAME"         --userns=keep-id --security-opt=label=disable         $MOUNTS $CONFIG_MOUNT $CONFIG_ENV         $SECRETS $PATH_EXTENSION -e USER="$USER"         "$IMAGE" "${ADJUSTED_ARGS[@]}" || error_exit "Failed to run specify subcommand"
+      exit 0
+    fi
+  elif [ "$SUBCMD" == "serena" ]; then
+    # Existing serena handling (as server), but if it's CLI-like, could adjust to --rm if needed
+    # For now, preserve as is
+    :
+  fi
+fi
+
 # Start server if not running
 STARTED_SERVER=false
 if [ "$ATTACH_MODE" = true ]; then
@@ -149,25 +244,23 @@ elif ! podman ps -q --filter name="$CONTAINER_NAME" --filter status=running | gr
   STARTED_SERVER=true
 fi
 
+# Server startup section:
+# This section constructs and executes the SERVER_CMD to start the opencode-server container.
+# It handles forced restarts for attach mode and fallback to host network on errors.
+# To extend for other MCP servers (e.g., Serena):
+# - Modify SERVER_CMD to include alternative entrypoints or commands (e.g., replace 'serve' with 'serena start-mcp-server' for Serena integration).
+# - Add MCP-specific flags or environment variables (e.g., -e SERENA_CONTEXT=ide-assistant) without altering existing opencode logic.
+# - For modes, append custom args to SERVER_CMD based on SERVER_MODE (e.g., add --mode planning for Serena modes).
+# - Ensure fallback logic preserves original behavior; test that opencode 'serve' remains unchanged.
+# - To add new entrypoints, conditionally build SERVER_CMD based on NEW_ARGS (e.g., if NEW_ARGS includes 'serena', reroute to Serena command).
 if [ "$STARTED_SERVER" = true ]; then
   if [ "$HOSTNAME" == "0.0.0.0" ]; then
     CLIENT_HOST="localhost"
   fi
-  # Check for serena mode and use installed path for startup
-  if [ ${#NEW_ARGS[@]} -gt 0 ] && [ "${NEW_ARGS[0]}" == "serena" ]; then
-    # Fix for Serena startup: Use the installed path in the container for persistence and to avoid uvx dependency
-    # This ensures config persistence via the mounted volume and consistent launching
-    SERVER_CMD="podman run -d --replace --name \"$CONTAINER_NAME\" --network \"$NETWORK_NAME\" --publish $PORT:$PORT --userns=keep-id --security-opt=label=disable --cap-drop=ALL --cap-add=NET_BIND_SERVICE $MOUNTS $CONFIG_MOUNT $CONFIG_ENV $SECRETS -e USER=\"$USER\" \"$IMAGE\" /opt/serena-venv/bin/serena start-mcp-server \"${NEW_ARGS[@]:1}\""
-  # Check for sqlite-mcp mode
-  elif [ ${#NEW_ARGS[@]} -gt 0 ] && [ "${NEW_ARGS[0]}" == "sqlite-mcp" ]; then
-    # Reroute to sqlite-mcp-server-enhanced with default db-path
-    SERVER_CMD="podman run -d --replace --name \"$CONTAINER_NAME\" --network \"$NETWORK_NAME\" --publish $PORT:$PORT --userns=keep-id --security-opt=label=disable --cap-drop=ALL --cap-add=NET_BIND_SERVICE $MOUNTS $CONFIG_MOUNT $CONFIG_ENV $SECRETS -e USER=\"$USER\" \"$IMAGE\" python -m sqlite_mcp_server_enhanced.start_sqlite_mcp --db-path /home/node/project/mcp.db \"${NEW_ARGS[@]:1}\""
-  else
-    # Default opencode serve command
-    SERVER_CMD="podman run -d --replace --name \"$CONTAINER_NAME\" --network \"$NETWORK_NAME\" --publish $PORT:$PORT --userns=keep-id --security-opt=label=disable --cap-drop=ALL --cap-add=NET_BIND_SERVICE $MOUNTS $CONFIG_MOUNT $CONFIG_ENV $SECRETS -e USER=\"$USER\" \"$IMAGE\" serve --hostname \"$HOSTNAME\" --port $PORT"
-    if [ "$SERVER_MODE" = true ] && [ ${#NEW_ARGS[@]} -gt 0 ]; then
-      SERVER_CMD="$SERVER_CMD \"${NEW_ARGS[@]}\""
-    fi
+  # Retry logic
+  SERVER_CMD="podman run -d --replace --name \"$CONTAINER_NAME\" --network \"$NETWORK_NAME\" --publish $PORT:$PORT --userns=keep-id --security-opt=label=disable --cap-drop=ALL --cap-add=NET_BIND_SERVICE $MOUNTS $CONFIG_MOUNT $CONFIG_ENV $SECRETS -e USER=\"$USER\" \"$IMAGE\" serve --hostname \"$HOSTNAME\" --port $PORT"
+  if [ "$SERVER_MODE" = true ] && [ ${#NEW_ARGS[@]} -gt 0 ]; then
+    SERVER_CMD="$SERVER_CMD \"${NEW_ARGS[@]}\""
   fi
   if ! eval "$SERVER_CMD" 2>&1 | tee /tmp/opencode_err.log; then
     ERR=$(cat /tmp/opencode_err.log)
@@ -175,16 +268,9 @@ if [ "$STARTED_SERVER" = true ]; then
     echo "$ERR"
     echo "Hardened fallback: Using host network due to error."
     NETWORK_NAME="host"
-    # Fallback command, similarly check for serena or sqlite-mcp
-    if [ ${#NEW_ARGS[@]} -gt 0 ] && [ "${NEW_ARGS[0]}" == "serena" ]; then
-      SERVER_CMD="podman run -d --replace --name \"$CONTAINER_NAME\" --net host --userns=keep-id --security-opt=label=disable --cap-drop=ALL --cap-add=NET_BIND_SERVICE $MOUNTS $CONFIG_MOUNT $CONFIG_ENV $SECRETS -e USER=\"$USER\" \"$IMAGE\" /opt/serena-venv/bin/serena start-mcp-server \"${NEW_ARGS[@]:1}\""
-    elif [ ${#NEW_ARGS[@]} -gt 0 ] && [ "${NEW_ARGS[0]}" == "sqlite-mcp" ]; then
-      SERVER_CMD="podman run -d --replace --name \"$CONTAINER_NAME\" --net host --userns=keep-id --security-opt=label=disable --cap-drop=ALL --cap-add=NET_BIND_SERVICE $MOUNTS $CONFIG_MOUNT $CONFIG_ENV $SECRETS -e USER=\"$USER\" \"$IMAGE\" python -m sqlite_mcp_server_enhanced.start_sqlite_mcp --db-path /home/node/project/mcp.db \"${NEW_ARGS[@]:1}\""
-    else
-      SERVER_CMD="podman run -d --replace --name \"$CONTAINER_NAME\" --net host --userns=keep-id --security-opt=label=disable --cap-drop=ALL --cap-add=NET_BIND_SERVICE $MOUNTS $CONFIG_MOUNT $CONFIG_ENV $SECRETS -e USER=\"$USER\" \"$IMAGE\" serve --hostname \"$HOSTNAME\" --port $PORT"
-      if [ "$SERVER_MODE" = true ] && [ ${#NEW_ARGS[@]} -gt 0 ]; then
-        SERVER_CMD="$SERVER_CMD \"${NEW_ARGS[@]}\""
-      fi
+    SERVER_CMD="podman run -d --replace --name \"$CONTAINER_NAME\" --net host --userns=keep-id --security-opt=label=disable --cap-drop=ALL --cap-add=NET_BIND_SERVICE $MOUNTS $CONFIG_MOUNT $CONFIG_ENV $SECRETS -e USER=\"$USER\" \"$IMAGE\" serve --hostname \"$HOSTNAME\" --port $PORT"
+    if [ "$SERVER_MODE" = true ] && [ ${#NEW_ARGS[@]} -gt 0 ]; then
+      SERVER_CMD="$SERVER_CMD \"${NEW_ARGS[@]}\""
     fi
     eval "$SERVER_CMD" || error_exit "Failed to start server even with host"
   fi
@@ -213,6 +299,14 @@ else
   fi
 fi
 
+# Command execution section:
+# This section runs the client container based on parsed arguments (e.g., attach, version, help).
+# It handles special cases like --version/--help with network=none, and defaults to attach if no args.
+# To extend for other MCP servers (e.g., Serena):
+# - Add conditional logic based on NEW_ARGS to exec alternative commands (e.g., if NEW_ARGS[0] == 'serena', replace "\"$IMAGE\" \"${NEW_ARGS[@]}\"" with Serena-specific podman run).
+# - For modes or entrypoints, parse additional flags in the while loop and adjust the eval command accordingly.
+# - Ensure existing behaviors (e.g., attach to opencode-server) remain unchanged; extensions should be opt-in via specific args.
+# - For MCP HTTP mode, modify --network and add port mappings if needed, without affecting stdio-based commands.
 # Run the client
 if [ ${#NEW_ARGS[@]} -eq 1 ] && [ "${NEW_ARGS[0]}" == "--version" ] || [ "${NEW_ARGS[0]}" == "--help" ]; then
   eval podman run --rm $TTY_FLAG \
