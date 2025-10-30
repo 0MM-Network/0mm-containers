@@ -7,12 +7,6 @@ RUN apt-get update && \
     pip install uv --break-system-packages && \
     rm -rf /var/lib/apt/lists/*
 
-# Set working directory
-WORKDIR /home/node/project
-
-# Create directories with proper permissions
-RUN mkdir -p /home/node/.local/share/opencode
-
 # So git doesn't complain about unusual permissions
 RUN git config --system --add safe.directory /home/node/project
 
@@ -80,8 +74,11 @@ ENV PATH="${PATH}:/home/node/.npm-global/bin"
 
 USER node
 
-# Create user directories
-RUN mkdir -p /home/node/project .local/share/opencode .npm .config .cache .serena pw-browsers .npm-global .local/share/uv/tools .rustup .cargo go .gem
+# Create user directories after USER node to ensure ownership by node, avoiding root-owned parents and chown for rootless builds.
+RUN mkdir -p "$HOME/project" "$HOME/.local/share/opencode" "$HOME/.npm" "$HOME/.config" "$HOME/.cache" "$HOME/.serena" "$HOME/pw-browsers" "$HOME/.npm-global" "$HOME/.local/share/uv/tools" "$HOME/.rustup" "$HOME/.cargo" "$HOME/go" "$HOME/.gem"
+
+# Set working directory
+WORKDIR "$HOME/project"
 
 # Set npm prefix
 RUN npm config set prefix '/home/node/.npm-global'
@@ -159,6 +156,12 @@ RUN npm install -g opencode-ai@latest
 ENV OPENCODE_DOCKER_IMAGE=localhost/opencode-lite
 
 USER node
+
+# Create project directory for consistency
+RUN mkdir -p "$HOME/project"
+
+# Set working directory
+WORKDIR "$HOME/project"
 
 ENTRYPOINT ["/usr/local/bin/opencode"]
 
