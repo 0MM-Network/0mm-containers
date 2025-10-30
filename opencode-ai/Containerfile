@@ -33,28 +33,25 @@ RUN apt-get update && \
 # Consolidate apt installs for Go, Ruby, Clangd
 RUN apt-get update && apt-get install -y golang-go ruby ruby-dev clangd && rm -rf /var/lib/apt/lists/*
 
-# Install npm packages as root
-RUN npm install -g opencode-ai@latest playwright chrome-devtools-mcp@latest
-
 # Install Language Servers (LSPs) for Serena
 # Python: pyright via npm
-RUN npm install -g pyright
+RUN HOME=/root npm install -g pyright
 
 # TypeScript/JavaScript: typescript-language-server via npm
-RUN npm install -g typescript typescript-language-server
+RUN HOME=/root npm install -g typescript typescript-language-server
 
 # Install Serena by cloning the repository locally for reliability over direct Git fetch
 # This approach ensures a stable installation process and avoids potential issues with direct pip install from Git
-RUN git clone --depth 1 https://github.com/oraios/serena /tmp/serena && \
+RUN HOME=/root git clone --depth 1 https://github.com/oraios/serena /tmp/serena && \
     cd /tmp/serena && \
-    uv venv /opt/serena-venv && \
+    HOME=/root uv venv /opt/serena-venv && \
     . /opt/serena-venv/bin/activate && \
-    uv pip install . && \
+    HOME=/root uv pip install . && \
     deactivate && \
     rm -rf /tmp/serena
 
 # Install sqlite-mcp-server-enhanced using pip
-RUN pip install sqlite-mcp-server-enhanced --break-system-packages
+RUN HOME=/root pip install sqlite-mcp-server-enhanced --break-system-packages
 
 # OpenTofu/Terraform: terraform-ls (download binary, pinned version)
 RUN curl -L https://releases.hashicorp.com/terraform-ls/0.38.2/terraform-ls_0.38.2_linux_amd64.zip -o /tmp/terraform-ls.zip && \
@@ -72,6 +69,8 @@ ENV PATH="${PATH}:/home/node/.npm-global/bin"
 
 # Rearranged for rootless Podman compatibility: perform user-specific installs after USER node to avoid chown issues.
 
+# Use HOME=/root for root commands to avoid creating root-owned files in /home/node, enabling safe mkdir as node.
+
 USER node
 
 # Create user directories after USER node to ensure ownership by node, avoiding root-owned parents and chown for rootless builds.
@@ -79,6 +78,9 @@ RUN mkdir -p "$HOME/project" "$HOME/.local/share/opencode" "$HOME/.npm" "$HOME/.
 
 # Set working directory
 WORKDIR "$HOME/project"
+
+# Install npm packages
+RUN npm install -g opencode-ai@latest playwright chrome-devtools-mcp@latest
 
 # Set npm prefix
 RUN npm config set prefix '/home/node/.npm-global'
