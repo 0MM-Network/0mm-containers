@@ -92,6 +92,9 @@ RUN npm install -g bash-language-server @cucumber/language-server task-master-ai
 # Ruby: ruby-lsp via gem (user install)
 RUN gem install --user-install ruby-lsp
 
+# Add Ruby's version-specific gem bin dir to PATH to make all user-installed gem executables (e.g., ruby-lsp and dependencies) accessible, avoiding 'not found' warnings and errors.
+RUN ln -s "$HOME/.gem/ruby/$(ruby -e 'puts RUBY_VERSION')/bin" "$HOME/.gem/bin"
+
 # Go: gopls via go install
 RUN export PATH="${PATH}:${GOPATH}/bin" && \
     go install golang.org/x/tools/gopls@latest && \
