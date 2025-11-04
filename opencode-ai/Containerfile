@@ -147,7 +147,8 @@ ENV OPENCODE_DOCKER_IMAGE=localhost/opencode
 # Allow running Serena via 'serena start-mcp-server' (e.g., for stdio or --transport streamable-http for HTTP mode)
 ENV PATH="/opt/serena-venv/bin:$PATH:/home/node/go/bin:/home/node/.cargo/bin"
 
-ENTRYPOINT ["/usr/local/bin/opencode"]
+# ENTRYPOINT points to user-specific install path after moving npm install to USER node for rootless compatibility.
+ENTRYPOINT ["/home/node/.npm-global/bin/opencode"]
 
 HEALTHCHECK --interval=30s --timeout=3s CMD curl -f http://localhost:4096/doc || exit 1
 
