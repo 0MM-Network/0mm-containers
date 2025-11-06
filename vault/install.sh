@@ -176,53 +176,119 @@ EOF
     echo "Created wrapper script for $SHIM_NAME"
 done
 
-# Test commands (basic version check; note: full cluster requires manual init/join)
-echo "Testing ${#VAULT_SHIMS[@]} Vault shims..."
-echo "============================"
-SUCCESS_COUNT=0
-FAILED_SHIMS=()
+# New: Generate standalone 'vault' shim for auto-unsealed single server
+SHIM_NAME="vault"
+VAULT_SHIMS+=("$SHIM_NAME")
 
-for shim in "${VAULT_SHIMS[@]}"; do
-    echo -n "Testing $shim... "
-    if "$SCRIPTS_DIR/$shim" version &>/dev/null; then
-        echo "✅ Success"
-        SUCCESS_COUNT=$((SUCCESS_COUNT + 1))
-    else
-        echo "❌ Failed"
-        FAILED_SHIMS+=("$shim")
-    fi
-done
+cat > "$SCRIPTS_DIR/$SHIM_NAME" << EOF
+#!/bin/bash
 
-# Print summary
-echo "============================"
-echo "Test summary: $SUCCESS_COUNT/${#VAULT_SHIMS[@]} shims available"
+# Standalone shim for auto-unsealed Vault server using host transit
+# Aligns with tutorials: Uses recovery keys (not unseal keys) for manual unseal scenarios;
+# Token is periodic/orphan for auto-renewal within 24h period.
 
-if [ ${#FAILED_SHIMS[@]} -eq 0 ]; then
-    echo "All Vault shims are available!"
-else
-    echo "Failed shims:"
-    for shim in "${FAILED_SHIMS[@]}"; do
-        echo "- $shim"
-    done
-    echo
-    echo "Troubleshooting tips:"
-    echo "1. Check if the container image was built successfully"
-    echo "2. Try running 'podman run --rm localhost/vault --version'"
-    echo "3. Check permissions on the wrapper scripts"
-    echo "4. Ensure the transit Vault at $TRANSIT_VAULT_ADDR is running and configured"
-fi
+# Define variables
+IMAGE="$VAULT_IMAGE"
+NODE_ID="vault-auto-unseal"
+API_PORT=8100
+CLUSTER_PORT=8101
+DATA_DIR="\$PWD/vault-target-data"
+LOG_DIR="\$PWD/vault-target-logs"
+CONFIG_DIR="\$PWD/vault-target-config"
+CONFIG_FILE="\$CONFIG_DIR/server.hcl"
+TRANSIT_ADDR="http://127.0.0.100:8200"  # Host transit server
 
-echo
-echo "HashiCorp Vault container solution installed successfully."
-echo "You can now use Vault shims directly from this folder."
-echo
-echo "Examples:"
-echo "  ./vault01                # Run Vault node 01 with auto-generated config"
-echo "  ./vault02 --help         # Show help for Vault node 02"
-echo "Notes:"
-echo "- Assumes a pre-existing transit Vault at $TRANSIT_VAULT_ADDR with engine at 'transit/' and key 'autounseal_key'."
-echo "- For a full cluster: Start nodes, init the first, join others via retry_join."
-echo "- Customize retry_join addresses in generated configs for production."
-echo "- Enable TLS and secure configurations for production use."
-echo "- Data dirs are created in \$PWD/vault-data-<NN> for Raft persistence."
-exit 0
+# Error handling
+set -e
+
+# Function for informative messages
+info() { echo "[INFO] \$1"; }
+error_exit() { echo "Error: \$1" >&2; exit 1; }
+
+# Idempotent transit configuration (adapted from autounseal-transit-setup.sh)
+configure_transit() {
+  export VAULT_ADDR="\$TRANSIT_ADDR"
+  export VAULT_TOKEN="\$(secret-tool lookup vault zero policy root | head)"  # Assumes root token stored; adjust for prod
+
+  # Check and enable audit logs
+  vault audit list | grep -q file || { info "Enabling audit logs..."; vault audit enable file file_path=audit.log; }
+
+  # Check and enable transit engine
+  vault secrets list | grep -q transit/ || { info "Enabling transit engine..."; vault secrets enable transit; }
+
+  # Check and create key
+  vault list transit/keys | grep -q autounseal || { info "Creating autounseal key..."; vault write -f transit/keys/autounseal; }
+
+  # Check and create policy
+  vault policy list | grep -q autounseal || {
+    info "Creating autounseal policy...";
+    vault policy write autounseal - <<EOP
+path "transit/encrypt/autounseal" {
+  capabilities = [ "update" ]
+}
+path "transit/decrypt/autounseal" {
+  capabilities = [ "update" ]
+}
+EOP
+  }
+
+  # Generate token (orphan, periodic, wrapped) - Note: In prod, manage tokens securely
+  info "Generating transit token...";
+  TRANSIT_TOKEN=\$(vault token create -orphan -policy="autounseal" -wrap-ttl=120 -period=24h -field=wrapping_token)
+}
+
+if [ \$# -eq 0 ] || [ "\$1" = "server" ]; then
+  # Server mode
+  configure_transit  # Idempotently setup host transit
+
+  # Force recreate config dir
+  rm -rf "\$CONFIG_DIR"
+  mkdir -p "\$DATA_DIR" "\$LOG_DIR" "\$CONFIG_DIR"
+
+  # Generate target config with seal stanza
+  cat > "\$CONFIG_FILE" << CONFIG_EOF
+ui = true
+
+listener "tcp" {
+  address     = "0.0.0.0:8200"
+  cluster_address = "0.0.0.0:8201"
+  tls_disable = true  # Disable for demo; enable TLS in prod
+}
+
+api_addr = "http://127.0.0.100:\$API_PORT"
+cluster_addr = "http://127.0.0.100:\$CLUSTER_PORT"
+
+storage "raft" {
+  path    = "/vault/file"
+  node_id = "\$NODE_ID"
+}
+
+seal "transit" {
+  address            = "\$TRANSIT_ADDR"
+  disable_renewal    = "false"
+  key_name           = "autounseal"
+  mount_path         = "transit/"
+  tls_skip_verify    = "true"  # Disable for demo; verify in prod
+}
+
+disable_mlock = true
+CONFIG_EOF
+
+  # Prepare mounts and ports
+  MOUNTS="-v \"\$DATA_DIR:/vault/file:Z\" -v \"\$CONFIG_DIR:/vault/config:Z\" -v \"\$LOG_DIR:/vault/logs:Z\""
+  PORTS="-p \$API_PORT:8200 -p \$CLUSTER_PORT:8201"
+
+  # Run target container
+  info "Starting target Vault server...";
+  podman run --rm -it \
+    --userns=keep-id:uid=\$(podman run --rm --entrypoint /usr/bin/id "\$IMAGE" -u vault) \
+    --name "vault-target" \
+    \$PORTS \
+    \$MOUNTS \
+    -e VAULT_ADDR="http://127.0.0.100:\$API_PORT" \
+    -e VAULT_API_ADDR="http://127.0.0.100:\$API_PORT" \
+    -e SKIP_SETCAP=0 \
+    "\$IMAGE" server -config=/vault/config/server.hcl "\$@"
+
+  # Post-start: Check init and auto-unseal
+  export VAULT_ADDR="http://127.0.0.100:\$API
