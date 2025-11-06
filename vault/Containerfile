@@ -51,7 +51,7 @@ RUN mkdir -p /vault/logs && \
     mkdir -p /vault/config && \
     chown -R ${NAME}:${NAME} /vault
 
-COPY entrypoint.sh /usr/local/bin/entrypoint.sh
+COPY artifacts/entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN vault -autocomplete-install && \
     chmod +x /usr/local/bin/entrypoint.sh && \
     sed -i "s/openbao/${BIN_NAME}/g" /usr/local/bin/entrypoint.sh
