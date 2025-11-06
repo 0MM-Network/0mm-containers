@@ -291,4 +291,29 @@ CONFIG_EOF
     "\$IMAGE" server -config=/vault/config/server.hcl "\$@"
 
   # Post-start: Check init and auto-unseal
-  export VAULT_ADDR="http://127.0.0.100:\$API
+  export VAULT_ADDR="http://127.0.0.100:\$API_PORT"
+  if ! vault status | grep -q "Initialized.*true"; then
+    info "Initializing target (recovery-shares=15, threshold=7) - WARNING: In prod, use PGP encryption, higher threshold, and secure distribution!";
+    vault operator init -recovery-shares=15 -recovery-threshold=7;
+  fi
+  info "Verifying auto-unseal...";
+  vault status | grep "Sealed.*false" || error_exit "Auto-unseal failed";
+else
+  # CLI mode: Proxy to target
+  podman run --rm -i \
+    --userns=keep-id:uid=\$(podman run --rm --entrypoint /usr/bin/id "\$IMAGE" -u vault) \
+    -e SKIP_SETCAP=1 \
+    "\$IMAGE" vault "\$@"
+fi
+EOF
+chmod +x "$SCRIPTS_DIR/$SHIM_NAME"
+echo "Created standalone shim for $SHIM_NAME"
+
+# Test commands...
+# Extend testing for new shim
+echo "Testing standalone vault shim..."
+if "$SCRIPTS_DIR/vault" version &>/dev/null; then
+  "$SCRIPTS_DIR/vault" version && echo "✅ Version check passed" || echo "❌ Version failed"
+  "$SCRIPTS_DIR/vault" status && echo "✅ Status check passed (unsealed)" || echo "❌ Status failed"
+  # Simulate restart: Assume manual kill/re-run for demo; add automated test if needed
+fi
