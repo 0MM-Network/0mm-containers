@@ -38,144 +38,6 @@ podman build --target default \
     --build-arg PRODUCT_VERSION="$PRODUCT_VERSION" \
     -t "$VAULT_IMAGE" -f "./Containerfile" "$BUILD_CONTEXT" || error_exit "Failed to build Vault container image"
 
-# Create wrapper scripts (shims) for vault<NN> where NN=1 to CLUSTER_SIZE
-echo "Creating wrapper scripts..."
-VAULT_SHIMS=()
-for i in $(seq 1 $CLUSTER_SIZE); do
-    NN=$(printf "%02d" $i)  # Zero-pad for consistency, e.g., vault01
-    SHIM_NAME="vault$NN"
-    VAULT_SHIMS+=("$SHIM_NAME")
-
-    cat > "$SCRIPTS_DIR/$SHIM_NAME" << EOF
-#!/bin/bash
-
-# Infer cluster number from shim name (e.g., vault01 -> 01)
-SHIM_NAME="\$(basename \$0)"
-NN="\${SHIM_NAME:5}"  # Extract NN from 'vault<NN>'
-
-# Define variables
-IMAGE="$VAULT_IMAGE"
-NODE_ID="vault-\$NN"
-BASE_PORT=\$((8200 + (10 * \$NN)))  # Unique ports per node, e.g., 8200+ for API, 8201+ for cluster
-API_PORT=\$BASE_PORT
-CLUSTER_PORT=\$((BASE_PORT + 1))
-DATA_DIR="\$PWD/vault-data-\$NN"
-LOG_DIR="\$PWD/vault-logs-\$NN"
-CONFIG_DIR="\$PWD/vault-config-\$NN"
-CONFIG_FILE="\$CONFIG_DIR/server.hcl"
-
-# Error handling
-set -e
-set -x
-
-# Function to display error messages
-error_exit() {
-    echo "Error: \$1" >&2
-    exit 1
-}
-
-# Check if the container image exists
-if ! podman image exists "\$IMAGE"; then
-    error_exit "Vault container image not found. Please run the installation script again."
-fi
-
-# Get host and container UIDs/GIDs for mapping
-HUID=\$(id -u)
-HGID=\$(id -g)
-CUID=\$(podman run --rm --entrypoint /usr/bin/id "\$IMAGE" -u vault)
-CGID=\$(podman run --rm --entrypoint /usr/bin/id "\$IMAGE" -g vault)
-
-# Get subuid/subgid for full user namespace mapping in rootless mode
-HOST_USER=\$(id -un)
-SUBUID_START=\$(awk -F: -v user="\$HOST_USER" '\$1 == user {print \$2}' /etc/subuid)
-SUBUID_RANGE=\$(awk -F: -v user="\$HOST_USER" '\$1 == user {print \$3}' /etc/subuid)
-SUBGID_START=\$(awk -F: -v user="\$HOST_USER" '\$1 == user {print \$2}' /etc/subgid)
-SUBGID_RANGE=\$(awk -F: -v user="\$HOST_USER" '\$1 == user {print \$3}' /etc/subgid)
-
-# Check if stdin is a TTY and set flags accordingly
-TTY_FLAG=""
-if [ -t 0 ] && [ -t 1 ]; then
-    TTY_FLAG="-it"
-else
-    TTY_FLAG="-i"
-fi
-
-# Determine if running in server mode
-if [ \$# -eq 0 ] || [ "\$1" = "server" ]; then
-    # Server mode
-    # Force recreate config dir to reset ownership/permissions if misconfigured by previous runs
-    rm -rf "\$CONFIG_DIR"
-    # Create data, logs, and config directories if they don't exist
-    mkdir -p "\$DATA_DIR" "\$LOG_DIR" "\$CONFIG_DIR"
-
-    # Generate Vault config file (HCL) for this node with Raft integrated storage and transit auto-unseal
-    cat > "\$CONFIG_FILE" << CONFIG_EOF
-ui = true
-
-listener "tcp" {
-  address     = "0.0.0.0:\$API_PORT"
-  cluster_address = "0.0.0.0:\$CLUSTER_PORT"
-  tls_disable = true  # Disable TLS for simplicity; enable in production
-}
-
-api_addr = "http://127.0.0.1:\$API_PORT"
-cluster_addr = "http://127.0.0.1:\$CLUSTER_PORT"
-
-storage "raft" {
-  path    = "/vault/file"
-  node_id = "\$NODE_ID"
-  
-  # For cluster joining (manual or via auto-join in production)
-  retry_join = [
-    { leader_api_addr = "http://127.0.0.1:8201" },  # Adjust for actual cluster IPs/ports
-    { leader_api_addr = "http://127.0.0.1:8211" },
-    { leader_api_addr = "http://127.0.0.1:8221" }
-  ]
-}
-
-seal "transit" {
-  address            = "$TRANSIT_VAULT_ADDR"
-  disable_renewal    = "false"
-  key_name           = "autounseal_key"  # Assumes pre-configured key on transit server
-  mount_path         = "transit/"        # Assumes transit engine at this path
-  tls_skip_verify    = "true"            # Disable for simplicity; enable verification in production
-}
-
-disable_mlock = true
-CONFIG_EOF
-
-    # Prepare volume mounts (map local dirs to container paths, adhering to OCI volume best practices)
-    MOUNTS="-v \"\$DATA_DIR:/vault/file:Z\" -v \"\$CONFIG_DIR:/vault/config:Z\" -v \"\$LOG_DIR:/vault/logs:Z\""
-
-    # Expose ports for this node
-    PORTS="-p \$API_PORT:8200 -p \$CLUSTER_PORT:8201"
-
-    if [ \$# -gt 0 ] && [ "\$1" = "server" ]; then
-        shift
-    fi
-
-    # Server mode
-    eval podman run --rm \$TTY_FLAG \\
-        --userns=keep-id:uid=\$CUID \\
-        --name "vault-\$NN" \\
-        \$PORTS \\
-        \$MOUNTS \\
-        -e VAULT_ADDR="http://127.0.0.1:\$API_PORT" \\
-        -e VAULT_API_ADDR="http://127.0.0.1:\$API_PORT" \\
-        -e SKIP_SETCAP=0 \\
-        "\$IMAGE" server -config=/vault/config/server.hcl "\$@"
-else
-    # CLI mode
-    eval podman run --rm \$TTY_FLAG \\
-        --userns=keep-id:uid=\$CUID \\
-        -e SKIP_SETCAP=1 \\
-        "\$IMAGE" vault "\$@"
-fi
-EOF
-    chmod +x "$SCRIPTS_DIR/$SHIM_NAME"
-    echo "Created wrapper script for $SHIM_NAME"
-done
-
 # New: Generate standalone 'vault' shim for auto-unsealed single server
 SHIM_NAME="vault"
 VAULT_SHIMS+=("$SHIM_NAME")
@@ -281,7 +143,7 @@ CONFIG_EOF
   # Run target container
   info "Starting target Vault server...";
   podman run --rm -it \
-    --userns=keep-id:uid=\$(podman run --rm --entrypoint /usr/bin/id "\$IMAGE" -u vault) \
+    --userns=keep-id:uid=\$(podman run --rm --entrypoint /usr/local/bin/su-exec "\$IMAGE" vault /usr/bin/id -u vault) \
     --name "vault-target" \
     \$PORTS \
     \$MOUNTS \
@@ -301,7 +163,7 @@ CONFIG_EOF
 else
   # CLI mode: Proxy to target
   podman run --rm -i \
-    --userns=keep-id:uid=\$(podman run --rm --entrypoint /usr/bin/id "\$IMAGE" -u vault) \
+    --userns=keep-id:uid=\$(podman run --rm --entrypoint /usr/local/bin/su-exec "\$IMAGE" vault /usr/bin/id -u vault) \
     -e VAULT_ADDR="http://127.0.0.100:\$API_PORT" \
     -e SKIP_SETCAP=1 \
     "\$IMAGE" vault "\$@"
@@ -310,7 +172,6 @@ EOF
 chmod +x "$SCRIPTS_DIR/$SHIM_NAME"
 echo "Created standalone shim for $SHIM_NAME"
 
-# Test commands...
 # Extend testing for new shim
 echo "Testing standalone vault shim..."
 export VAULT_ADDR="http://127.0.0.100:8100"
