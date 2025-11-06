@@ -176,7 +176,8 @@ else
   # CLI mode: Proxy to target
   podman run --rm -i \
     --userns=keep-id:uid=1001 \
-    -e VAULT_ADDR="http://127.0.0.100:\$API_PORT" \
+    -e VAULT_ADDR="\${VAULT_ADDR:-http://127.0.0.100:\$API_PORT}" \
+    -e VAULT_TOKEN="\${VAULT_TOKEN:-}" \
     -e SKIP_SETCAP=1 \
     "\$IMAGE" vault "\$@"
 fi
