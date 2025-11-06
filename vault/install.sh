@@ -175,8 +175,15 @@ echo "Created standalone shim for $SHIM_NAME"
 # Extend testing for new shim
 echo "Testing standalone vault shim..."
 export VAULT_ADDR="http://127.0.0.100:8100"
+# Start server in background for testing (kill after)
+"$SCRIPTS_DIR/vault" server > vault-test.log 2>&1 &
+SERVER_PID=$!
+sleep 5  # Wait for server to start
 if "$SCRIPTS_DIR/vault" version &>/dev/null; then
   "$SCRIPTS_DIR/vault" version && echo "✅ Version check passed" || echo "❌ Version failed"
   "$SCRIPTS_DIR/vault" status && echo "✅ Status check passed (unsealed)" || echo "❌ Status failed"
   # Simulate restart: Assume manual kill/re-run for demo; add automated test if needed
 fi
+# Clean up test server
+kill $SERVER_PID
+rm vault-test.log
