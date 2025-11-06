@@ -143,7 +143,7 @@ CONFIG_EOF
   # Run target container
   info "Starting target Vault server...";
   podman run --rm -it \
-    --userns=keep-id:uid=\$(podman run --rm --entrypoint /usr/local/bin/su-exec "\$IMAGE" vault /usr/bin/id -u vault) \
+    --userns=keep-id:uid=\$(podman run --rm --entrypoint /usr/bin/id "\$IMAGE" -u vault) \
     --name "vault-target" \
     \$PORTS \
     \$MOUNTS \
@@ -163,7 +163,7 @@ CONFIG_EOF
 else
   # CLI mode: Proxy to target
   podman run --rm -i \
-    --userns=keep-id:uid=\$(podman run --rm --entrypoint /usr/local/bin/su-exec "\$IMAGE" vault /usr/bin/id -u vault) \
+    --userns=keep-id:uid=\$(podman run --rm --entrypoint /usr/bin/id "\$IMAGE" -u vault) \
     -e VAULT_ADDR="http://127.0.0.100:\$API_PORT" \
     -e SKIP_SETCAP=1 \
     "\$IMAGE" vault "\$@"
