@@ -302,6 +302,7 @@ else
   # CLI mode: Proxy to target
   podman run --rm -i \
     --userns=keep-id:uid=\$(podman run --rm --entrypoint /usr/bin/id "\$IMAGE" -u vault) \
+    -e VAULT_ADDR="http://127.0.0.100:\$API_PORT" \
     -e SKIP_SETCAP=1 \
     "\$IMAGE" vault "\$@"
 fi
@@ -312,6 +313,7 @@ echo "Created standalone shim for $SHIM_NAME"
 # Test commands...
 # Extend testing for new shim
 echo "Testing standalone vault shim..."
+export VAULT_ADDR="http://127.0.0.100:8100"
 if "$SCRIPTS_DIR/vault" version &>/dev/null; then
   "$SCRIPTS_DIR/vault" version && echo "✅ Version check passed" || echo "❌ Version failed"
   "$SCRIPTS_DIR/vault" status && echo "✅ Status check passed (unsealed)" || echo "❌ Status failed"
