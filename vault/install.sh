@@ -68,14 +68,14 @@ info() { echo "[INFO] \$1"; }
 error_exit() { echo "Error: \$1" >&2; exit 1; }
 
 configure_transit() {
-  export VAULT_ADDR="\$TRANSIT_ADDR"
-  if [ -n "\$TEST_VAULT_TOKEN" ]; then
-    export VAULT_TOKEN="\$TEST_VAULT_TOKEN"
+  export VAULT_ADDR="$TRANSIT_ADDR"
+  if [ -n "$TEST_VAULT_TOKEN" ]; then
+    export VAULT_TOKEN="$TEST_VAULT_TOKEN"
   else
-    export VAULT_TOKEN="\$(secret-tool lookup vault zero policy root | head)"  # Assumes root token stored; adjust for prod
+    export VAULT_TOKEN="$(secret-tool lookup vault zero policy root | head)"  # Assumes root token stored; adjust for prod
   fi
 
-  vault status || error_exit "Cannot connect to transit Vault at \$TRANSIT_ADDR"
+  vault status || error_exit "Cannot connect to transit Vault at $TRANSIT_ADDR"
 
   # Check and enable audit logs
   vault audit list | grep -q file || { info "Enabling audit logs..."; vault audit enable file file_path=audit.log; }
@@ -89,24 +89,27 @@ configure_transit() {
   # Check and create policy
   vault policy list | grep -q autounseal || {
     info "Creating autounseal policy...";
-    vault policy write autounseal - <<EOP
+    vault policy write autounseal - <<EOF
 path "transit/encrypt/autounseal" {
-  capabilities = [ "update" ]
+   capabilities = [ "update" ]
 }
-path "transit/decrypt/autounseal" {
-  capabilities = [ "update" ]
-}
-EOP
-  }
 
-  # Generate token (orphan, periodic) - Note: In prod, manage tokens securely
-  info "Generating transit token...";
-  TRANSIT_TOKEN=\$(vault token create -orphan -policy="autounseal" -period=24h -field=token)
+path "transit/decrypt/autounseal" {
+   capabilities = [ "update" ]
+}
+EOF
+  }
 }
 
 if [ \$# -eq 0 ] || [ "\$1" = "server" ]; then
+  # Idempotent transit setup test (checks and configures if needed)
+  configure_transit
   # Server mode
   configure_transit  # Idempotently setup host transit
+
+  # Generate token only for server mode (periodic, orphan)
+  info "Generating transit token...";
+  TRANSIT_TOKEN=\$(vault token create -orphan -policy="autounseal" -period=24h -field=token)
 
   # Force recreate config dir
   rm -rf "\$CONFIG_DIR"
@@ -172,6 +175,7 @@ CONFIG_EOF
 else
   # CLI mode: Proxy to target
   podman run --rm -i \
+    -e VAULT_TOKEN="$VAULT_TOKEN" \
     --userns=keep-id:uid=\$(podman run --rm --entrypoint /usr/bin/id "\$IMAGE" -u vault) \
     -e VAULT_ADDR="http://127.0.0.100:\$API_PORT" \
     -e SKIP_SETCAP=1 \
