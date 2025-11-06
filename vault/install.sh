@@ -102,14 +102,13 @@ EOF
 }
 
 if [ \$# -eq 0 ] || [ "\$1" = "server" ]; then
-  # Idempotent transit setup test (checks and configures if needed)
+  # Idempotent transit setup (checks and configures if needed)
   configure_transit
-  # Server mode
-  configure_transit  # Idempotently setup host transit
 
-  # Generate token only for server mode (periodic, orphan)
-  info "Generating transit token...";
-  TRANSIT_TOKEN=\$(podman run --rm -e VAULT_ADDR="$TRANSIT_ADDR" -e VAULT_TOKEN="$VAULT_TOKEN" "$IMAGE" vault token create -orphan -policy="autounseal" -period=24h -field=token)
+  # Generate wrapped token only for server mode (periodic, orphan)
+  info "Generating wrapped transit token...";
+  WRAPPED_TOKEN=\$(podman run --rm -e VAULT_ADDR="$TRANSIT_ADDR" -e VAULT_TOKEN="$VAULT_TOKEN" "$IMAGE" vault token create -orphan -policy="autounseal" -wrap-ttl=120 -period=24h -field=wrapping_token)
+  TRANSIT_TOKEN=\$(podman run --rm -e VAULT_ADDR="$TRANSIT_ADDR" "$IMAGE" vault unwrap -field=token \$WRAPPED_TOKEN)
 
   # Force recreate config dir
   rm -rf "\$CONFIG_DIR"
@@ -120,8 +119,8 @@ if [ \$# -eq 0 ] || [ "\$1" = "server" ]; then
 ui = true
 
 listener "tcp" {
-  address     = "0.0.0.0:8200"
-  cluster_address = "0.0.0.0:8201"
+  address     = "127.0.0.100:\$API_PORT"
+  cluster_address = "127.0.0.100:\$CLUSTER_PORT"
   tls_disable = true  # Disable for demo; enable TLS in prod
 }
 
@@ -144,16 +143,15 @@ seal "transit" {
 disable_mlock = true
 CONFIG_EOF
 
-  # Prepare mounts and ports
+  # Prepare mounts
   MOUNTS="-v \"\$DATA_DIR:/vault/file:Z\" -v \"\$CONFIG_DIR:/vault/config:Z\" -v \"\$LOG_DIR:/vault/logs:Z\""
-  PORTS="-p \$API_PORT:8200 -p \$CLUSTER_PORT:8201"
 
   # Run target container
   info "Starting target Vault server...";
   podman run --rm -d \
+    --network=host \
     --userns=keep-id:uid=1001 \
     --name "vault-target" \
-    \$PORTS \
     \$MOUNTS \
     -e VAULT_ADDR="http://127.0.0.100:\$API_PORT" \
     -e VAULT_API_ADDR="http://127.0.0.100:\$API_PORT" \
@@ -175,6 +173,7 @@ CONFIG_EOF
 else
   # CLI mode: Proxy to target
   podman run --rm -i \
+    --network=host \
     --userns=keep-id:uid=1001 \
     -e VAULT_ADDR="\${VAULT_ADDR:-http://127.0.0.100:\$API_PORT}" \
     -e VAULT_TOKEN="\${VAULT_TOKEN:-}" \
@@ -251,7 +250,16 @@ sleep 10  # Wait longer for server to start and auto-unseal
 if "$SCRIPTS_DIR/vault" version &>/dev/null; then
   "$SCRIPTS_DIR/vault" version && echo "✅ Version check passed" || echo "❌ Version failed"
   "$SCRIPTS_DIR/vault" status && echo "✅ Status check passed (unsealed)" || echo "❌ Status failed"
-  # Simulate restart: Assume manual kill/re-run for demo; add automated test if needed
+  # Simulate restart to verify auto-unseal on restart
+  podman stop vault-target
+  sleep 2
+  "$SCRIPTS_DIR/vault" server > vault-restart.log 2>&1 &
+  RESTART_PID=$!
+  sleep 10
+  "$SCRIPTS_DIR/vault" status && echo "✅ Status after restart passed (auto-unsealed)" || echo "❌ Restart status failed"
+  podman stop vault-target || true
+  wait $RESTART_PID || true
+  rm vault-restart.log
 fi
 # Clean up test server
 podman stop vault-target || true
