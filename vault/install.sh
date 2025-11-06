@@ -67,10 +67,15 @@ set -e
 info() { echo "[INFO] \$1"; }
 error_exit() { echo "Error: \$1" >&2; exit 1; }
 
-# Idempotent transit configuration (adapted from autounseal-transit-setup.sh)
 configure_transit() {
   export VAULT_ADDR="\$TRANSIT_ADDR"
-  export VAULT_TOKEN="\$(secret-tool lookup vault zero policy root | head)"  # Assumes root token stored; adjust for prod
+  if [ -n "\$TEST_VAULT_TOKEN" ]; then
+    export VAULT_TOKEN="\$TEST_VAULT_TOKEN"
+  else
+    export VAULT_TOKEN="\$(secret-tool lookup vault zero policy root | head)"  # Assumes root token stored; adjust for prod
+  fi
+
+  vault status || error_exit "Cannot connect to transit Vault at \$TRANSIT_ADDR"
 
   # Check and enable audit logs
   vault audit list | grep -q file || { info "Enabling audit logs..."; vault audit enable file file_path=audit.log; }
@@ -94,9 +99,9 @@ path "transit/decrypt/autounseal" {
 EOP
   }
 
-  # Generate token (orphan, periodic, wrapped) - Note: In prod, manage tokens securely
+  # Generate token (orphan, periodic) - Note: In prod, manage tokens securely
   info "Generating transit token...";
-  TRANSIT_TOKEN=\$(vault token create -orphan -policy="autounseal" -wrap-ttl=120 -period=24h -field=wrapping_token)
+  TRANSIT_TOKEN=\$(vault token create -orphan -policy="autounseal" -period=24h -field=token)
 }
 
 if [ \$# -eq 0 ] || [ "\$1" = "server" ]; then
@@ -142,7 +147,7 @@ CONFIG_EOF
 
   # Run target container
   info "Starting target Vault server...";
-  podman run --rm -it \
+  podman run --rm -d \
     --userns=keep-id:uid=\$(podman run --rm --entrypoint /usr/bin/id "\$IMAGE" -u vault) \
     --name "vault-target" \
     \$PORTS \
@@ -150,7 +155,9 @@ CONFIG_EOF
     -e VAULT_ADDR="http://127.0.0.100:\$API_PORT" \
     -e VAULT_API_ADDR="http://127.0.0.100:\$API_PORT" \
     -e SKIP_SETCAP=0 \
+    -e VAULT_TOKEN="\$TRANSIT_TOKEN" \
     "\$IMAGE" server -config=/vault/config/server.hcl "\$@"
+  info "Vault container started in detached mode"
 
   # Post-start: Check init and auto-unseal
   export VAULT_ADDR="http://127.0.0.100:\$API_PORT"
@@ -159,7 +166,9 @@ CONFIG_EOF
     vault operator init -recovery-shares=15 -recovery-threshold=7;
   fi
   info "Verifying auto-unseal...";
-  vault status | grep "Sealed.*false" || error_exit "Auto-unseal failed";
+  vault status | grep "Sealed.*false" || error_exit "Auto-unseal failed"
+  info "Vault server running, waiting for exit..."
+  podman wait vault-target
 else
   # CLI mode: Proxy to target
   podman run --rm -i \
@@ -172,18 +181,77 @@ EOF
 chmod +x "$SCRIPTS_DIR/$SHIM_NAME"
 echo "Created standalone shim for $SHIM_NAME"
 
-# Extend testing for new shim
+# Setup for test transit server
+TRANSIT_DATA_DIR="$PWD/vault-transit-data"
+TRANSIT_LOG_DIR="$PWD/vault-transit-logs"
+TRANSIT_CONFIG_DIR="$PWD/vault-transit-config"
+TRANSIT_CONFIG_FILE="$TRANSIT_CONFIG_DIR/server.hcl"
+TRANSIT_API_PORT=8200
+TRANSIT_CLUSTER_PORT=8201
+
+rm -rf "$TRANSIT_DATA_DIR" "$TRANSIT_LOG_DIR" "$TRANSIT_CONFIG_DIR"
+mkdir -p "$TRANSIT_DATA_DIR" "$TRANSIT_LOG_DIR" "$TRANSIT_CONFIG_DIR"
+
+cat > "$TRANSIT_CONFIG_FILE" << CONFIG_EOF
+ui = true
+
+listener "tcp" {
+  address     = "0.0.0.0:8200"
+  cluster_address = "0.0.0.0:8201"
+  tls_disable = true
+}
+
+api_addr = "http://127.0.0.100:$TRANSIT_API_PORT"
+cluster_addr = "http://127.0.0.100:$TRANSIT_CLUSTER_PORT"
+
+storage "raft" {
+  path    = "/vault/file"
+  node_id = "transit"
+}
+
+disable_mlock = true
+CONFIG_EOF
+
+echo "Starting transit Vault server for test..."
+podman run --rm -d \
+  --name "vault-transit-test" \
+  -p $TRANSIT_API_PORT:8200 -p $TRANSIT_CLUSTER_PORT:8201 \
+  -v "$TRANSIT_DATA_DIR:/vault/file:Z" -v "$TRANSIT_CONFIG_DIR:/vault/config:Z" -v "$TRANSIT_LOG_DIR:/vault/logs:Z" \
+  -e VAULT_ADDR="http://127.0.0.100:$TRANSIT_API_PORT" \
+  -e VAULT_API_ADDR="http://127.0.0.100:$TRANSIT_API_PORT" \
+  -e SKIP_SETCAP=0 \
+  "$VAULT_IMAGE" server -config=/vault/config/server.hcl
+
+sleep 5
+
+# Initialize and unseal transit if needed
+export VAULT_ADDR="http://127.0.0.100:$TRANSIT_API_PORT"
+if ! "$SCRIPTS_DIR/vault" status | grep -q "Initialized.*true"; then
+  INIT_OUTPUT=$("$SCRIPTS_DIR/vault" operator init -key-shares=1 -key-threshold=1 -format=json)
+  UNSEAL_KEY=$(echo "$INIT_OUTPUT" | jq -r '.unseal_keys_b64[0]')
+  ROOT_TOKEN=$(echo "$INIT_OUTPUT" | jq -r '.root_token')
+  "$SCRIPTS_DIR/vault" operator unseal "$UNSEAL_KEY"
+else
+  echo "Transit already initialized; test assumes fresh start - exiting"
+  exit 1
+fi
+
+export TEST_VAULT_TOKEN="$ROOT_TOKEN"
+
 echo "Testing standalone vault shim..."
 export VAULT_ADDR="http://127.0.0.100:8100"
 # Start server in background for testing (kill after)
 "$SCRIPTS_DIR/vault" server > vault-test.log 2>&1 &
 SERVER_PID=$!
-sleep 5  # Wait for server to start
+sleep 10  # Wait longer for server to start and auto-unseal
 if "$SCRIPTS_DIR/vault" version &>/dev/null; then
   "$SCRIPTS_DIR/vault" version && echo "✅ Version check passed" || echo "❌ Version failed"
   "$SCRIPTS_DIR/vault" status && echo "✅ Status check passed (unsealed)" || echo "❌ Status failed"
   # Simulate restart: Assume manual kill/re-run for demo; add automated test if needed
 fi
 # Clean up test server
-kill $SERVER_PID
+podman stop vault-target || true
+podman stop vault-transit-test || true
+wait $SERVER_PID || true
 rm vault-test.log
+rm -rf "$TRANSIT_DATA_DIR" "$TRANSIT_LOG_DIR" "$TRANSIT_CONFIG_DIR" || true
