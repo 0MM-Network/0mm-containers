@@ -125,6 +125,8 @@ POLICY_EOF
 }
 
 if [ $# -eq 0 ] || [ "$1" = "server" ]; then
+  if [ "$1" = "server" ]; then shift; fi
+  if [ $# -gt 0 ]; then echo "Ignoring extra args in server mode"; fi
   # Idempotent transit setup (checks and configures if needed)
   configure_transit
 
@@ -133,6 +135,7 @@ if [ $# -eq 0 ] || [ "$1" = "server" ]; then
   # Grant CAP_SETFCAP to enable mlock for security (allows Vault to lock memory)
   WRAPPED_TOKEN=$(podman run --rm --network=host --cap-add=SETFCAP --cap-add=IPC_LOCK -e VAULT_ADDR="$TRANSIT_ADDR" -e VAULT_TOKEN="$VAULT_TOKEN" "$IMAGE" vault token create -orphan -policy="autounseal" -wrap-ttl=120 -period=24h -field=wrapping_token)
   # Grant CAP_SETFCAP to enable mlock for security (allows Vault to lock memory)
+  echo "Unwrapping token: $WRAPPED_TOKEN"
   TRANSIT_TOKEN=$(podman run --rm --network=host --cap-add=SETFCAP --cap-add=IPC_LOCK -e VAULT_ADDR="$TRANSIT_ADDR" "$IMAGE" vault unwrap -field=token $WRAPPED_TOKEN)
 
   # Force recreate config dir
@@ -154,7 +157,7 @@ if [ $# -eq 0 ] || [ "$1" = "server" ]; then
     -e VAULT_ADDR="http://127.0.0.100:$API_PORT" \
     -e VAULT_API_ADDR="http://127.0.0.100:$API_PORT" \
     -e TRANSIT_TOKEN="$TRANSIT_TOKEN" \
-    "$IMAGE" server -config=/vault/config/server.hcl "$@"
+    "$IMAGE" server -config=/vault/config/server.hcl
   info "Vault container started in detached mode"
 
   # Post-start: Check init and auto-unseal
@@ -178,7 +181,7 @@ if [ $# -eq 0 ] || [ "$1" = "server" ]; then
       -e VAULT_ADDR="http://127.0.0.100:$API_PORT" \
       -e VAULT_API_ADDR="http://127.0.0.100:$API_PORT" \
       -e TRANSIT_TOKEN="$TRANSIT_TOKEN" \
-      "$IMAGE" server -config=/vault/config/server.hcl "$@"
+      "$IMAGE" server -config=/vault/config/server.hcl
   fi
   # Enforce mlock: Grant IPC_LOCK externally and verify it's active
   ATTEMPTS=5
