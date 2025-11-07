@@ -141,6 +141,30 @@ if [ $# -eq 0 ] || [ "$1" = "server" ]; then
   # Force recreate config dir
   rm -rf "$CONFIG_DIR"
   mkdir -p "$DATA_DIR" "$LOG_DIR" "$CONFIG_DIR"
+  # Explicitly generate server.hcl before mount to ensure it's available in container
+  cat > "$CONFIG_FILE" <<EOF
+disable_mlock = false
+ui=true
+storage "raft" {
+  path    = "/vault/file"
+  node_id = "vault"
+}
+listener "tcp" {
+  address     = "0.0.0.0:8100"
+  tls_disable = "true"
+}
+seal "transit" {
+  address = "$TRANSIT_ADDR"
+  disable_renewal = "false"
+  key_name = "autounseal"
+  mount_path = "transit/"
+  tls_skip_verify = "true"
+  token = "env://TRANSIT_TOKEN"
+}
+api_addr = "http://127.0.0.100:8100"
+cluster_addr = "https://127.0.0.100:8101"
+EOF
+  if [ ! -f "$CONFIG_FILE" ]; then error_exit "Failed to create server.hcl"; fi; echo "Generated config at $CONFIG_FILE"
 
   # Hardcode bind mounts with absolute paths to avoid array expansion and named volume errors; data stored in project folder
   ABS_DATA_DIR=$(pwd -P)/vault-target-data
