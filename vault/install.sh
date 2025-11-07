@@ -143,7 +143,7 @@ if [ $# -eq 0 ] || [ "$1" = "server" ]; then
   mkdir -p "$DATA_DIR" "$LOG_DIR" "$CONFIG_DIR"
 
   # Use array for MOUNTS to avoid expansion/escaping errors with :Z labels
-  MOUNTS=("-v $DATA_DIR:/vault/file:Z" "-v $CONFIG_DIR:/vault/config:Z" "-v $LOG_DIR:/vault/logs:Z")
+  MOUNTS=("-v ${DATA_DIR}:/vault/file:Z" "-v ${CONFIG_DIR}:/vault/config:Z" "-v ${LOG_DIR}:/vault/logs:Z")
 
   # Run target container
   info "Starting target Vault server...";
