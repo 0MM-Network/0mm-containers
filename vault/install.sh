@@ -84,10 +84,10 @@ configure_transit() {
   ATTEMPTS=10
   for ((i=1; i<=$ATTEMPTS; i++)); do
     # Grant CAP_SETFCAP to enable mlock for security (allows Vault to lock memory)
-    if podman run --rm --network=host --cap-add=SETFCAP -e VAULT_ADDR="$TRANSIT_ADDR" -e VAULT_TOKEN="$VAULT_TOKEN" "$IMAGE" vault status; then
+    if podman run --rm --network=host --cap-add=SETFCAP --cap-add=IPC_LOCK -e VAULT_ADDR="$TRANSIT_ADDR" -e VAULT_TOKEN="$VAULT_TOKEN" "$IMAGE" vault status; then
       break
     else
-      LAST_ERROR=$(podman run --rm --network=host --cap-add=SETFCAP -e VAULT_ADDR="$TRANSIT_ADDR" -e VAULT_TOKEN="$VAULT_TOKEN" "$IMAGE" vault status 2>&1 || true)
+      LAST_ERROR=$(podman run --rm --network=host --cap-add=SETFCAP --cap-add=IPC_LOCK -e VAULT_ADDR="$TRANSIT_ADDR" -e VAULT_TOKEN="$VAULT_TOKEN" "$IMAGE" vault status 2>&1 || true)
       if [ $i -eq $ATTEMPTS ]; then
         error_exit "Cannot connect to transit Vault at $TRANSIT_ADDR after $ATTEMPTS attempts: $LAST_ERROR"
       fi
@@ -97,22 +97,22 @@ configure_transit() {
 
   # Check and enable audit logs
   # Grant CAP_SETFCAP to enable mlock for security (allows Vault to lock memory)
-  podman run --rm --network=host --cap-add=SETFCAP -e VAULT_ADDR="$TRANSIT_ADDR" -e VAULT_TOKEN="$VAULT_TOKEN" "$IMAGE" vault audit list | grep -q file || { info "Enabling audit logs..."; podman run --rm --network=host --cap-add=SETFCAP -e VAULT_ADDR="$TRANSIT_ADDR" -e VAULT_TOKEN="$VAULT_TOKEN" "$IMAGE" vault audit enable file file_path=audit.log; }
+  podman run --rm --network=host --cap-add=SETFCAP --cap-add=IPC_LOCK -e VAULT_ADDR="$TRANSIT_ADDR" -e VAULT_TOKEN="$VAULT_TOKEN" "$IMAGE" vault audit list | grep -q file || { info "Enabling audit logs..."; podman run --rm --network=host --cap-add=SETFCAP --cap-add=IPC_LOCK -e VAULT_ADDR="$TRANSIT_ADDR" -e VAULT_TOKEN="$VAULT_TOKEN" "$IMAGE" vault audit enable file file_path=audit.log; }
 
   # Check and enable transit engine
   # Grant CAP_SETFCAP to enable mlock for security (allows Vault to lock memory)
-  podman run --rm --network=host --cap-add=SETFCAP -e VAULT_ADDR="$TRANSIT_ADDR" -e VAULT_TOKEN="$VAULT_TOKEN" "$IMAGE" vault secrets list | grep -q transit/ || { info "Enabling transit engine..."; podman run --rm --network=host --cap-add=SETFCAP -e VAULT_ADDR="$TRANSIT_ADDR" -e VAULT_TOKEN="$VAULT_TOKEN" "$IMAGE" vault secrets enable transit; }
+  podman run --rm --network=host --cap-add=SETFCAP --cap-add=IPC_LOCK -e VAULT_ADDR="$TRANSIT_ADDR" -e VAULT_TOKEN="$VAULT_TOKEN" "$IMAGE" vault secrets list | grep -q transit/ || { info "Enabling transit engine..."; podman run --rm --network=host --cap-add=SETFCAP --cap-add=IPC_LOCK -e VAULT_ADDR="$TRANSIT_ADDR" -e VAULT_TOKEN="$VAULT_TOKEN" "$IMAGE" vault secrets enable transit; }
 
   # Check and create key
   # Grant CAP_SETFCAP to enable mlock for security (allows Vault to lock memory)
-  podman run --rm --network=host --cap-add=SETFCAP -e VAULT_ADDR="$TRANSIT_ADDR" -e VAULT_TOKEN="$VAULT_TOKEN" "$IMAGE" vault list transit/keys | grep -q autounseal || { info "Creating autounseal key..."; podman run --rm --network=host --cap-add=SETFCAP -e VAULT_ADDR="$TRANSIT_ADDR" -e VAULT_TOKEN="$VAULT_TOKEN" "$IMAGE" vault write -f transit/keys/autounseal; }
+  podman run --rm --network=host --cap-add=SETFCAP --cap-add=IPC_LOCK -e VAULT_ADDR="$TRANSIT_ADDR" -e VAULT_TOKEN="$VAULT_TOKEN" "$IMAGE" vault list transit/keys | grep -q autounseal || { info "Creating autounseal key..."; podman run --rm --network=host --cap-add=SETFCAP --cap-add=IPC_LOCK -e VAULT_ADDR="$TRANSIT_ADDR" -e VAULT_TOKEN="$VAULT_TOKEN" "$IMAGE" vault write -f transit/keys/autounseal; }
 
   # Check and create policy
   # Grant CAP_SETFCAP to enable mlock for security (allows Vault to lock memory)
-  podman run --rm --network=host --cap-add=SETFCAP -e VAULT_ADDR="$TRANSIT_ADDR" -e VAULT_TOKEN="$VAULT_TOKEN" "$IMAGE" vault policy list | grep -q autounseal || {
+  podman run --rm --network=host --cap-add=SETFCAP --cap-add=IPC_LOCK -e VAULT_ADDR="$TRANSIT_ADDR" -e VAULT_TOKEN="$VAULT_TOKEN" "$IMAGE" vault policy list | grep -q autounseal || {
     info "Creating autounseal policy...";
     # Grant CAP_SETFCAP to enable mlock for security (allows Vault to lock memory)
-    podman run --rm --network=host --cap-add=SETFCAP -e VAULT_ADDR="$TRANSIT_ADDR" -e VAULT_TOKEN="$VAULT_TOKEN" "$IMAGE" vault policy write autounseal - <<'POLICY_EOF'
+    podman run --rm --network=host --cap-add=SETFCAP --cap-add=IPC_LOCK -e VAULT_ADDR="$TRANSIT_ADDR" -e VAULT_TOKEN="$VAULT_TOKEN" "$IMAGE" vault policy write autounseal - <<'POLICY_EOF'
 path "transit/encrypt/autounseal" {
    capabilities = [ "update" ]
 }
@@ -131,9 +131,9 @@ if [ $# -eq 0 ] || [ "$1" = "server" ]; then
   # Generate wrapped token only for server mode (periodic, orphan)
   info "Generating wrapped transit token...";
   # Grant CAP_SETFCAP to enable mlock for security (allows Vault to lock memory)
-  WRAPPED_TOKEN=$(podman run --rm --network=host --cap-add=SETFCAP -e VAULT_ADDR="$TRANSIT_ADDR" -e VAULT_TOKEN="$VAULT_TOKEN" "$IMAGE" vault token create -orphan -policy="autounseal" -wrap-ttl=120 -period=24h -field=wrapping_token)
+  WRAPPED_TOKEN=$(podman run --rm --network=host --cap-add=SETFCAP --cap-add=IPC_LOCK -e VAULT_ADDR="$TRANSIT_ADDR" -e VAULT_TOKEN="$VAULT_TOKEN" "$IMAGE" vault token create -orphan -policy="autounseal" -wrap-ttl=120 -period=24h -field=wrapping_token)
   # Grant CAP_SETFCAP to enable mlock for security (allows Vault to lock memory)
-  TRANSIT_TOKEN=$(podman run --rm --network=host --cap-add=SETFCAP -e VAULT_ADDR="$TRANSIT_ADDR" "$IMAGE" vault unwrap -field=token $WRAPPED_TOKEN)
+  TRANSIT_TOKEN=$(podman run --rm --network=host --cap-add=SETFCAP --cap-add=IPC_LOCK -e VAULT_ADDR="$TRANSIT_ADDR" "$IMAGE" vault unwrap -field=token $WRAPPED_TOKEN)
 
   # Force recreate config dir
   rm -rf "$CONFIG_DIR"
@@ -153,7 +153,6 @@ if [ $# -eq 0 ] || [ "$1" = "server" ]; then
     $MOUNTS \
     -e VAULT_ADDR="http://127.0.0.100:$API_PORT" \
     -e VAULT_API_ADDR="http://127.0.0.100:$API_PORT" \
-    -e SKIP_SETCAP=0 \
     -e TRANSIT_TOKEN="$TRANSIT_TOKEN" \
     "$IMAGE" server -config=/vault/config/server.hcl "$@"
   info "Vault container started in detached mode"
@@ -178,10 +177,20 @@ if [ $# -eq 0 ] || [ "$1" = "server" ]; then
       $MOUNTS \
       -e VAULT_ADDR="http://127.0.0.100:$API_PORT" \
       -e VAULT_API_ADDR="http://127.0.0.100:$API_PORT" \
-      -e SKIP_SETCAP=0 \
       -e TRANSIT_TOKEN="$TRANSIT_TOKEN" \
       "$IMAGE" server -config=/vault/config/server.hcl "$@"
   fi
+  # Enforce mlock: Grant IPC_LOCK externally and verify it's active
+  ATTEMPTS=5
+  for ((i=1; i<=$ATTEMPTS; i++)); do
+    if podman exec vault-target grep "mlock supported" /vault/logs/audit.log; then
+      break
+    fi
+    if [ $i -eq $ATTEMPTS ]; then
+      error_exit "mlock not active"
+    fi
+    sleep 2
+  done
   info "Verifying auto-unseal...";
   ATTEMPTS=5
   for ((i=1; i<=$ATTEMPTS; i++)); do
@@ -203,10 +212,9 @@ else
   podman run --rm -i \
     --network=host \
     --userns=keep-id:uid=1001 \
-    --cap-add=SETFCAP \
+    --cap-add=SETFCAP --cap-add=IPC_LOCK \
     -e VAULT_ADDR="${VAULT_ADDR:-http://127.0.0.100:$API_PORT}" \
     -e VAULT_TOKEN="${VAULT_TOKEN:-}" \
-    -e SKIP_SETCAP=1 \
     "$IMAGE" vault "$@"
 fi
 EOF
