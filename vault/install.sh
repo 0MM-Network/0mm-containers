@@ -75,21 +75,21 @@ configure_transit() {
     export VAULT_TOKEN="$(secret-tool lookup vault zero policy root | head)"  # Assumes root token stored; adjust for prod
   fi
 
-  podman run --rm -e VAULT_ADDR="$TRANSIT_ADDR" -e VAULT_TOKEN="$VAULT_TOKEN" "$IMAGE" vault status || error_exit "Cannot connect to transit Vault at $TRANSIT_ADDR"
+  podman run --rm --network=host -e VAULT_ADDR="$TRANSIT_ADDR" -e VAULT_TOKEN="$VAULT_TOKEN" "$IMAGE" vault status || error_exit "Cannot connect to transit Vault at $TRANSIT_ADDR"
 
   # Check and enable audit logs
-  podman run --rm -e VAULT_ADDR="$TRANSIT_ADDR" -e VAULT_TOKEN="$VAULT_TOKEN" "$IMAGE" vault audit list | grep -q file || { info "Enabling audit logs..."; podman run --rm -e VAULT_ADDR="$TRANSIT_ADDR" -e VAULT_TOKEN="$VAULT_TOKEN" "$IMAGE" vault audit enable file file_path=audit.log; }
+  podman run --rm --network=host -e VAULT_ADDR="$TRANSIT_ADDR" -e VAULT_TOKEN="$VAULT_TOKEN" "$IMAGE" vault audit list | grep -q file || { info "Enabling audit logs..."; podman run --rm --network=host -e VAULT_ADDR="$TRANSIT_ADDR" -e VAULT_TOKEN="$VAULT_TOKEN" "$IMAGE" vault audit enable file file_path=audit.log; }
 
   # Check and enable transit engine
-  podman run --rm -e VAULT_ADDR="$TRANSIT_ADDR" -e VAULT_TOKEN="$VAULT_TOKEN" "$IMAGE" vault secrets list | grep -q transit/ || { info "Enabling transit engine..."; podman run --rm -e VAULT_ADDR="$TRANSIT_ADDR" -e VAULT_TOKEN="$VAULT_TOKEN" "$IMAGE" vault secrets enable transit; }
+  podman run --rm --network=host -e VAULT_ADDR="$TRANSIT_ADDR" -e VAULT_TOKEN="$VAULT_TOKEN" "$IMAGE" vault secrets list | grep -q transit/ || { info "Enabling transit engine..."; podman run --rm --network=host -e VAULT_ADDR="$TRANSIT_ADDR" -e VAULT_TOKEN="$VAULT_TOKEN" "$IMAGE" vault secrets enable transit; }
 
   # Check and create key
-  podman run --rm -e VAULT_ADDR="$TRANSIT_ADDR" -e VAULT_TOKEN="$VAULT_TOKEN" "$IMAGE" vault list transit/keys | grep -q autounseal || { info "Creating autounseal key..."; podman run --rm -e VAULT_ADDR="$TRANSIT_ADDR" -e VAULT_TOKEN="$VAULT_TOKEN" "$IMAGE" vault write -f transit/keys/autounseal; }
+  podman run --rm --network=host -e VAULT_ADDR="$TRANSIT_ADDR" -e VAULT_TOKEN="$VAULT_TOKEN" "$IMAGE" vault list transit/keys | grep -q autounseal || { info "Creating autounseal key..."; podman run --rm --network=host -e VAULT_ADDR="$TRANSIT_ADDR" -e VAULT_TOKEN="$VAULT_TOKEN" "$IMAGE" vault write -f transit/keys/autounseal; }
 
   # Check and create policy
-  podman run --rm -e VAULT_ADDR="$TRANSIT_ADDR" -e VAULT_TOKEN="$VAULT_TOKEN" "$IMAGE" vault policy list | grep -q autounseal || {
+  podman run --rm --network=host -e VAULT_ADDR="$TRANSIT_ADDR" -e VAULT_TOKEN="$VAULT_TOKEN" "$IMAGE" vault policy list | grep -q autounseal || {
     info "Creating autounseal policy...";
-    podman run --rm -e VAULT_ADDR="$TRANSIT_ADDR" -e VAULT_TOKEN="$VAULT_TOKEN" "$IMAGE" vault policy write autounseal - <<EOF
+    podman run --rm --network=host -e VAULT_ADDR="$TRANSIT_ADDR" -e VAULT_TOKEN="$VAULT_TOKEN" "$IMAGE" vault policy write autounseal - <<EOF
 path "transit/encrypt/autounseal" {
    capabilities = [ "update" ]
 }
@@ -107,8 +107,8 @@ if [ \$# -eq 0 ] || [ "\$1" = "server" ]; then
 
   # Generate wrapped token only for server mode (periodic, orphan)
   info "Generating wrapped transit token...";
-  WRAPPED_TOKEN=\$(podman run --rm -e VAULT_ADDR="$TRANSIT_ADDR" -e VAULT_TOKEN="$VAULT_TOKEN" "$IMAGE" vault token create -orphan -policy="autounseal" -wrap-ttl=120 -period=24h -field=wrapping_token)
-  TRANSIT_TOKEN=\$(podman run --rm -e VAULT_ADDR="$TRANSIT_ADDR" "$IMAGE" vault unwrap -field=token \$WRAPPED_TOKEN)
+  WRAPPED_TOKEN=\$(podman run --rm --network=host -e VAULT_ADDR="$TRANSIT_ADDR" -e VAULT_TOKEN="$VAULT_TOKEN" "$IMAGE" vault token create -orphan -policy="autounseal" -wrap-ttl=120 -period=24h -field=wrapping_token)
+  TRANSIT_TOKEN=\$(podman run --rm --network=host -e VAULT_ADDR="$TRANSIT_ADDR" "$IMAGE" vault unwrap -field=token \$WRAPPED_TOKEN)
 
   # Force recreate config dir
   rm -rf "\$CONFIG_DIR"
@@ -163,9 +163,9 @@ CONFIG_EOF
   # Post-start: Check init and auto-unseal
   export VAULT_ADDR="http://127.0.0.100:\$API_PORT"
   WAS_INITIALIZED=false
-  if ! podman run --rm -e VAULT_ADDR="\$VAULT_ADDR" "\$IMAGE" vault status | grep -q "Initialized.*true"; then
+  if ! podman run --rm --network=host -e VAULT_ADDR="\$VAULT_ADDR" "\$IMAGE" vault status | grep -q "Initialized.*true"; then
     info "Initializing target (recovery-shares=15, threshold=7) - WARNING: In prod, use PGP encryption, higher threshold, and secure distribution!";
-    podman run --rm -e VAULT_ADDR="\$VAULT_ADDR" "\$IMAGE" vault operator init -recovery-shares=15 -recovery-threshold=7;
+    podman run --rm --network=host -e VAULT_ADDR="\$VAULT_ADDR" "\$IMAGE" vault operator init -recovery-shares=15 -recovery-threshold=7;
     WAS_INITIALIZED=true
   fi
   if \$WAS_INITIALIZED; then
@@ -184,7 +184,7 @@ CONFIG_EOF
   info "Verifying auto-unseal...";
   ATTEMPTS=30
   for ((i=1; i<=\$ATTEMPTS; i++)); do
-    STATUS=\$(podman run --rm -e VAULT_ADDR="\$VAULT_ADDR" "\$IMAGE" vault status 2>/dev/null || true)
+    STATUS=\$(podman run --rm --network=host -e VAULT_ADDR="\$VAULT_ADDR" "\$IMAGE" vault status 2>/dev/null || true)
     if echo "\$STATUS" | grep -q "Sealed.*false"; then
       info "Auto-unseal successful."
       break
@@ -196,6 +196,7 @@ CONFIG_EOF
   done
   info "Vault server running, waiting for exit..."
   podman wait vault-target
+  rm -rf "\$CONFIG_DIR"  # Clean up config with token after server stops
 else
   # CLI mode: Proxy to target
   podman run --rm -i \
