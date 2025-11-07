@@ -150,6 +150,7 @@ if [ $# -eq 0 ] || [ "$1" = "server" ]; then
   touch "$CONFIG_FILE" && rm "$CONFIG_FILE"
   if ! [ -w "$CONFIG_DIR" ]; then error_exit "Config dir not writable"; fi
   # Simplified hardcoded config with printf to avoid nesting and dynamic issues
+  # Removed disable_mlock per OpenBao docs; use swap disable instead
   printf '%s\n' 'ui=true' 'storage "raft" {' '  path    = "/vault/file"' '  node_id = "vault"' '}' 'listener "tcp" {' '  address     = "0.0.0.0:8100"' '  tls_disable = "true"' '}' 'seal "transit" {' '  address = "http://127.0.0.100:8200"' '  disable_renewal = "false"' '  key_name = "autounseal"' '  mount_path = "transit/"' '  tls_skip_verify = "true"' '  token = "env://TRANSIT_TOKEN"' '}' 'api_addr = "http://127.0.0.100:8100"' 'cluster_addr = "https://127.0.0.100:8101"' > "$CONFIG_FILE"
 
   cat "$CONFIG_FILE"
@@ -164,6 +165,8 @@ if [ $# -eq 0 ] || [ "$1" = "server" ]; then
 
   # Run target container
   info "Starting target Vault server...";
+  # Clean up existing vault-target container to avoid name conflicts
+  podman stop vault-target || true; podman rm vault-target || true
   # Disable swap via cgroupv2 (swappiness=0) for memory security without mlock
   # Grant CAP_SETFCAP to enable mlock for security (allows Vault to lock memory)
   podman run --rm -d \
@@ -192,6 +195,8 @@ if [ $# -eq 0 ] || [ "$1" = "server" ]; then
   if $WAS_INITIALIZED; then
     info "Restarting server to trigger auto-unseal after initialization...";
     podman stop vault-target
+    # Clean up existing vault-target container to avoid name conflicts
+    podman stop vault-target || true; podman rm vault-target || true
     # Disable swap via cgroupv2 (swappiness=0) for memory security without mlock
     # Grant CAP_SETFCAP to enable mlock for security (allows Vault to lock memory)
     podman run --rm -d \
