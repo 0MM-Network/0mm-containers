@@ -90,9 +90,11 @@ if [ "$1" = 'vault' ]; then
     fi
 fi
 
-# Add echo statements for mlock support and recovery shares handling
-echo "Supports mlock for security"
-echo "Recovery shares handled externally in shims"
+# Echo mlock/recovery info only in server mode to avoid polluting CLI output
+if [ "$1" = 'vault' ] && [ "$2" = 'server' ]; then
+  echo "Supports mlock for security"
+  echo "Recovery shares handled externally in shims"
+fi
 
 # Supports multiple recovery shares for init, handled in shims
 

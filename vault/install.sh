@@ -133,7 +133,7 @@ if [ $# -eq 0 ] || [ "$1" = "server" ]; then
   # Generate wrapped token only for server mode (periodic, orphan)
   info "Generating wrapped transit token...";
   # Grant CAP_SETFCAP to enable mlock for security (allows Vault to lock memory)
-  WRAPPED_TOKEN=$(podman run --rm --network=host --cap-add=SETFCAP --cap-add=IPC_LOCK -e VAULT_ADDR="$TRANSIT_ADDR" -e VAULT_TOKEN="$VAULT_TOKEN" "$IMAGE" vault token create -orphan -policy="autounseal" -wrap-ttl=120 -period=24h -field=wrapping_token)
+  WRAPPED_TOKEN=$(podman run --rm --network=host --cap-add=SETFCAP --cap-add=IPC_LOCK -e VAULT_ADDR="$TRANSIT_ADDR" -e VAULT_TOKEN="$VAULT_TOKEN" "$IMAGE" vault token create -orphan -policy="autounseal" -wrap-ttl=120 -period=24h -field=wrapping_token | tail -n 1)
   # Grant CAP_SETFCAP to enable mlock for security (allows Vault to lock memory)
   echo "Unwrapping token: $WRAPPED_TOKEN"
   TRANSIT_TOKEN=$(podman run --rm --network=host --cap-add=SETFCAP --cap-add=IPC_LOCK -e VAULT_ADDR="$TRANSIT_ADDR" "$IMAGE" vault unwrap -field=token $WRAPPED_TOKEN)
