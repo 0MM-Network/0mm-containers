@@ -105,9 +105,10 @@ if [ \$# -eq 0 ] || [ "\$1" = "server" ]; then
   # Idempotent transit setup (checks and configures if needed)
   configure_transit
 
-  # Generate transit token directly (periodic, orphan) - simplified for local demo; use wrapping for secure transfer in prod
-  info "Generating transit token...";
-  TRANSIT_TOKEN=\$(podman run --rm -e VAULT_ADDR="$TRANSIT_ADDR" -e VAULT_TOKEN="$VAULT_TOKEN" "$IMAGE" vault token create -orphan -policy="autounseal" -period=24h -field=token)
+  # Generate wrapped token only for server mode (periodic, orphan)
+  info "Generating wrapped transit token...";
+  WRAPPED_TOKEN=\$(podman run --rm -e VAULT_ADDR="$TRANSIT_ADDR" -e VAULT_TOKEN="$VAULT_TOKEN" "$IMAGE" vault token create -orphan -policy="autounseal" -wrap-ttl=120 -period=24h -field=wrapping_token)
+  TRANSIT_TOKEN=\$(podman run --rm -e VAULT_ADDR="$TRANSIT_ADDR" "$IMAGE" vault unwrap -field=token \$WRAPPED_TOKEN)
 
   # Force recreate config dir
   rm -rf "\$CONFIG_DIR"
@@ -137,7 +138,12 @@ seal "transit" {
   key_name           = "autounseal"
   mount_path         = "transit/"
   tls_skip_verify    = "true"  # Disable for demo; verify in prod
-  token              = "\$TRANSIT_TOKEN"
+  auth {
+    type = "token"
+    parameters {
+      token = "\$TRANSIT_TOKEN"
+    }
+  }
 }
 
 disable_mlock = true
