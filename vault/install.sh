@@ -154,7 +154,7 @@ if [ \$# -eq 0 ] || [ "\$1" = "server" ]; then
       "\$IMAGE" server -config=/vault/config/server.hcl "\$@"
   fi
   info "Verifying auto-unseal...";
-  ATTEMPTS=30
+  ATTEMPTS=5
   for ((i=1; i<=\$ATTEMPTS; i++)); do
     STATUS=\$(podman run --rm --network=host -e VAULT_ADDR="\$VAULT_ADDR" "\$IMAGE" vault status 2>/dev/null || true)
     if echo "\$STATUS" | grep -q "Sealed.*false"; then
