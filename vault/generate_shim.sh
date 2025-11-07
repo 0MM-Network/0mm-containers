@@ -213,6 +213,8 @@ if [ $# -eq 0 ] || [ "$1" = "server" ]; then
       -e TRANSIT_TOKEN="$TRANSIT_TOKEN" \
       "$IMAGE" server -config=/vault/config/server.hcl
   fi
+  # Enable audit logging on target with full path to ensure file creation in mounted /vault/logs
+  podman run --rm --network=host -e VAULT_ADDR="$VAULT_ADDR" "$IMAGE" vault audit enable file file_path=/vault/logs/audit.log
   # Enforce mlock: Grant IPC_LOCK externally and verify it's active
   ATTEMPTS=5
   for ((i=1; i<=$ATTEMPTS; i++)); do
