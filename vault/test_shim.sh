@@ -2,13 +2,13 @@
 
 # Script to test the generated Vault shim
 
-# Assume shim is generated in $PWD/vault
-
 SCRIPTS_DIR="$PWD"
 
 echo "Testing against real transit at 8200..."
 export TRANSIT_ADDR="http://127.0.0.100:8200"
 export VAULT_ADDR="http://127.0.0.100:8100"
+
+rm vault-test.log
 
 # Pre-test check: Retry status against TRANSIT_ADDR
 LAST_ERROR=""
