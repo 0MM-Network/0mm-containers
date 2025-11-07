@@ -145,7 +145,9 @@ if [ $# -eq 0 ] || [ "$1" = "server" ]; then
   touch "$CONFIG_FILE" && rm "$CONFIG_FILE"
   if ! [ -w "$CONFIG_DIR" ]; then error_exit "Config dir not writable"; fi
   # Explicitly generate server.hcl before mount to ensure it's available in container
-  cat > "$CONFIG_FILE" <<EOF
+  # Use envsubst for safe variable substitution in config heredoc
+  echo "Config content before write:"
+  cat << 'EOF'
 disable_mlock = false
 ui=true
 storage "raft" {
@@ -157,7 +159,7 @@ listener "tcp" {
   tls_disable = "true"
 }
 seal "transit" {
-  address = "$TRANSIT_ADDR"
+  address = "${TRANSIT_ADDR}"
   disable_renewal = "false"
   key_name = "autounseal"
   mount_path = "transit/"
@@ -167,6 +169,29 @@ seal "transit" {
 api_addr = "http://127.0.0.100:8100"
 cluster_addr = "https://127.0.0.100:8101"
 EOF
+  cat << 'EOF' | envsubst > "$CONFIG_FILE"
+disable_mlock = false
+ui=true
+storage "raft" {
+  path    = "/vault/file"
+  node_id = "vault"
+}
+listener "tcp" {
+  address     = "0.0.0.0:8100"
+  tls_disable = "true"
+}
+seal "transit" {
+  address = "${TRANSIT_ADDR}"
+  disable_renewal = "false"
+  key_name = "autounseal"
+  mount_path = "transit/"
+  tls_skip_verify = "true"
+  token = "env://TRANSIT_TOKEN"
+}
+api_addr = "http://127.0.0.100:8100"
+cluster_addr = "https://127.0.0.100:8101"
+EOF
+  cat "$CONFIG_FILE"
   if [ ! -s "$CONFIG_FILE" ]; then error_exit "server.hcl is empty or not created"; fi
   if [ ! -f "$CONFIG_FILE" ]; then error_exit "Failed to create server.hcl"; fi; echo "Generated config at $CONFIG_FILE"
 
