@@ -3,6 +3,7 @@
 
 # Error handling
 set -e
+set -x
 
 info() { echo "[INFO] $1"; }
 
@@ -201,6 +202,10 @@ seal "transit" {
 api_addr = "http://127.0.0.100:8100"
 cluster_addr = "https://127.0.0.100:8101"
 EOF
+  export API_PORT=8200
+  # Post-start: Check init and auto-unseal
+  export VAULT_ADDR="http://127.0.0.100:$API_PORT"
+  
   cat "$CONFIG_FILE"
   if [ ! -s "$CONFIG_FILE" ]; then error_exit "server.hcl is empty or not created"; fi
   if [ ! -f "$CONFIG_FILE" ]; then error_exit "Failed to create server.hcl"; fi; echo "Generated config at $CONFIG_FILE"
@@ -210,6 +215,13 @@ EOF
   ABS_CONFIG_DIR=$(pwd -P)/vault-target-config
   ABS_LOG_DIR=$(pwd -P)/vault-target-logs
   mkdir -p "$ABS_DATA_DIR" "$ABS_CONFIG_DIR" "$ABS_LOG_DIR"
+
+  info "Generating wrapped transit token...";
+  # Grant CAP_SETFCAP to enable mlock for security (allows Vault to lock memory)
+  WRAPPED_TOKEN=$(podman run --rm --network=host --cap-add=SETFCAP --cap-add=IPC_LOCK -e VAULT_ADDR="$VAULT_ADDR" -e VAULT_TOKEN="$VAULT_TOKEN" "$VAULT_IMAGE" vault token create -orphan -policy="autounseal" -wrap-ttl=120 -period=24h -field=wrapping_token | tail -n 1)
+  # Grant CAP_SETFCAP to enable mlock for security (allows Vault to lock memory)
+  echo "Unwrapping token: $WRAPPED_TOKEN"
+  TRANSIT_TOKEN=$(podman run --rm --network=host --cap-add=SETFCAP --cap-add=IPC_LOCK -e VAULT_ADDR="$VAULT_ADDR" "$VAULT_IMAGE" vault unwrap -field=token $WRAPPED_TOKEN)
 
   # Run target container
   info "Starting target Vault server...";
@@ -222,18 +234,16 @@ EOF
     -v "$ABS_DATA_DIR:/vault/file" \
     -v "$ABS_CONFIG_DIR:/vault/config" \
     -v "$ABS_LOG_DIR:/vault/logs" \
-    -e VAULT_ADDR="http://127.0.0.100:$API_PORT" \
-    -e VAULT_API_ADDR="http://127.0.0.100:$API_PORT" \
+    -e VAULT_ADDR="$VAULT_ADDR" \
+    -e VAULT_API_ADDR="$VAULT_PORT" \
     -e TRANSIT_TOKEN="$TRANSIT_TOKEN" \
-    "$IMAGE" server -config=/vault/config/server.hcl
+    "$VAULT_IMAGE" server -config=/vault/config/server.hcl
   info "Vault container started in detached mode"
 
-  # Post-start: Check init and auto-unseal
-  export VAULT_ADDR="http://127.0.0.100:$API_PORT"
   WAS_INITIALIZED=false
-  if ! podman run --rm --network=host -e VAULT_ADDR="$VAULT_ADDR" "$IMAGE" vault status | grep -q "Initialized.*true"; then
+  if ! podman run --rm --network=host -e VAULT_ADDR="$VAULT_ADDR" "$VAULT_IMAGE" vault status | grep -q "Initialized.*true"; then
     info "Initializing target (recovery-shares=15, threshold=7) - WARNING: In prod, use PGP encryption, higher threshold, and secure distribution!";
-    podman run --rm --network=host -e VAULT_ADDR="$VAULT_ADDR" "$IMAGE" vault operator init -recovery-shares=15 -recovery-threshold=7;
+    podman run --rm --network=host -e VAULT_ADDR="$VAULT_ADDR" "$VAULT_IMAGE" vault operator init -recovery-shares=15 -recovery-threshold=7;
     WAS_INITIALIZED=true
   fi
   if $WAS_INITIALIZED; then
@@ -251,7 +261,7 @@ EOF
       -e VAULT_ADDR="http://127.0.0.100:$API_PORT" \
       -e VAULT_API_ADDR="http://127.0.0.100:$API_PORT" \
       -e TRANSIT_TOKEN="$TRANSIT_TOKEN" \
-      "$IMAGE" server -config=/vault/config/server.hcl
+      "$VAULT_IMAGE" server -config=/vault/config/server.hcl
   fi
   # Enforce mlock: Grant IPC_LOCK externally and verify it's active
   ATTEMPTS=5
@@ -267,7 +277,7 @@ EOF
   info "Verifying auto-unseal...";
   ATTEMPTS=5
   for ((i=1; i<=$ATTEMPTS; i++)); do
-    STATUS=$(podman run --rm --network=host -e VAULT_ADDR="$VAULT_ADDR" "$IMAGE" vault status 2>/dev/null || true)
+    STATUS=$(podman run --rm --network=host -e VAULT_ADDR="$VAULT_ADDR" "$VAULT_IMAGE" vault status 2>/dev/null || true)
     if echo "$STATUS" | grep -q "Sealed.*false"; then
       info "Auto-unseal successful."
       break
@@ -288,7 +298,7 @@ else
     --cap-add=SETFCAP --cap-add=IPC_LOCK \
     -e VAULT_ADDR="${VAULT_ADDR:-http://127.0.0.100:$API_PORT}" \
     -e VAULT_TOKEN="${VAULT_TOKEN:-}" \
-    "$IMAGE" vault "$@"
+    "$VAULT_IMAGE" vault "$@"
 fi
 EOF
 chmod +x "$SCRIPTS_DIR/$SHIM_NAME"
