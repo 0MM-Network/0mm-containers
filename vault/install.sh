@@ -141,6 +141,9 @@ if [ $# -eq 0 ] || [ "$1" = "server" ]; then
   # Force recreate config dir
   rm -rf "$CONFIG_DIR"
   mkdir -p "$DATA_DIR" "$LOG_DIR" "$CONFIG_DIR"
+  # Test writability and verify file creation to prevent config errors
+  touch "$CONFIG_FILE" && rm "$CONFIG_FILE"
+  if ! [ -w "$CONFIG_DIR" ]; then error_exit "Config dir not writable"; fi
   # Explicitly generate server.hcl before mount to ensure it's available in container
   cat > "$CONFIG_FILE" <<EOF
 disable_mlock = false
@@ -164,6 +167,7 @@ seal "transit" {
 api_addr = "http://127.0.0.100:8100"
 cluster_addr = "https://127.0.0.100:8101"
 EOF
+  if [ ! -s "$CONFIG_FILE" ]; then error_exit "server.hcl is empty or not created"; fi
   if [ ! -f "$CONFIG_FILE" ]; then error_exit "Failed to create server.hcl"; fi; echo "Generated config at $CONFIG_FILE"
 
   # Hardcode bind mounts with absolute paths to avoid array expansion and named volume errors; data stored in project folder
