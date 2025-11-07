@@ -10,6 +10,9 @@ export VAULT_ADDR="http://127.0.0.100:8100"
 
 rm vault-test.log
 
+# Temporarily set VAULT_ADDR to transit for pre-check, then to target
+export VAULT_ADDR="$TRANSIT_ADDR"  # Use transit address for pre-check
+
 # Pre-test check: Retry status against TRANSIT_ADDR
 LAST_ERROR=""
 ATTEMPTS=10
@@ -25,6 +28,8 @@ for ((i=1; i<=$ATTEMPTS; i++)); do
     sleep 2
   fi
 done
+
+export VAULT_ADDR="http://127.0.0.100:8100"  # Switch to target for remaining tests
 
 export TEST_VAULT_TOKEN="$(secret-tool lookup vault zero policy root | head)"
 
