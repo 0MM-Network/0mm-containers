@@ -187,8 +187,8 @@ if [ $# -eq 0 ] || [ "$1" = "server" ]; then
     "$IMAGE" server -config=/vault/config/server.hcl
   info "Vault container started in detached mode"
 
-  # Wait/retry for target startup to avoid race condition on status/init
-  sleep 5; ATTEMPTS=30; for ((i=1; i<=$ATTEMPTS; i++)); do if podman run --rm --network=host -e VAULT_ADDR="$VAULT_ADDR" "$IMAGE" vault status >/dev/null 2>&1; then break; fi; sleep 1; done; if [ $i -eq $ATTEMPTS ]; then error_exit "Target not responsive after $ATTEMPTS seconds"; fi
+  # Retry target status after start to wait for port bind and readiness
+  sleep 10; ATTEMPTS=60; for ((i=1; i<=$ATTEMPTS; i++)); do if podman run --rm --network=host -e VAULT_ADDR="http://127.0.0.100:8100" "$IMAGE" vault status >/dev/null 2>&1; then break; fi; sleep 1; done; if [ $i -eq $ATTEMPTS ]; then error_exit "Target not responsive after $ATTEMPTS seconds"; fi
 
   # Post-start: Check init and auto-unseal
   export VAULT_ADDR="http://127.0.0.100:8100"
@@ -218,8 +218,8 @@ if [ $# -eq 0 ] || [ "$1" = "server" ]; then
       -e VAULT_API_ADDR="http://127.0.0.100:8100" \
       -e TRANSIT_TOKEN="$TRANSIT_TOKEN" \
       "$IMAGE" server -config=/vault/config/server.hcl
-    # Wait/retry for target startup to avoid race condition on status/init
-    sleep 5; ATTEMPTS=30; for ((i=1; i<=$ATTEMPTS; i++)); do if podman run --rm --network=host -e VAULT_ADDR="$VAULT_ADDR" "$IMAGE" vault status >/dev/null 2>&1; then break; fi; sleep 1; done; if [ $i -eq $ATTEMPTS ]; then error_exit "Target not responsive after $ATTEMPTS seconds"; fi
+    # Retry target status after start to wait for port bind and readiness
+    sleep 10; ATTEMPTS=60; for ((i=1; i<=$ATTEMPTS; i++)); do if podman run --rm --network=host -e VAULT_ADDR="http://127.0.0.100:8100" "$IMAGE" vault status >/dev/null 2>&1; then break; fi; sleep 1; done; if [ $i -eq $ATTEMPTS ]; then error_exit "Target not responsive after $ATTEMPTS seconds"; fi
   fi
   # Enforce mlock: Grant IPC_LOCK externally and verify it's active
   ATTEMPTS=5
