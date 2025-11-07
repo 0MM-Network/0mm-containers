@@ -83,7 +83,7 @@ RUN mkdir -p "$HOME/project" "$HOME/.local/share/opencode" "$HOME/.npm" "$HOME/.
 WORKDIR "$HOME/project"
 
 # Install npm packages
-RUN npm install -g opencode-ai@v0.15.31 playwright chrome-devtools-mcp@latest
+RUN npm install -g opencode-ai@v0.15.18 playwright chrome-devtools-mcp@latest
 
 # Set npm prefix
 RUN npm config set prefix '/home/node/.npm-global'
@@ -93,7 +93,7 @@ RUN npm config set prefix '/home/node/.npm-global'
 RUN npm install -g bash-language-server @cucumber/language-server task-master-ai @byterover/cipher markdownlint-cli2 repomix
 
 # Ruby: ruby-lsp via gem (user install)
-RUN gem install --user-install ruby-lsp
+#RUN gem install --user-install ruby-lsp
 
 # Go: gopls via go install
 RUN export PATH="${PATH}:${GOPATH}/bin" && \
@@ -140,7 +140,6 @@ ENV PATH="/opt/serena-venv/bin:${PATH}:${GOPATH}/bin:${CARGO_HOME}/bin:${RUSTUP_
 RUN gopls version && \
     rust-analyzer --version && \
     clangd --version && \
-    # ruby-lsp --version && \
     bash-language-server --version && \
     terraform-ls --version && \
     playwright --version
@@ -159,7 +158,7 @@ HEALTHCHECK --interval=30s --timeout=3s CMD curl -f http://localhost:4096/doc ||
 FROM base AS opencode-lite
 
 # Install npm package as root
-RUN npm install -g opencode-ai@latest
+RUN npm install -g opencode-ai@v0.15.18
 
 ENV OPENCODE_DOCKER_IMAGE=localhost/opencode-lite
 

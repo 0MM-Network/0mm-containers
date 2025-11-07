@@ -169,10 +169,10 @@ seal "transit" {
 api_addr = "http://127.0.0.100:8100"
 cluster_addr = "https://127.0.0.100:8101"
 EOF
-  # Explicitly define and validate CONFIG_FILE to prevent redirection errors
-  CONFIG_FILE="$CONFIG_DIR/server.hcl"
-  if [ -z "$CONFIG_FILE" ]; then error_exit "CONFIG_FILE not defined"; fi
-  cat << 'EOF' | envsubst > "$CONFIG_FILE"
+# Explicitly define and validate CONFIG_FILE to prevent redirection errors
+CONFIG_FILE="$CONFIG_DIR/server.hcl"
+if [ -z "$CONFIG_FILE" ]; then error_exit "CONFIG_FILE not defined"; fi
+cat << 'EOF' | envsubst > "$CONFIG_FILE"
 disable_mlock = false
 ui=true
 storage "raft" {
