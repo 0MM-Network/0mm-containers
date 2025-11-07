@@ -167,14 +167,14 @@ if [ $# -eq 0 ] || [ "$1" = "server" ]; then
   info "Starting target Vault server...";
   # Clean up existing vault-target container to avoid name conflicts
   podman stop vault-target || true; podman rm vault-target || true
-  # Disable swap via cgroupv2 (swappiness=0) for memory security without mlock
+  # Removed --memory-swappiness=0 due to cgroupv2 incompatibility; implement cgroupv2 swap disable manually
+  # TODO: Disable swap via memory.swap.max=0 in cgroup (/sys/fs/cgroup/.../memory.swap.max)
   # Grant CAP_SETFCAP to enable mlock for security (allows Vault to lock memory)
   podman run --rm -d \
     --network=host \
     --userns=keep-id:uid=1001 \
     --name "vault-target" \
     --cap-add=SETFCAP --cap-add=IPC_LOCK \
-    --memory-swappiness=0 \
     -v "$ABS_DATA_DIR:/vault/file" \
     -v "$ABS_CONFIG_DIR:/vault/config" \
     -v "$ABS_LOG_DIR:/vault/logs" \
@@ -197,14 +197,14 @@ if [ $# -eq 0 ] || [ "$1" = "server" ]; then
     podman stop vault-target
     # Clean up existing vault-target container to avoid name conflicts
     podman stop vault-target || true; podman rm vault-target || true
-    # Disable swap via cgroupv2 (swappiness=0) for memory security without mlock
+    # Removed --memory-swappiness=0 due to cgroupv2 incompatibility; implement cgroupv2 swap disable manually
+    # TODO: Disable swap via memory.swap.max=0 in cgroup (/sys/fs/cgroup/.../memory.swap.max)
     # Grant CAP_SETFCAP to enable mlock for security (allows Vault to lock memory)
     podman run --rm -d \
       --network=host \
       --userns=keep-id:uid=1001 \
       --name "vault-target" \
       --cap-add=SETFCAP --cap-add=IPC_LOCK \
-      --memory-swappiness=0 \
       -v "$ABS_DATA_DIR:/vault/file" \
       -v "$ABS_CONFIG_DIR:/vault/config" \
       -v "$ABS_LOG_DIR:/vault/logs" \
