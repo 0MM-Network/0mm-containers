@@ -153,7 +153,8 @@ if [ $# -eq 0 ] || [ "$1" = "server" ]; then
   if ! [ -w "$CONFIG_DIR" ]; then error_exit "Config dir not writable"; fi
   # Simplified hardcoded config with printf to avoid nesting and dynamic issues
   # Removed disable_mlock per OpenBao docs; use swap disable instead
-  printf '%s\n' 'ui=true' 'storage "raft" {' '  path    = "/vault/file"' '  node_id = "vault"' '}' 'listener "tcp" {' '  address     = "0.0.0.0:8100"' '  tls_disable = "true"' '}' 'seal "transit" {' '  address = "http://127.0.0.100:8200"' '  disable_renewal = "false"' '  key_name = "autounseal"' '  mount_path = "transit/"' '  tls_skip_verify = "true"' '  token = "env://TRANSIT_TOKEN"' '}' 'api_addr = "http://127.0.0.100:8100"' 'cluster_addr = "https://127.0.0.100:8101"' > "$CONFIG_FILE"
+  # Configure audit in server.hcl for automatic enablement at startup
+  printf '%s\n' 'ui=true' 'storage "raft" {' '  path    = "/vault/file"' '  node_id = "vault"' '}' 'listener "tcp" {' '  address     = "0.0.0.0:8100"' '  tls_disable = "true"' '}' 'seal "transit" {' '  address = "http://127.0.0.100:8200"' '  disable_renewal = "false"' '  key_name = "autounseal"' '  mount_path = "transit/"' '  tls_skip_verify = "true"' '  token = "env://TRANSIT_TOKEN"' '}' 'api_addr = "http://127.0.0.100:8100"' 'cluster_addr = "https://127.0.0.100:8101"' 'audit {' '  type = "file"' '  options = {' '    file_path = "/vault/logs/audit.log"' '  }' '}' > "$CONFIG_FILE"
 
   cat "$CONFIG_FILE"
   if [ ! -s "$CONFIG_FILE" ]; then error_exit "server.hcl is empty or not created"; fi
@@ -191,9 +192,7 @@ if [ $# -eq 0 ] || [ "$1" = "server" ]; then
   WAS_INITIALIZED=false
   if ! podman run --rm --network=host -e VAULT_ADDR="$VAULT_ADDR" "$IMAGE" vault status | grep -q "Initialized.*true"; then
     info "Initializing target (recovery-shares=15, threshold=7) - WARNING: In prod, use PGP encryption, higher threshold, and secure distribution!";
-    # Capture root token from init and use for target auth in audit enable
-    INIT_OUTPUT=$(podman run --rm --network=host -e VAULT_ADDR="$VAULT_ADDR" "$IMAGE" vault operator init -recovery-shares=15 -recovery-threshold=7 -format=json)
-    ROOT_TOKEN=$(echo "$INIT_OUTPUT" | jq -r '.root_token')
+    podman run --rm --network=host -e VAULT_ADDR="$VAULT_ADDR" "$IMAGE" vault operator init -recovery-shares=15 -recovery-threshold=7;
     WAS_INITIALIZED=true
   fi
   if $WAS_INITIALIZED; then
@@ -217,8 +216,6 @@ if [ $# -eq 0 ] || [ "$1" = "server" ]; then
       -e TRANSIT_TOKEN="$TRANSIT_TOKEN" \
       "$IMAGE" server -config=/vault/config/server.hcl
   fi
-  # Enable audit logging on target with full path to ensure file creation in mounted /vault/logs
-  podman run --rm --network=host -e VAULT_ADDR="$VAULT_ADDR" -e VAULT_TOKEN="$ROOT_TOKEN" "$IMAGE" vault audit enable file file_path=/vault/logs/audit.log
   # Enforce mlock: Grant IPC_LOCK externally and verify it's active
   ATTEMPTS=5
   for ((i=1; i<=$ATTEMPTS; i++)); do
