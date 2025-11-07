@@ -48,6 +48,8 @@ VAULT_SHIMS+=("$SHIM_NAME")
 cat > "$SCRIPTS_DIR/$SHIM_NAME" << 'EOF'
 #!/bin/bash
 
+set -x
+
 # Standalone shim for auto-unsealed Vault server using host transit
 # Aligns with tutorials: Uses recovery keys (not unseal keys) for manual unseal scenarios;
 # Token is periodic/orphan for auto-renewal within 24h period.

@@ -8,6 +8,8 @@
 # And these specific files
 !Containerfile
 !install.sh
+!test_shim.sh
+!generate_shim.sh
 !entrypoint.sh
 !README.md
 !TESTING.md
