@@ -119,7 +119,7 @@ if [ \$# -eq 0 ] || [ "\$1" = "server" ]; then
 ui = true
 
 listener "tcp" {
-  address     = "127.0.0.100:\$API_PORT"
+  address     = "0.0.0.0:\$API_PORT"
   cluster_address = "127.0.0.100:\$CLUSTER_PORT"
   tls_disable = true  # Disable for demo; enable TLS in prod
 }
