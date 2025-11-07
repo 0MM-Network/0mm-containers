@@ -164,12 +164,14 @@ if [ $# -eq 0 ] || [ "$1" = "server" ]; then
 
   # Run target container
   info "Starting target Vault server...";
+  # Disable swap via cgroupv2 (swappiness=0) for memory security without mlock
   # Grant CAP_SETFCAP to enable mlock for security (allows Vault to lock memory)
   podman run --rm -d \
     --network=host \
     --userns=keep-id:uid=1001 \
     --name "vault-target" \
     --cap-add=SETFCAP --cap-add=IPC_LOCK \
+    --memory-swappiness=0 \
     -v "$ABS_DATA_DIR:/vault/file" \
     -v "$ABS_CONFIG_DIR:/vault/config" \
     -v "$ABS_LOG_DIR:/vault/logs" \
@@ -190,12 +192,14 @@ if [ $# -eq 0 ] || [ "$1" = "server" ]; then
   if $WAS_INITIALIZED; then
     info "Restarting server to trigger auto-unseal after initialization...";
     podman stop vault-target
+    # Disable swap via cgroupv2 (swappiness=0) for memory security without mlock
     # Grant CAP_SETFCAP to enable mlock for security (allows Vault to lock memory)
     podman run --rm -d \
       --network=host \
       --userns=keep-id:uid=1001 \
       --name "vault-target" \
       --cap-add=SETFCAP --cap-add=IPC_LOCK \
+      --memory-swappiness=0 \
       -v "$ABS_DATA_DIR:/vault/file" \
       -v "$ABS_CONFIG_DIR:/vault/config" \
       -v "$ABS_LOG_DIR:/vault/logs" \
