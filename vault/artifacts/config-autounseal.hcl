@@ -1,4 +1,4 @@
-disable_mlock = true
+disable_mlock = false
 ui=true
 
 storage "raft" {
