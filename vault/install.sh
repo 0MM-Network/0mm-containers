@@ -80,21 +80,33 @@ configure_transit() {
   fi
 
   echo "Using TRANSIT_ADDR: $TRANSIT_ADDR"
-  podman run --rm --network=host -e VAULT_ADDR="$TRANSIT_ADDR" -e VAULT_TOKEN="$VAULT_TOKEN" "$IMAGE" vault status || error_exit "Cannot connect to transit Vault at $TRANSIT_ADDR"
+  LAST_ERROR=""
+  ATTEMPTS=10
+  for ((i=1; i<=$ATTEMPTS; i++)); do
+    if podman run --rm --network=host -e VAULT_ADDR="$TRANSIT_ADDR" -e VAULT_TOKEN="$VAULT_TOKEN" -e SKIP_SETCAP=1 "$IMAGE" vault status; then
+      break
+    else
+      LAST_ERROR=$(podman run --rm --network=host -e VAULT_ADDR="$TRANSIT_ADDR" -e VAULT_TOKEN="$VAULT_TOKEN" -e SKIP_SETCAP=1 "$IMAGE" vault status 2>&1 || true)
+      if [ $i -eq $ATTEMPTS ]; then
+        error_exit "Cannot connect to transit Vault at $TRANSIT_ADDR after $ATTEMPTS attempts: $LAST_ERROR"
+      fi
+      sleep 2
+    fi
+  done
 
   # Check and enable audit logs
-  podman run --rm --network=host -e VAULT_ADDR="$TRANSIT_ADDR" -e VAULT_TOKEN="$VAULT_TOKEN" "$IMAGE" vault audit list | grep -q file || { info "Enabling audit logs..."; podman run --rm --network=host -e VAULT_ADDR="$TRANSIT_ADDR" -e VAULT_TOKEN="$VAULT_TOKEN" "$IMAGE" vault audit enable file file_path=audit.log; }
+  podman run --rm --network=host -e VAULT_ADDR="$TRANSIT_ADDR" -e VAULT_TOKEN="$VAULT_TOKEN" -e SKIP_SETCAP=1 "$IMAGE" vault audit list | grep -q file || { info "Enabling audit logs..."; podman run --rm --network=host -e VAULT_ADDR="$TRANSIT_ADDR" -e VAULT_TOKEN="$VAULT_TOKEN" -e SKIP_SETCAP=1 "$IMAGE" vault audit enable file file_path=audit.log; }
 
   # Check and enable transit engine
-  podman run --rm --network=host -e VAULT_ADDR="$TRANSIT_ADDR" -e VAULT_TOKEN="$VAULT_TOKEN" "$IMAGE" vault secrets list | grep -q transit/ || { info "Enabling transit engine..."; podman run --rm --network=host -e VAULT_ADDR="$TRANSIT_ADDR" -e VAULT_TOKEN="$VAULT_TOKEN" "$IMAGE" vault secrets enable transit; }
+  podman run --rm --network=host -e VAULT_ADDR="$TRANSIT_ADDR" -e VAULT_TOKEN="$VAULT_TOKEN" -e SKIP_SETCAP=1 "$IMAGE" vault secrets list | grep -q transit/ || { info "Enabling transit engine..."; podman run --rm --network=host -e VAULT_ADDR="$TRANSIT_ADDR" -e VAULT_TOKEN="$VAULT_TOKEN" -e SKIP_SETCAP=1 "$IMAGE" vault secrets enable transit; }
 
   # Check and create key
-  podman run --rm --network=host -e VAULT_ADDR="$TRANSIT_ADDR" -e VAULT_TOKEN="$VAULT_TOKEN" "$IMAGE" vault list transit/keys | grep -q autounseal || { info "Creating autounseal key..."; podman run --rm --network=host -e VAULT_ADDR="$TRANSIT_ADDR" -e VAULT_TOKEN="$VAULT_TOKEN" "$IMAGE" vault write -f transit/keys/autounseal; }
+  podman run --rm --network=host -e VAULT_ADDR="$TRANSIT_ADDR" -e VAULT_TOKEN="$VAULT_TOKEN" -e SKIP_SETCAP=1 "$IMAGE" vault list transit/keys | grep -q autounseal || { info "Creating autounseal key..."; podman run --rm --network=host -e VAULT_ADDR="$TRANSIT_ADDR" -e VAULT_TOKEN="$VAULT_TOKEN" -e SKIP_SETCAP=1 "$IMAGE" vault write -f transit/keys/autounseal; }
 
   # Check and create policy
-  podman run --rm --network=host -e VAULT_ADDR="$TRANSIT_ADDR" -e VAULT_TOKEN="$VAULT_TOKEN" "$IMAGE" vault policy list | grep -q autounseal || {
+  podman run --rm --network=host -e VAULT_ADDR="$TRANSIT_ADDR" -e VAULT_TOKEN="$VAULT_TOKEN" -e SKIP_SETCAP=1 "$IMAGE" vault policy list | grep -q autounseal || {
     info "Creating autounseal policy...";
-    podman run --rm --network=host -e VAULT_ADDR="$TRANSIT_ADDR" -e VAULT_TOKEN="$VAULT_TOKEN" "$IMAGE" vault policy write autounseal - <<'POLICY_EOF'
+    podman run --rm --network=host -e VAULT_ADDR="$TRANSIT_ADDR" -e VAULT_TOKEN="$VAULT_TOKEN" -e SKIP_SETCAP=1 "$IMAGE" vault policy write autounseal - <<'POLICY_EOF'
 path "transit/encrypt/autounseal" {
    capabilities = [ "update" ]
 }
@@ -187,66 +199,28 @@ EOF
 chmod +x "$SCRIPTS_DIR/$SHIM_NAME"
 echo "Created standalone shim for $SHIM_NAME"
 
-# Setup for test transit server
-TRANSIT_DATA_DIR="$PWD/vault-transit-data"
-TRANSIT_LOG_DIR="$PWD/vault-transit-logs"
-TRANSIT_CONFIG_DIR="$PWD/vault-transit-config"
-TRANSIT_CONFIG_FILE="$TRANSIT_CONFIG_DIR/server.hcl"
-TRANSIT_API_PORT=8300
-TRANSIT_CLUSTER_PORT=8301
-
-rm -rf "$TRANSIT_DATA_DIR" "$TRANSIT_LOG_DIR" "$TRANSIT_CONFIG_DIR"
-mkdir -p "$TRANSIT_DATA_DIR" "$TRANSIT_LOG_DIR" "$TRANSIT_CONFIG_DIR"
-
-cat > "$TRANSIT_CONFIG_FILE" << CONFIG_EOF
-ui = true
-
-listener "tcp" {
-  address     = "0.0.0.0:8200"
-  cluster_address = "0.0.0.0:8201"
-  tls_disable = true
-}
-
-api_addr = "http://127.0.0.100:$TRANSIT_API_PORT"
-cluster_addr = "http://127.0.0.100:$TRANSIT_CLUSTER_PORT"
-
-storage "raft" {
-  path    = "/vault/file"
-  node_id = "transit"
-}
-
-disable_mlock = true
-CONFIG_EOF
-
-echo "Starting transit Vault server for test..."
-podman run --rm -d \
-  --name "vault-transit-test" \
-  -p $TRANSIT_API_PORT:8200 -p $TRANSIT_CLUSTER_PORT:8201 \
-  -v "$TRANSIT_DATA_DIR:/vault/file:Z" -v "$TRANSIT_CONFIG_DIR:/vault/config:Z" -v "$TRANSIT_LOG_DIR:/vault/logs:Z" \
-  -e VAULT_ADDR="http://127.0.0.100:$TRANSIT_API_PORT" \
-  -e VAULT_API_ADDR="http://127.0.0.100:$TRANSIT_API_PORT" \
-  -e SKIP_SETCAP=0 \
-  "$VAULT_IMAGE" server -config=/vault/config/server.hcl
-
-sleep 5
-
-# Initialize and unseal transit if needed
-export VAULT_ADDR="http://127.0.0.100:$TRANSIT_API_PORT"
-if ! "$SCRIPTS_DIR/vault" status | grep -q "Initialized.*true"; then
-  INIT_OUTPUT=$("$SCRIPTS_DIR/vault" operator init -key-shares=1 -key-threshold=1 -format=json)
-  UNSEAL_KEY=$(echo "$INIT_OUTPUT" | jq -r '.unseal_keys_b64[0]')
-  ROOT_TOKEN=$(echo "$INIT_OUTPUT" | jq -r '.root_token')
-  "$SCRIPTS_DIR/vault" operator unseal "$UNSEAL_KEY"
-else
-  echo "Transit already initialized; test assumes fresh start - exiting"
-  exit 1
-fi
-
-export TEST_VAULT_TOKEN="$ROOT_TOKEN"
-
-echo "Testing standalone vault shim..."
+echo "Testing against real transit at 8200..."
+export TRANSIT_ADDR="http://127.0.0.100:8200"
 export VAULT_ADDR="http://127.0.0.100:8100"
-export TRANSIT_ADDR="http://127.0.0.100:8300"
+
+# Pre-test check: Retry status against TRANSIT_ADDR
+LAST_ERROR=""
+ATTEMPTS=10
+for ((i=1; i<=$ATTEMPTS; i++)); do
+  if "$SCRIPTS_DIR/vault" status; then
+    break
+  else
+    LAST_ERROR=$("$SCRIPTS_DIR/vault" status 2>&1 || true)
+    if [ $i -eq $ATTEMPTS ]; then
+      echo "Transit status check failed after $ATTEMPTS attempts: $LAST_ERROR"
+      exit 1
+    fi
+    sleep 2
+  fi
+done
+
+export TEST_VAULT_TOKEN="$(secret-tool lookup vault zero policy root | head)"
+
 # Start server in background for testing (kill after)
 "$SCRIPTS_DIR/vault" server > vault-test.log 2>&1 &
 SERVER_PID=$!
@@ -288,7 +262,5 @@ if "$SCRIPTS_DIR/vault" version &>/dev/null; then
 fi
 # Clean up test server
 podman stop vault-target || true
-podman stop vault-transit-test || true
 wait $SERVER_PID || true
 rm vault-test.log
-rm -rf "$TRANSIT_DATA_DIR" "$TRANSIT_LOG_DIR" "$TRANSIT_CONFIG_DIR" || true
