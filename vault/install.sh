@@ -105,10 +105,9 @@ if [ \$# -eq 0 ] || [ "\$1" = "server" ]; then
   # Idempotent transit setup (checks and configures if needed)
   configure_transit
 
-  # Generate wrapped token only for server mode (periodic, orphan)
-  info "Generating wrapped transit token...";
-  WRAPPED_TOKEN=\$(podman run --rm -e VAULT_ADDR="$TRANSIT_ADDR" -e VAULT_TOKEN="$VAULT_TOKEN" "$IMAGE" vault token create -orphan -policy="autounseal" -wrap-ttl=120 -period=24h -field=wrapping_token)
-  TRANSIT_TOKEN=\$(podman run --rm -e VAULT_ADDR="$TRANSIT_ADDR" "$IMAGE" vault unwrap -field=token \$WRAPPED_TOKEN)
+  # Generate transit token directly (periodic, orphan) - simplified for local demo; use wrapping for secure transfer in prod
+  info "Generating transit token...";
+  TRANSIT_TOKEN=\$(podman run --rm -e VAULT_ADDR="$TRANSIT_ADDR" -e VAULT_TOKEN="$VAULT_TOKEN" "$IMAGE" vault token create -orphan -policy="autounseal" -period=24h -field=token)
 
   # Force recreate config dir
   rm -rf "\$CONFIG_DIR"
@@ -138,6 +137,7 @@ seal "transit" {
   key_name           = "autounseal"
   mount_path         = "transit/"
   tls_skip_verify    = "true"  # Disable for demo; verify in prod
+  token              = "\$TRANSIT_TOKEN"
 }
 
 disable_mlock = true
@@ -156,7 +156,6 @@ CONFIG_EOF
     -e VAULT_ADDR="http://127.0.0.100:\$API_PORT" \
     -e VAULT_API_ADDR="http://127.0.0.100:\$API_PORT" \
     -e SKIP_SETCAP=0 \
-    -e VAULT_TOKEN="\$TRANSIT_TOKEN" \
     "\$IMAGE" server -config=/vault/config/server.hcl "\$@"
   info "Vault container started in detached mode"
 
@@ -249,14 +248,14 @@ SERVER_PID=$!
 sleep 10  # Wait longer for server to start and auto-unseal
 if "$SCRIPTS_DIR/vault" version &>/dev/null; then
   "$SCRIPTS_DIR/vault" version && echo "✅ Version check passed" || echo "❌ Version failed"
-  "$SCRIPTS_DIR/vault" status && echo "✅ Status check passed (unsealed)" || echo "❌ Status failed"
+  if "$SCRIPTS_DIR/vault" status | grep -q "Sealed.*false"; then echo "✅ Status check passed (unsealed)"; else echo "❌ Status failed"; fi
   # Simulate restart to verify auto-unseal on restart
   podman stop vault-target
   sleep 2
   "$SCRIPTS_DIR/vault" server > vault-restart.log 2>&1 &
   RESTART_PID=$!
   sleep 10
-  "$SCRIPTS_DIR/vault" status && echo "✅ Status after restart passed (auto-unsealed)" || echo "❌ Restart status failed"
+  if "$SCRIPTS_DIR/vault" status | grep -q "Sealed.*false"; then echo "✅ Status after restart passed (auto-unsealed)"; else echo "❌ Restart status failed"; fi
   podman stop vault-target || true
   wait $RESTART_PID || true
   rm vault-restart.log
