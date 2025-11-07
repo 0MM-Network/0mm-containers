@@ -162,9 +162,24 @@ CONFIG_EOF
 
   # Post-start: Check init and auto-unseal
   export VAULT_ADDR="http://127.0.0.100:\$API_PORT"
+  WAS_INITIALIZED=false
   if ! podman run --rm -e VAULT_ADDR="\$VAULT_ADDR" "\$IMAGE" vault status | grep -q "Initialized.*true"; then
     info "Initializing target (recovery-shares=15, threshold=7) - WARNING: In prod, use PGP encryption, higher threshold, and secure distribution!";
     podman run --rm -e VAULT_ADDR="\$VAULT_ADDR" "\$IMAGE" vault operator init -recovery-shares=15 -recovery-threshold=7;
+    WAS_INITIALIZED=true
+  fi
+  if \$WAS_INITIALIZED; then
+    info "Restarting server to trigger auto-unseal after initialization...";
+    podman stop vault-target
+    podman run --rm -d \
+      --network=host \
+      --userns=keep-id:uid=1001 \
+      --name "vault-target" \
+      \$MOUNTS \
+      -e VAULT_ADDR="http://127.0.0.100:\$API_PORT" \
+      -e VAULT_API_ADDR="http://127.0.0.100:\$API_PORT" \
+      -e SKIP_SETCAP=0 \
+      "\$IMAGE" server -config=/vault/config/server.hcl "\$@"
   fi
   info "Verifying auto-unseal...";
   podman run --rm -e VAULT_ADDR="\$VAULT_ADDR" "\$IMAGE" vault status | grep "Sealed.*false" || error_exit "Auto-unseal failed"
