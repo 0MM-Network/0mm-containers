@@ -42,7 +42,7 @@ podman build --target default \
 SHIM_NAME="vault"
 VAULT_SHIMS+=("$SHIM_NAME")
 
-cat > "$SCRIPTS_DIR/$SHIM_NAME" << EOF
+cat > "$SCRIPTS_DIR/$SHIM_NAME" << 'EOF'
 #!/bin/bash
 
 # Standalone shim for auto-unsealed Vault server using host transit
@@ -50,22 +50,26 @@ cat > "$SCRIPTS_DIR/$SHIM_NAME" << EOF
 # Token is periodic/orphan for auto-renewal within 24h period.
 
 # Define variables
-IMAGE="$VAULT_IMAGE"
+IMAGE="localhost/vault:latest"
 NODE_ID="vault-auto-unseal"
 API_PORT=8100
 CLUSTER_PORT=8101
-DATA_DIR="\$PWD/vault-target-data"
-LOG_DIR="\$PWD/vault-target-logs"
-CONFIG_DIR="\$PWD/vault-target-config"
-CONFIG_FILE="\$CONFIG_DIR/server.hcl"
-TRANSIT_ADDR="\${TRANSIT_ADDR:-http://127.0.0.100:8200}"  # Host transit server
+DATA_DIR="$PWD/vault-target-data"
+LOG_DIR="$PWD/vault-target-logs"
+CONFIG_DIR="$PWD/vault-target-config"
+CONFIG_FILE="$CONFIG_DIR/server.hcl"
+TRANSIT_ADDR="${TRANSIT_ADDR:-http://127.0.0.100:8200}"  # Host transit server
 
 # Error handling
 set -e
 
 # Function for informative messages
-info() { echo "[INFO] \$1"; }
-error_exit() { echo "Error: \$1" >&2; exit 1; }
+info() { echo "[INFO] $1"; }
+error_exit() { echo "Error: $1" >&2; exit 1; }
+
+# Validations
+if [ -z "$IMAGE" ]; then error_exit "Vault image not set"; fi
+if [ -z "$TRANSIT_ADDR" ]; then error_exit "TRANSIT_ADDR not set"; fi
 
 configure_transit() {
   export VAULT_ADDR="$TRANSIT_ADDR"
@@ -75,6 +79,7 @@ configure_transit() {
     export VAULT_TOKEN="$(secret-tool lookup vault zero policy root | head)"  # Assumes root token stored; adjust for prod
   fi
 
+  echo "Using TRANSIT_ADDR: $TRANSIT_ADDR"
   podman run --rm --network=host -e VAULT_ADDR="$TRANSIT_ADDR" -e VAULT_TOKEN="$VAULT_TOKEN" "$IMAGE" vault status || error_exit "Cannot connect to transit Vault at $TRANSIT_ADDR"
 
   # Check and enable audit logs
@@ -101,21 +106,21 @@ POLICY_EOF
   }
 }
 
-if [ \$# -eq 0 ] || [ "\$1" = "server" ]; then
+if [ $# -eq 0 ] || [ "$1" = "server" ]; then
   # Idempotent transit setup (checks and configures if needed)
   configure_transit
 
   # Generate wrapped token only for server mode (periodic, orphan)
   info "Generating wrapped transit token...";
-  WRAPPED_TOKEN=\$(podman run --rm --network=host -e VAULT_ADDR="$TRANSIT_ADDR" -e VAULT_TOKEN="$VAULT_TOKEN" "$IMAGE" vault token create -orphan -policy="autounseal" -wrap-ttl=120 -period=24h -field=wrapping_token)
-  TRANSIT_TOKEN=\$(podman run --rm --network=host -e VAULT_ADDR="$TRANSIT_ADDR" "$IMAGE" vault unwrap -field=token \$WRAPPED_TOKEN)
+  WRAPPED_TOKEN=$(podman run --rm --network=host -e VAULT_ADDR="$TRANSIT_ADDR" -e VAULT_TOKEN="$VAULT_TOKEN" "$IMAGE" vault token create -orphan -policy="autounseal" -wrap-ttl=120 -period=24h -field=wrapping_token)
+  TRANSIT_TOKEN=$(podman run --rm --network=host -e VAULT_ADDR="$TRANSIT_ADDR" "$IMAGE" vault unwrap -field=token $WRAPPED_TOKEN)
 
   # Force recreate config dir
-  rm -rf "\$CONFIG_DIR"
-  mkdir -p "\$DATA_DIR" "\$LOG_DIR" "\$CONFIG_DIR"
+  rm -rf "$CONFIG_DIR"
+  mkdir -p "$DATA_DIR" "$LOG_DIR" "$CONFIG_DIR"
 
   # Prepare mounts
-  MOUNTS="-v \"\$DATA_DIR:/vault/file:Z\" -v \"\$CONFIG_DIR:/vault/config:Z\" -v \"\$LOG_DIR:/vault/logs:Z\""
+  MOUNTS="-v \"$DATA_DIR:/vault/file:Z\" -v \"$CONFIG_DIR:/vault/config:Z\" -v \"$LOG_DIR:/vault/logs:Z\""
 
   # Run target container
   info "Starting target Vault server...";
@@ -123,46 +128,46 @@ if [ \$# -eq 0 ] || [ "\$1" = "server" ]; then
     --network=host \
     --userns=keep-id:uid=1001 \
     --name "vault-target" \
-    \$MOUNTS \
-    -e VAULT_ADDR="http://127.0.0.100:\$API_PORT" \
-    -e VAULT_API_ADDR="http://127.0.0.100:\$API_PORT" \
+    $MOUNTS \
+    -e VAULT_ADDR="http://127.0.0.100:$API_PORT" \
+    -e VAULT_API_ADDR="http://127.0.0.100:$API_PORT" \
     -e SKIP_SETCAP=0 \
-    -e TRANSIT_TOKEN="\$TRANSIT_TOKEN" \
-    "\$IMAGE" server -config=/vault/config/server.hcl "\$@"
+    -e TRANSIT_TOKEN="$TRANSIT_TOKEN" \
+    "$IMAGE" server -config=/vault/config/server.hcl "$@"
   info "Vault container started in detached mode"
 
   # Post-start: Check init and auto-unseal
-  export VAULT_ADDR="http://127.0.0.100:\$API_PORT"
+  export VAULT_ADDR="http://127.0.0.100:$API_PORT"
   WAS_INITIALIZED=false
-  if ! podman run --rm --network=host -e VAULT_ADDR="\$VAULT_ADDR" "\$IMAGE" vault status | grep -q "Initialized.*true"; then
+  if ! podman run --rm --network=host -e VAULT_ADDR="$VAULT_ADDR" "$IMAGE" vault status | grep -q "Initialized.*true"; then
     info "Initializing target (recovery-shares=15, threshold=7) - WARNING: In prod, use PGP encryption, higher threshold, and secure distribution!";
-    podman run --rm --network=host -e VAULT_ADDR="\$VAULT_ADDR" "\$IMAGE" vault operator init -recovery-shares=15 -recovery-threshold=7;
+    podman run --rm --network=host -e VAULT_ADDR="$VAULT_ADDR" "$IMAGE" vault operator init -recovery-shares=15 -recovery-threshold=7;
     WAS_INITIALIZED=true
   fi
-  if \$WAS_INITIALIZED; then
+  if $WAS_INITIALIZED; then
     info "Restarting server to trigger auto-unseal after initialization...";
     podman stop vault-target
     podman run --rm -d \
       --network=host \
       --userns=keep-id:uid=1001 \
       --name "vault-target" \
-      \$MOUNTS \
-      -e VAULT_ADDR="http://127.0.0.100:\$API_PORT" \
-      -e VAULT_API_ADDR="http://127.0.0.100:\$API_PORT" \
+      $MOUNTS \
+      -e VAULT_ADDR="http://127.0.0.100:$API_PORT" \
+      -e VAULT_API_ADDR="http://127.0.0.100:$API_PORT" \
       -e SKIP_SETCAP=0 \
-      -e TRANSIT_TOKEN="\$TRANSIT_TOKEN" \
-      "\$IMAGE" server -config=/vault/config/server.hcl "\$@"
+      -e TRANSIT_TOKEN="$TRANSIT_TOKEN" \
+      "$IMAGE" server -config=/vault/config/server.hcl "$@"
   fi
   info "Verifying auto-unseal...";
   ATTEMPTS=5
-  for ((i=1; i<=\$ATTEMPTS; i++)); do
-    STATUS=\$(podman run --rm --network=host -e VAULT_ADDR="\$VAULT_ADDR" "\$IMAGE" vault status 2>/dev/null || true)
-    if echo "\$STATUS" | grep -q "Sealed.*false"; then
+  for ((i=1; i<=$ATTEMPTS; i++)); do
+    STATUS=$(podman run --rm --network=host -e VAULT_ADDR="$VAULT_ADDR" "$IMAGE" vault status 2>/dev/null || true)
+    if echo "$STATUS" | grep -q "Sealed.*false"; then
       info "Auto-unseal successful."
       break
     fi
-    if [ \$i -eq \$ATTEMPTS ]; then
-      error_exit "Auto-unseal failed after \$ATTEMPTS attempts"
+    if [ $i -eq $ATTEMPTS ]; then
+      error_exit "Auto-unseal failed after $ATTEMPTS attempts"
     fi
     sleep 1
   done
@@ -173,10 +178,10 @@ else
   podman run --rm -i \
     --network=host \
     --userns=keep-id:uid=1001 \
-    -e VAULT_ADDR="\${VAULT_ADDR:-http://127.0.0.100:\$API_PORT}" \
-    -e VAULT_TOKEN="\${VAULT_TOKEN:-}" \
+    -e VAULT_ADDR="${VAULT_ADDR:-http://127.0.0.100:$API_PORT}" \
+    -e VAULT_TOKEN="${VAULT_TOKEN:-}" \
     -e SKIP_SETCAP=1 \
-    "\$IMAGE" vault "\$@"
+    "$IMAGE" vault "$@"
 fi
 EOF
 chmod +x "$SCRIPTS_DIR/$SHIM_NAME"
