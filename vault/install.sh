@@ -4,6 +4,8 @@
 # Error handling
 set -e
 
+info() { echo "[INFO] $1"; }
+
 # Function to display error messages
 error_exit() {
     echo "Error: $1" >&2
@@ -139,8 +141,10 @@ if [ $# -eq 0 ] || [ "$1" = "server" ]; then
   TRANSIT_TOKEN=$(podman run --rm --network=host --cap-add=SETFCAP --cap-add=IPC_LOCK -e VAULT_ADDR="$TRANSIT_ADDR" "$IMAGE" vault unwrap -field=token $WRAPPED_TOKEN)
 
   # Force recreate config dir
+  CONFIG_DIR="$PWD/vault-target-config";
   rm -rf "$CONFIG_DIR"
   mkdir -p "$DATA_DIR" "$LOG_DIR" "$CONFIG_DIR"
+  chmod 777 "$CONFIG_DIR"
   # Test writability and verify file creation to prevent config errors
   touch "$CONFIG_FILE" && rm "$CONFIG_FILE"
   if ! [ -w "$CONFIG_DIR" ]; then error_exit "Config dir not writable"; fi
@@ -170,6 +174,9 @@ api_addr = "http://127.0.0.100:8100"
 cluster_addr = "https://127.0.0.100:8101"
 EOF
 # Explicitly define and validate CONFIG_FILE to prevent redirection errors
+CONFIG_DIR="$PWD/vault-target-config"
+mkdir -p "$CONFIG_DIR"
+chmod 777 "$CONFIG_DIR"
 CONFIG_FILE="$CONFIG_DIR/server.hcl"
 if [ -z "$CONFIG_FILE" ]; then error_exit "CONFIG_FILE not defined"; fi
 cat << 'EOF' | envsubst > "$CONFIG_FILE"
