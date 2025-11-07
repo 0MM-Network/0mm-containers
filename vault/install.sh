@@ -89,7 +89,7 @@ configure_transit() {
   # Check and create policy
   podman run --rm --network=host -e VAULT_ADDR="$TRANSIT_ADDR" -e VAULT_TOKEN="$VAULT_TOKEN" "$IMAGE" vault policy list | grep -q autounseal || {
     info "Creating autounseal policy...";
-    podman run --rm --network=host -e VAULT_ADDR="$TRANSIT_ADDR" -e VAULT_TOKEN="$VAULT_TOKEN" "$IMAGE" vault policy write autounseal - <<EOF
+    podman run --rm --network=host -e VAULT_ADDR="$TRANSIT_ADDR" -e VAULT_TOKEN="$VAULT_TOKEN" "$IMAGE" vault policy write autounseal - <<'POLICY_EOF'
 path "transit/encrypt/autounseal" {
    capabilities = [ "update" ]
 }
@@ -97,7 +97,7 @@ path "transit/encrypt/autounseal" {
 path "transit/decrypt/autounseal" {
    capabilities = [ "update" ]
 }
-EOF
+POLICY_EOF
   }
 }
 
