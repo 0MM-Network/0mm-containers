@@ -17,7 +17,7 @@ seal "transit" {
   key_name = "autounseal"
   mount_path = "transit/"
   tls_skip_verify = "true"
-  token = "TOKEN_PLACEHOLDER"
+  token = "env://TRANSIT_TOKEN"
 }
 
 api_addr = "http://127.0.0.100:8100"
