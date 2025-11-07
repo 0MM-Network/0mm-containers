@@ -169,7 +169,7 @@ seal "transit" {
 api_addr = "http://127.0.0.100:8100"
 cluster_addr = "https://127.0.0.100:8101"
 EOF
-  cat << 'EOF' | envsubst > "$CONFIG_FILE"
+cat << 'EOF' | envsubst > "$CONFIG_FILE"
 disable_mlock = false
 ui=true
 storage "raft" {
