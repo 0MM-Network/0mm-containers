@@ -105,4 +105,9 @@ echo "Recovery shares handled externally in shims"
 
 # Supports multiple recovery shares for init, handled in shims
 
+# If running server mode and TRANSIT_TOKEN is set, inject it into the config template
+if [ "$1" = 'vault' ] && [ "$2" = 'server' ] && [ -n "$TRANSIT_TOKEN" ]; then
+    sed -i "s/TOKEN_PLACEHOLDER/$TRANSIT_TOKEN/g" /vault/config/server.hcl
+fi
+
 exec "$@"

@@ -114,38 +114,8 @@ if [ \$# -eq 0 ] || [ "\$1" = "server" ]; then
   rm -rf "\$CONFIG_DIR"
   mkdir -p "\$DATA_DIR" "\$LOG_DIR" "\$CONFIG_DIR"
 
-  # Generate target config with seal stanza
-  cat > "\$CONFIG_FILE" << CONFIG_EOF
-ui = true
-
-listener "tcp" {
-  address     = "0.0.0.0:\$API_PORT"
-  cluster_address = "127.0.0.100:\$CLUSTER_PORT"
-  tls_disable = true  # Disable for demo; enable TLS in prod
-}
-
-api_addr = "http://127.0.0.100:\$API_PORT"
-cluster_addr = "http://127.0.0.100:\$CLUSTER_PORT"
-
-storage "raft" {
-  path    = "/vault/file"
-  node_id = "\$NODE_ID"
-}
-
-seal "transit" {
-  address            = "\$TRANSIT_ADDR"
-  disable_renewal    = "false"
-  key_name           = "autounseal"
-  mount_path         = "transit/"
-  tls_skip_verify    = "true"  # Disable for demo; verify in prod
-  token              = "\$TRANSIT_TOKEN"
-}
-
-disable_mlock = true
-CONFIG_EOF
-
   # Prepare mounts
-  MOUNTS="-v \"\$DATA_DIR:/vault/file:Z\" -v \"\$CONFIG_DIR:/vault/config:Z\" -v \"\$LOG_DIR:/vault/logs:Z\""
+  MOUNTS="-v \"\$DATA_DIR:/vault/file:Z\" -v \"\$LOG_DIR:/vault/logs:Z\""
 
   # Run target container
   info "Starting target Vault server...";
@@ -157,6 +127,7 @@ CONFIG_EOF
     -e VAULT_ADDR="http://127.0.0.100:\$API_PORT" \
     -e VAULT_API_ADDR="http://127.0.0.100:\$API_PORT" \
     -e SKIP_SETCAP=0 \
+    -e TRANSIT_TOKEN="\$TRANSIT_TOKEN" \
     "\$IMAGE" server -config=/vault/config/server.hcl "\$@"
   info "Vault container started in detached mode"
 
@@ -179,6 +150,7 @@ CONFIG_EOF
       -e VAULT_ADDR="http://127.0.0.100:\$API_PORT" \
       -e VAULT_API_ADDR="http://127.0.0.100:\$API_PORT" \
       -e SKIP_SETCAP=0 \
+      -e TRANSIT_TOKEN="\$TRANSIT_TOKEN" \
       "\$IMAGE" server -config=/vault/config/server.hcl "\$@"
   fi
   info "Verifying auto-unseal...";
@@ -196,7 +168,6 @@ CONFIG_EOF
   done
   info "Vault server running, waiting for exit..."
   podman wait vault-target
-  rm -rf "\$CONFIG_DIR"  # Clean up config with token after server stops
 else
   # CLI mode: Proxy to target
   podman run --rm -i \

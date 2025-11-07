@@ -52,6 +52,7 @@ RUN mkdir -p /vault/logs && \
     chown -R ${NAME}:${NAME} /vault
 
 COPY artifacts/entrypoint.sh /usr/local/bin/entrypoint.sh
+COPY artifacts/config-autounseal.hcl /vault/config/server.hcl
 # Minor update: Ensure entrypoint.sh can handle dev mode and multiple recovery shares
 RUN echo "# Supports mlock for security; recovery shares handled externally in shims" >> /usr/local/bin/entrypoint.sh && \
     echo "# Supports multiple recovery shares for init, handled in shims" >> /usr/local/bin/entrypoint.sh

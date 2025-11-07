@@ -2,12 +2,12 @@ disable_mlock = true
 ui=true
 
 storage "raft" {
-   path    = "./openbao/vault"
+   path    = "/vault/file"
    node_id = "vault"
 }
 
 listener "tcp" {
-  address     = "127.0.0.100:8100"
+  address     = "0.0.0.0:8100"
   tls_disable = "true"
 }
 
@@ -17,6 +17,7 @@ seal "transit" {
   key_name = "autounseal"
   mount_path = "transit/"
   tls_skip_verify = "true"
+  token = "TOKEN_PLACEHOLDER"
 }
 
 api_addr = "http://127.0.0.100:8100"
