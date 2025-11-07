@@ -142,8 +142,8 @@ if [ $# -eq 0 ] || [ "$1" = "server" ]; then
   rm -rf "$CONFIG_DIR"
   mkdir -p "$DATA_DIR" "$LOG_DIR" "$CONFIG_DIR"
 
-  # Prepare mounts
-  MOUNTS="-v \"$DATA_DIR:/vault/file:Z\" -v \"$CONFIG_DIR:/vault/config:Z\" -v \"$LOG_DIR:/vault/logs:Z\""
+  # Use array for MOUNTS to avoid expansion/escaping errors with :Z labels
+  MOUNTS=("-v $DATA_DIR:/vault/file:Z" "-v $CONFIG_DIR:/vault/config:Z" "-v $LOG_DIR:/vault/logs:Z")
 
   # Run target container
   info "Starting target Vault server...";
@@ -153,7 +153,7 @@ if [ $# -eq 0 ] || [ "$1" = "server" ]; then
     --userns=keep-id:uid=1001 \
     --name "vault-target" \
     --cap-add=SETFCAP --cap-add=IPC_LOCK \
-    $MOUNTS \
+    "${MOUNTS[@]}" \
     -e VAULT_ADDR="http://127.0.0.100:$API_PORT" \
     -e VAULT_API_ADDR="http://127.0.0.100:$API_PORT" \
     -e TRANSIT_TOKEN="$TRANSIT_TOKEN" \
@@ -177,7 +177,7 @@ if [ $# -eq 0 ] || [ "$1" = "server" ]; then
       --userns=keep-id:uid=1001 \
       --name "vault-target" \
       --cap-add=SETFCAP --cap-add=IPC_LOCK \
-      $MOUNTS \
+      "${MOUNTS[@]}" \
       -e VAULT_ADDR="http://127.0.0.100:$API_PORT" \
       -e VAULT_API_ADDR="http://127.0.0.100:$API_PORT" \
       -e TRANSIT_TOKEN="$TRANSIT_TOKEN" \
