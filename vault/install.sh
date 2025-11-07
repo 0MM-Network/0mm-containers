@@ -138,12 +138,7 @@ seal "transit" {
   key_name           = "autounseal"
   mount_path         = "transit/"
   tls_skip_verify    = "true"  # Disable for demo; verify in prod
-  auth {
-    type = "token"
-    parameters {
-      token = "\$TRANSIT_TOKEN"
-    }
-  }
+  token              = "\$TRANSIT_TOKEN"
 }
 
 disable_mlock = true
