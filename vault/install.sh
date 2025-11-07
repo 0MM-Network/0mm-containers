@@ -182,7 +182,18 @@ CONFIG_EOF
       "\$IMAGE" server -config=/vault/config/server.hcl "\$@"
   fi
   info "Verifying auto-unseal...";
-  podman run --rm -e VAULT_ADDR="\$VAULT_ADDR" "\$IMAGE" vault status | grep "Sealed.*false" || error_exit "Auto-unseal failed"
+  ATTEMPTS=30
+  for ((i=1; i<=\$ATTEMPTS; i++)); do
+    STATUS=\$(podman run --rm -e VAULT_ADDR="\$VAULT_ADDR" "\$IMAGE" vault status 2>/dev/null || true)
+    if echo "\$STATUS" | grep -q "Sealed.*false"; then
+      info "Auto-unseal successful."
+      break
+    fi
+    if [ \$i -eq \$ATTEMPTS ]; then
+      error_exit "Auto-unseal failed after \$ATTEMPTS attempts"
+    fi
+    sleep 1
+  done
   info "Vault server running, waiting for exit..."
   podman wait vault-target
 else
@@ -264,14 +275,35 @@ SERVER_PID=$!
 sleep 10  # Wait longer for server to start and auto-unseal
 if "$SCRIPTS_DIR/vault" version &>/dev/null; then
   "$SCRIPTS_DIR/vault" version && echo "✅ Version check passed" || echo "❌ Version failed"
-  if "$SCRIPTS_DIR/vault" status | grep -q "Sealed.*false"; then echo "✅ Status check passed (unsealed)"; else echo "❌ Status failed"; fi
+  ATTEMPTS=30
+  SUCCESS=false
+  for ((i=1; i<=$ATTEMPTS; i++)); do
+    STATUS=$("$SCRIPTS_DIR/vault" status 2>/dev/null || true)
+    if echo "$STATUS" | grep -q "Sealed.*false"; then
+      echo "✅ Status check passed (unsealed)"
+      SUCCESS=true
+      break
+    fi
+    sleep 1
+  done
+  if ! $SUCCESS; then echo "❌ Status failed after $ATTEMPTS attempts"; fi
   # Simulate restart to verify auto-unseal on restart
   podman stop vault-target
   sleep 2
   "$SCRIPTS_DIR/vault" server > vault-restart.log 2>&1 &
   RESTART_PID=$!
   sleep 10
-  if "$SCRIPTS_DIR/vault" status | grep -q "Sealed.*false"; then echo "✅ Status after restart passed (auto-unsealed)"; else echo "❌ Restart status failed"; fi
+  SUCCESS=false
+  for ((i=1; i<=$ATTEMPTS; i++)); do
+    STATUS=$("$SCRIPTS_DIR/vault" status 2>/dev/null || true)
+    if echo "$STATUS" | grep -q "Sealed.*false"; then
+      echo "✅ Status after restart passed (auto-unsealed)"
+      SUCCESS=true
+      break
+    fi
+    sleep 1
+  done
+  if ! $SUCCESS; then echo "❌ Restart status failed after $ATTEMPTS attempts"; fi
   podman stop vault-target || true
   wait $RESTART_PID || true
   rm vault-restart.log
