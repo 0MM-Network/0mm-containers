@@ -202,6 +202,12 @@ seal "transit" {
 api_addr = "http://127.0.0.100:8100"
 cluster_addr = "https://127.0.0.100:8101"
 EOF
+
+export TRANSIT_ADDR="http://127.0.0.100:8200";
+export VAULT_ADDR="http://127.0.0.100:8100";
+"$SCRIPTS_DIR/vault" server > vault-test.log 2>&1 &
+SERVER_PID=$!; sleep 10
+
   export API_PORT=8200
   # Post-start: Check init and auto-unseal
   export VAULT_ADDR="http://127.0.0.100:$API_PORT"
