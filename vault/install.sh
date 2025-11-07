@@ -58,7 +58,7 @@ DATA_DIR="\$PWD/vault-target-data"
 LOG_DIR="\$PWD/vault-target-logs"
 CONFIG_DIR="\$PWD/vault-target-config"
 CONFIG_FILE="\$CONFIG_DIR/server.hcl"
-TRANSIT_ADDR="http://127.0.0.100:8200"  # Host transit server
+TRANSIT_ADDR="\${TRANSIT_ADDR:-http://127.0.0.100:8200}"  # Host transit server
 
 # Error handling
 set -e
@@ -187,8 +187,8 @@ TRANSIT_DATA_DIR="$PWD/vault-transit-data"
 TRANSIT_LOG_DIR="$PWD/vault-transit-logs"
 TRANSIT_CONFIG_DIR="$PWD/vault-transit-config"
 TRANSIT_CONFIG_FILE="$TRANSIT_CONFIG_DIR/server.hcl"
-TRANSIT_API_PORT=8200
-TRANSIT_CLUSTER_PORT=8201
+TRANSIT_API_PORT=8300
+TRANSIT_CLUSTER_PORT=8301
 
 rm -rf "$TRANSIT_DATA_DIR" "$TRANSIT_LOG_DIR" "$TRANSIT_CONFIG_DIR"
 mkdir -p "$TRANSIT_DATA_DIR" "$TRANSIT_LOG_DIR" "$TRANSIT_CONFIG_DIR"
@@ -241,6 +241,7 @@ export TEST_VAULT_TOKEN="$ROOT_TOKEN"
 
 echo "Testing standalone vault shim..."
 export VAULT_ADDR="http://127.0.0.100:8100"
+export TRANSIT_ADDR="http://127.0.0.100:8300"
 # Start server in background for testing (kill after)
 "$SCRIPTS_DIR/vault" server > vault-test.log 2>&1 &
 SERVER_PID=$!

@@ -12,7 +12,7 @@ listener "tcp" {
 }
 
 seal "transit" {
-  address = "http://127.0.0.100:8200"
+  address = "ADDRESS_PLACEHOLDER"
   disable_renewal = "false"
   key_name = "autounseal"
   mount_path = "transit/"
