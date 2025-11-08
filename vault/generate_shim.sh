@@ -238,7 +238,7 @@ if [ $# -eq 0 ] || [ "$1" = "server" ]; then
   podman wait vault-target
 else
   # Add backup/restore for plain-text Raft snapshots; git ignore backups dir
-  if [ "$1" = "backup" ]; then mkdir -p backups; echo "/backups/" >> .gitignore; podman run --rm --network=host -e VAULT_ADDR="$VAULT_ADDR" -e VAULT_TOKEN="$(secret-tool lookup vault target policy root | head)" -v "$PWD/backups:/backups" "$IMAGE" vault operator raft snapshot save /backups/vault-snapshot.snap; echo "Backup saved to backups/vault-snapshot.snap"; exit 0; fi
+  if [ "$1" = "backup" ]; then mkdir -p backups; if ! grep -q "^/backups/$" .gitignore; then echo "/backups/" >> .gitignore; fi; podman run --rm --network=host -e VAULT_ADDR="$VAULT_ADDR" -e VAULT_TOKEN="$(secret-tool lookup vault target policy root | head)" -v "$PWD/backups:/backups" "$IMAGE" vault operator raft snapshot save /backups/vault-snapshot.snap; echo "Backup saved to backups/vault-snapshot.snap"; exit 0; fi
   if [ "$1" = "restore" ]; then podman run --rm --network=host -e VAULT_ADDR="$VAULT_ADDR" -e VAULT_TOKEN="$(secret-tool lookup vault target policy root | head)" -v "$PWD/backups:/backups" "$IMAGE" vault operator raft snapshot restore /backups/vault-snapshot.snap; echo "Restore complete"; exit 0; fi
   # CLI mode: Proxy to target
   # Grant CAP_SETFCAP to enable mlock for security (allows Vault to lock memory)
