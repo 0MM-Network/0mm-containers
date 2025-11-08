@@ -155,7 +155,7 @@ if [ $# -eq 0 ] || [ "$1" = "server" ]; then
   # Removed disable_mlock per OpenBao docs; use swap disable instead
   # Configure audit in server.hcl for automatic enablement at startup
   # Add file_path option for file audit device to fix required field error
-  printf '%s\n' 'ui=true' 'storage "raft" {' '  path    = "/vault/file"' '  node_id = "vault"' '}' 'listener "tcp" {' '  address     = "0.0.0.0:8100"' '  tls_disable = "true"' '}' 'seal "transit" {' '  address = "http://127.0.0.100:8200"' '  disable_renewal = "false"' '  key_name = "autounseal"' '  mount_path = "transit/"' '  tls_skip_verify = "true"' '  token = "env://TRANSIT_TOKEN"' '}' 'api_addr = "http://127.0.0.100:8100"' 'cluster_addr = "https://127.0.0.100:8101"' > "$CONFIG_FILE"
+  printf '%s\n' 'ui=true' 'storage "raft" {' '  path    = "/vault/file"' '  node_id = "vault"' '}' 'listener "tcp" {' '  address     = "0.0.0.0:8100"' '  tls_disable = "true"' '}' 'seal "transit" {' '  address = "http://127.0.0.100:8200"' '  disable_renewal = "false"' '  key_name = "autounseal"' '  mount_path = "transit/"' '  tls_skip_verify = "true"' '  token = "env://TRANSIT_TOKEN"' '}' 'api_addr = "http://127.0.0.100:8100"' 'cluster_addr = "https://127.0.0.100:8101"' 'audit {' '  type = "file"' '  options = {' '    file_path = "/vault/logs/audit.log"' '  }' '}' > "$CONFIG_FILE"
 
   cat "$CONFIG_FILE"
   if [ ! -s "$CONFIG_FILE" ]; then error_exit "server.hcl is empty or not created"; fi
@@ -222,17 +222,7 @@ if [ $# -eq 0 ] || [ "$1" = "server" ]; then
     # Retry target status after start to wait for port bind and readiness
     sleep 10; ATTEMPTS=60; for ((i=1; i<=$ATTEMPTS; i++)); do if podman run --rm --network=host -e VAULT_ADDR="http://127.0.0.100:8100" "$IMAGE" vault status >/dev/null 2>&1; then break; fi; sleep 1; done; if [ $i -eq $ATTEMPTS ]; then error_exit "Target not responsive after $ATTEMPTS seconds"; fi
   fi
-  # Enforce mlock: Grant IPC_LOCK externally and verify it's active
-  ATTEMPTS=5
-  for ((i=1; i<=$ATTEMPTS; i++)); do
-    if podman exec vault-target grep "mlock supported" /vault/logs/audit.log; then
-      break
-    fi
-    if [ $i -eq $ATTEMPTS ]; then
-      error_exit "mlock not active"
-    fi
-    sleep 2
-  done
+  # Removed mlock check as it's unsupported in OpenBao; swap disable handles memory security
   info "Verifying auto-unseal...";
   ATTEMPTS=5
   for ((i=1; i<=$ATTEMPTS; i++)); do
