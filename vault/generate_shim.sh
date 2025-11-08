@@ -154,7 +154,8 @@ if [ $# -eq 0 ] || [ "$1" = "server" ]; then
   # Simplified hardcoded config with printf to avoid nesting and dynamic issues
   # Removed disable_mlock per OpenBao docs; use swap disable instead
   # Configure audit in server.hcl for automatic enablement at startup
-  printf '%s\n' 'ui=true' 'storage "raft" {' '  path    = "/vault/file"' '  node_id = "vault"' '}' 'listener "tcp" {' '  address     = "0.0.0.0:8100"' '  tls_disable = "true"' '}' 'seal "transit" {' '  address = "http://127.0.0.100:8200"' '  disable_renewal = "false"' '  key_name = "autounseal"' '  mount_path = "transit/"' '  tls_skip_verify = "true"' '  token = "env://TRANSIT_TOKEN"' '}' 'api_addr = "http://127.0.0.100:8100"' 'cluster_addr = "https://127.0.0.100:8101"' 'audit {' 'file_path = "/vault/logs/audit.log"' '}' > "$CONFIG_FILE"
+  # Add file_path option for file audit device to fix required field error
+  printf '%s\n' 'ui=true' 'storage "raft" {' '  path    = "/vault/file"' '  node_id = "vault"' '}' 'listener "tcp" {' '  address     = "0.0.0.0:8100"' '  tls_disable = "true"' '}' 'seal "transit" {' '  address = "http://127.0.0.100:8200"' '  disable_renewal = "false"' '  key_name = "autounseal"' '  mount_path = "transit/"' '  tls_skip_verify = "true"' '  token = "env://TRANSIT_TOKEN"' '}' 'api_addr = "http://127.0.0.100:8100"' 'cluster_addr = "https://127.0.0.100:8101"' 'audit {' '  type = "file"' '  options = {' '    file_path = "/vault/logs/audit.log"' '  }' '}' > "$CONFIG_FILE"
 
   cat "$CONFIG_FILE"
   if [ ! -s "$CONFIG_FILE" ]; then error_exit "server.hcl is empty or not created"; fi
