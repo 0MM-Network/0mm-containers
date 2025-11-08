@@ -76,6 +76,24 @@ error_exit() { echo "Error: $1" >&2; exit 1; }
 if [ -z "$IMAGE" ]; then error_exit "Vault image not set"; fi
 if [ -z "$TRANSIT_ADDR" ]; then error_exit "TRANSIT_ADDR not set"; fi
 
+# Custom --help to list shim commands and proxy to Vault help
+if [ "$1" = "--help" ] || [ "$1" = "-h" ]; then
+  echo "Shim Commands:";
+  echo "  server - Start the Vault target server";
+  echo "  token <project> - Generate short-lived token for project";
+  echo "  backup - Backup Raft snapshot";
+  echo "  restore - Restore from snapshot";
+  echo "For Vault commands, run with args (e.g., ./vault status)";
+  podman run --rm -i \
+    --network=host \
+    --userns=keep-id:uid=1001 \
+    --cap-add=SETFCAP --cap-add=IPC_LOCK \
+    -e VAULT_ADDR="${VAULT_ADDR:-http://127.0.0.100:8100}" \
+    -e VAULT_TOKEN="${VAULT_TOKEN:-}" \
+    "$IMAGE" vault "$@"
+  exit 0;
+fi
+
 configure_transit() {
   export VAULT_ADDR="$TRANSIT_ADDR"
   if [ -n "$TEST_VAULT_TOKEN" ]; then
