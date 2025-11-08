@@ -153,9 +153,7 @@ if [ $# -eq 0 ] || [ "$1" = "server" ]; then
   if ! [ -w "$CONFIG_DIR" ]; then error_exit "Config dir not writable"; fi
   # Simplified hardcoded config with printf to avoid nesting and dynamic issues
   # Removed disable_mlock per OpenBao docs; use swap disable instead
-  # Configure audit in server.hcl for automatic enablement at startup
-  # Add file_path option for file audit device to fix required field error
-  printf '%s\n' 'ui=true' 'storage "raft" {' '  path    = "/vault/file"' '  node_id = "vault"' '}' 'listener "tcp" {' '  address     = "0.0.0.0:8100"' '  tls_disable = "true"' '}' 'seal "transit" {' '  address = "http://127.0.0.100:8200"' '  disable_renewal = "false"' '  key_name = "autounseal"' '  mount_path = "transit/"' '  tls_skip_verify = "true"' '  token = "env://TRANSIT_TOKEN"' '}' 'api_addr = "http://127.0.0.100:8100"' 'cluster_addr = "https://127.0.0.100:8101"' 'audit {' '  type = "file"' '  options = {' '    file_path = "/vault/logs/audit.log"' '  }' '}' > "$CONFIG_FILE"
+  printf '%s\n' 'ui=true' 'storage "raft" {' '  path    = "/vault/file"' '  node_id = "vault"' '}' 'listener "tcp" {' '  address     = "0.0.0.0:8100"' '  tls_disable = "true"' '}' 'seal "transit" {' '  address = "http://127.0.0.100:8200"' '  disable_renewal = "false"' '  key_name = "autounseal"' '  mount_path = "transit/"' '  tls_skip_verify = "true"' '  token = "env://TRANSIT_TOKEN"' '}' 'api_addr = "http://127.0.0.100:8100"' 'cluster_addr = "https://127.0.0.100:8101"' > "$CONFIG_FILE"
 
   cat "$CONFIG_FILE"
   if [ ! -s "$CONFIG_FILE" ]; then error_exit "server.hcl is empty or not created"; fi
@@ -170,7 +168,7 @@ if [ $# -eq 0 ] || [ "$1" = "server" ]; then
   # Run target container
   info "Starting target Vault server...";
   # Check for running instance and prompt to stop for single-instance multi-project use
-  if podman ps | grep -q vault-target; then echo "Another Vault instance is running. Stop it? (y/n)"; read -r choice; if [ "$choice" = "y" ]; then podman stop vault-target && podman rm vault-target; else echo "Exiting..."; exit 0; fi; fi
+  if podman ps | grep -q vault-target; then echo "Another Vault instance is running. Stop it? (y/n)"; read -r choice; if [ "$choice" = "y" ]; then podman stop vault-target || true; if podman ps -a | grep -q vault-target; then podman rm vault-target || true; fi; else echo "Exiting..."; exit 0; fi; fi
   # Removed --memory-swappiness=0 due to cgroupv2 incompatibility; implement cgroupv2 swap disable manually
   # TODO: Disable swap via memory.swap.max=0 in cgroup (/sys/fs/cgroup/.../memory.swap.max)
   # Grant CAP_SETFCAP to enable mlock for security (allows Vault to lock memory)
@@ -203,7 +201,7 @@ if [ $# -eq 0 ] || [ "$1" = "server" ]; then
     info "Restarting server to trigger auto-unseal after initialization...";
     podman stop vault-target
     # Check for running instance and prompt to stop for single-instance multi-project use
-    if podman ps | grep -q vault-target; then echo "Another Vault instance is running. Stop it? (y/n)"; read -r choice; if [ "$choice" = "y" ]; then podman stop vault-target && podman rm vault-target; else echo "Exiting..."; exit 0; fi; fi
+    if podman ps | grep -q vault-target; then echo "Another Vault instance is running. Stop it? (y/n)"; read -r choice; if [ "$choice" = "y" ]; then podman stop vault-target || true; if podman ps -a | grep -q vault-target; then podman rm vault-target || true; fi; else echo "Exiting..."; exit 0; fi; fi
     # Removed --memory-swappiness=0 due to cgroupv2 incompatibility; implement cgroupv2 swap disable manually
     # TODO: Disable swap via memory.swap.max=0 in cgroup (/sys/fs/cgroup/.../memory.swap.max)
     # Grant CAP_SETFCAP to enable mlock for security (allows Vault to lock memory)
