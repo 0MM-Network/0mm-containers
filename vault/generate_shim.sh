@@ -67,7 +67,6 @@ TRANSIT_ADDR="${TRANSIT_ADDR:-http://127.0.0.100:8200}"  # Host transit server
 
 # Error handling
 set -e
-set -x
 
 # Function for informative messages
 info() { echo "[INFO] $1"; }
@@ -156,7 +155,7 @@ if [ $# -eq 0 ] || [ "$1" = "server" ]; then
   # Removed disable_mlock per OpenBao docs; use swap disable instead
   # Configure audit in server.hcl for automatic enablement at startup
   # Add file_path option for file audit device to fix required field error
-  printf '%s\n' 'ui=true' 'storage "raft" {' '  path    = "/vault/file"' '  node_id = "vault"' '}' 'listener "tcp" {' '  address     = "0.0.0.0:8100"' '  tls_disable = "true"' '}' 'seal "transit" {' '  address = "http://127.0.0.100:8200"' '  disable_renewal = "false"' '  key_name = "autounseal"' '  mount_path = "transit/"' '  tls_skip_verify = "true"' '  token = "env://TRANSIT_TOKEN"' '}' 'api_addr = "http://127.0.0.100:8100"' 'cluster_addr = "https://127.0.0.100:8101"' > "$CONFIG_FILE"
+  printf '%s\n' 'ui=true' 'storage "raft" {' '  path    = "/vault/file"' '  node_id = "vault"' '}' 'listener "tcp" {' '  address     = "0.0.0.0:8100"' '  tls_disable = "true"' '}' 'seal "transit" {' '  address = "http://127.0.0.100:8200"' '  disable_renewal = "false"' '  key_name = "autounseal"' '  mount_path = "transit/"' '  tls_skip_verify = "true"' '  token = "env://TRANSIT_TOKEN"' '}' 'api_addr = "http://127.0.0.100:8100"' 'cluster_addr = "https://127.0.0.100:8101"' 'audit {' '  type = "file"' '  options = {' '    file_path = "/vault/logs/audit.log"' '  }' '}' > "$CONFIG_FILE"
 
   cat "$CONFIG_FILE"
   if [ ! -s "$CONFIG_FILE" ]; then error_exit "server.hcl is empty or not created"; fi
@@ -240,6 +239,9 @@ if [ $# -eq 0 ] || [ "$1" = "server" ]; then
   info "Vault server running, waiting for exit..."
   podman wait vault-target
 else
+  # Add backup/restore for plain-text Raft snapshots; git ignore backups dir
+  if [ "$1" = "backup" ]; then mkdir -p backups; echo "/backups/" >> .gitignore; podman run --rm --network=host -e VAULT_ADDR="$VAULT_ADDR" -e VAULT_TOKEN="$(secret-tool lookup vault target policy root | head)" -v "$PWD/backups:/backups" "$IMAGE" vault operator raft snapshot save /backups/vault-snapshot.snap; echo "Backup saved to backups/vault-snapshot.snap"; exit 0; fi
+  if [ "$1" = "restore" ]; then podman run --rm --network=host -e VAULT_ADDR="$VAULT_ADDR" -e VAULT_TOKEN="$(secret-tool lookup vault target policy root | head)" -v "$PWD/backups:/backups" "$IMAGE" vault operator raft snapshot restore /backups/vault-snapshot.snap; echo "Restore complete"; exit 0; fi
   # CLI mode: Proxy to target
   # Grant CAP_SETFCAP to enable mlock for security (allows Vault to lock memory)
   podman run --rm -i \
