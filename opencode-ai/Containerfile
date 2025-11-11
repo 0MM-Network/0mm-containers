@@ -68,7 +68,7 @@ ENV GOPATH=/home/node/go
 ENV PLAYWRIGHT_BROWSERS_PATH=/home/node/pw-browsers
 ENV PLAYWRIGHT_SKIP_BROWSER_GC=1
 ENV NPM_CONFIG_PREFIX=/home/node/.npm-global
-ENV PATH="${PATH}:/home/node/.npm-global/bin"
+ENV PATH="${PATH}:/home/node/.npm-global/bin:/home/node/.local/bin"
 
 # Rearranged for rootless Podman compatibility: perform user-specific installs after USER node to avoid chown issues.
 
@@ -82,15 +82,12 @@ RUN mkdir -p "$HOME/project" "$HOME/.local/share/opencode" "$HOME/.npm" "$HOME/.
 # Set working directory
 WORKDIR "$HOME/project"
 
-# Install npm packages
-RUN npm install -g opencode-ai@v0.15.18 playwright chrome-devtools-mcp@latest
-
 # Set npm prefix
 RUN npm config set prefix '/home/node/.npm-global'
 
 # Bash: bash-language-server via npm
-# Cucumber: cucumber-language-server via npm (assuming from npm as README 404, standard install)
-RUN npm install -g bash-language-server @cucumber/language-server task-master-ai @byterover/cipher markdownlint-cli2 repomix
+# Cucumber: cucumber-language-server via npm
+RUN npm install -g playwright chrome-devtools-mcp@latest bash-language-server @cucumber/language-server task-master-ai @byterover/cipher markdownlint-cli2 repomix
 
 # Ruby: ruby-lsp via gem (user install)
 #RUN gem install --user-install ruby-lsp
@@ -103,7 +100,7 @@ RUN export PATH="${PATH}:${GOPATH}/bin" && \
 # Install beads
 RUN export PATH="${PATH}:${GOPATH}/bin" && \
     curl -fsSL https://raw.githubusercontent.com/steveyegge/beads/main/scripts/install.sh | bash && \
-    [ -f "${GOPATH}/bin/bd" ] || { echo "bd not found" && exit 1; }
+    [ -f "/home/node/.local/bin/bd" ] || { echo "bd not found" && exit 1; }
 
 # Rust: rustup and rust-analyzer
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y && \
@@ -126,6 +123,9 @@ USER node
 ENV PATH="/usr/local/bin:${PATH}"
 RUN test -L /usr/local/bin/specify && echo "Symlink created successfully" || exit 1
 
+#RUN npm install -g opencode-ai@v0.15.18
+RUN npm install -g opencode-ai@v1.0.55
+
 # Environment variables for LSP caches (to be mounted persistently)
 ENV RUSTUP_HOME=/home/node/.rustup
 ENV CARGO_HOME=/home/node/.cargo
@@ -133,7 +133,7 @@ ENV GOPATH=/home/node/go
 
 # Add Ruby's version-specific gem bin dir to PATH to make all user-installed gem executables (e.g., ruby-lsp and dependencies) accessible, avoiding 'not found' warnings and errors.
 # Set PATH to include user bins
-ENV PATH="/opt/serena-venv/bin:${PATH}:${GOPATH}/bin:${CARGO_HOME}/bin:${RUSTUP_HOME}/toolchains/stable-x86_64-unknown-linux-gnu/bin:${HOME}/.gem/ruby/$(ruby -e 'puts RUBY_VERSION')/bin"
+ENV PATH="/opt/serena-venv/bin:${PATH}:${GOPATH}/bin:${CARGO_HOME}/bin:${RUSTUP_HOME}/toolchains/stable-x86_64-unknown-linux-gnu/bin"
 
 # Temporarily comment out ruby-lsp test due to persistent PATH issues; LSP is still installed.
 # Test key LSP installations
@@ -158,7 +158,8 @@ HEALTHCHECK --interval=30s --timeout=3s CMD curl -f http://localhost:4096/doc ||
 FROM base AS opencode-lite
 
 # Install npm package as root
-RUN npm install -g opencode-ai@v0.15.18
+#RUN npm install -g opencode-ai@v0.15.18
+RUN npm install -g opencode-ai@v1.0.55
 
 ENV OPENCODE_DOCKER_IMAGE=localhost/opencode-lite
 
