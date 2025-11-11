@@ -43,16 +43,6 @@ RUN HOME=/root npm install -g pyright
 # TypeScript/JavaScript: typescript-language-server via npm
 RUN HOME=/root npm install -g typescript typescript-language-server
 
-# Install Serena by cloning the repository locally for reliability over direct Git fetch
-# This approach ensures a stable installation process and avoids potential issues with direct pip install from Git
-RUN HOME=/root git clone --depth 1 https://github.com/oraios/serena /tmp/serena && \
-    cd /tmp/serena && \
-    HOME=/root uv venv /opt/serena-venv && \
-    . /opt/serena-venv/bin/activate && \
-    HOME=/root uv pip install . && \
-    deactivate && \
-    rm -rf /tmp/serena
-
 # Install sqlite-mcp-server-enhanced using pip
 RUN HOME=/root pip install sqlite-mcp-server-enhanced --break-system-packages
 
@@ -78,6 +68,16 @@ USER node
 
 # Create user directories after USER node to ensure ownership by node, avoiding root-owned parents and chown for rootless builds.
 RUN mkdir -p "$HOME/project" "$HOME/.local/share/opencode" "$HOME/.npm" "$HOME/.config" "$HOME/.cache" "$HOME/.serena" "$HOME/pw-browsers" "$HOME/.npm-global" "$HOME/.local/share/uv/tools" "$HOME/.rustup" "$HOME/.cargo" "$HOME/go" "$HOME/.gem"
+
+# Install Serena by cloning the repository locally for reliability over direct Git fetch
+# This approach ensures a stable installation process and avoids potential issues with direct pip install from Git
+RUN git clone --depth 1 https://github.com/oraios/serena /tmp/serena && \
+    cd /tmp/serena && \
+    uv venv $HOME/.serena/venv && \
+    . $HOME/.serena/venv/bin/activate && \
+    uv pip install . && \
+    deactivate && \
+    rm -rf /tmp/serena
 
 # Set working directory
 WORKDIR "$HOME/project"
@@ -133,7 +133,7 @@ ENV GOPATH=/home/node/go
 
 # Add Ruby's version-specific gem bin dir to PATH to make all user-installed gem executables (e.g., ruby-lsp and dependencies) accessible, avoiding 'not found' warnings and errors.
 # Set PATH to include user bins
-ENV PATH="/opt/serena-venv/bin:${PATH}:${GOPATH}/bin:${CARGO_HOME}/bin:${RUSTUP_HOME}/toolchains/stable-x86_64-unknown-linux-gnu/bin"
+ENV PATH="$HOME/.serena/venv/bin:${PATH}:${GOPATH}/bin:${CARGO_HOME}/bin:${RUSTUP_HOME}/toolchains/stable-x86_64-unknown-linux-gnu/bin"
 
 # Temporarily comment out ruby-lsp test due to persistent PATH issues; LSP is still installed.
 # Test key LSP installations
@@ -147,7 +147,7 @@ RUN gopls version && \
 ENV OPENCODE_DOCKER_IMAGE=localhost/opencode
 
 # Allow running Serena via 'serena start-mcp-server' (e.g., for stdio or --transport streamable-http for HTTP mode)
-ENV PATH="/opt/serena-venv/bin:$PATH:/home/node/go/bin:/home/node/.cargo/bin"
+ENV PATH="$HOME/.serena/venv/bin:$PATH:/home/node/go/bin:/home/node/.cargo/bin"
 
 # ENTRYPOINT points to user-specific install path after moving npm install to USER node for rootless compatibility.
 ENTRYPOINT ["/home/node/.npm-global/bin/opencode"]
