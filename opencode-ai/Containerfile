@@ -65,6 +65,7 @@ ENV PATH="${PATH}:/home/node/.npm-global/bin:/home/node/.local/bin"
 # Use HOME=/root for root commands to avoid creating root-owned files in /home/node, enabling safe mkdir as node.
 
 USER node
+ENV HOME=/home/node
 
 # Create user directories after USER node to ensure ownership by node, avoiding root-owned parents and chown for rootless builds.
 RUN mkdir -p "$HOME/project" "$HOME/.local/share/opencode" "$HOME/.npm" "$HOME/.config" "$HOME/.cache" "$HOME/.serena" "$HOME/pw-browsers" "$HOME/.npm-global" "$HOME/.local/share/uv/tools" "$HOME/.rustup" "$HOME/.cargo" "$HOME/go" "$HOME/.gem"

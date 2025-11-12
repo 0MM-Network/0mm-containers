@@ -138,19 +138,15 @@ mkdir -p "\$HOME/.config/zide/config/opencode/mcps"
 touch "\$HOME/.config/zide/config/opencode/mcps/serena_config.yml"
 
 # Ensure optional persistent directories exist
-for dir in "\$PWD/.serena" "\$PWD/.beads" "\$HOME/.rustup" "\$HOME/.cargo" "\$HOME/go"; do
+for dir in "\$PWD/.serena" "\$PWD/.beads" "\$PWD/.rustup" "\$PWD/.cargo" "\$HOME/go"; do
   if [ ! -d "\$dir" ]; then
     mkdir -p "\$dir" || echo "Warning: Failed to create \$dir for persistence."
   fi
 done
 
 # Prepare volume mounts with persistent Serena config and caches
-MOUNTS="-v \"\$PWD:/home/node/project:Z\" -v \"\$HOME/.config/zide/log/opencode:/home/node/.local/share/opencode:Z\" -v \"\$HOME/.config/zide/config/opencode/mcps/serena_config.yml:/home/node/.serena/serena_config.yml:Z\""
-[ -d "\$PWD/.serena" ] && MOUNTS+=" -v \"\$PWD/.serena:/home/node/.serena:Z\""
-[ -d "\$PWD/.beads" ] && MOUNTS+=" -v \"\$PWD/.beads:/home/node/.beads:Z\""
-[ -d "\$HOME/.rustup" ] && MOUNTS+=" -v \"\$HOME/.rustup:/home/node/.rustup:Z\""
-[ -d "\$HOME/.cargo" ] && MOUNTS+=" -v \"\$HOME/.cargo:/home/node/.cargo:Z\""
-[ -d "\$HOME/go" ] && MOUNTS+=" -v \"\$HOME/go:/home/node/go:Z\""
+MOUNTS="-v \"\$PWD:/home/node/project:Z\" -v \"\$HOME/.config/zide/log/opencode:/home/node/.local/share/opencode:Z\" -v \"\$HOME/.config/zide/config/opencode/AGENTS.md:/home/node/.config/opencode/AGENTS.md:Z\" -v \"\$HOME/.config/zide/config/opencode/mcps/serena_config.yml:/home/node/.serena/serena_config.yml:Z\""
+[ -d "\$PWD/go" ] && MOUNTS+=" -v \"\$PWD/go:/home/node/go:Z\""
 
 # Handle OPENCODE_CONFIG
 CONFIG_MOUNT=""
