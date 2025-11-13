@@ -125,7 +125,7 @@ ENV PATH="/usr/local/bin:${PATH}"
 RUN test -L /usr/local/bin/specify && echo "Symlink created successfully" || exit 1
 
 #RUN npm install -g opencode-ai@v0.15.18
-RUN npm install -g opencode-ai@v1.0.55
+RUN npm install -g opencode-ai@v1.0.61
 
 # Environment variables for LSP caches (to be mounted persistently)
 ENV RUSTUP_HOME=/home/node/.rustup
@@ -160,7 +160,7 @@ FROM base AS opencode-lite
 
 # Install npm package as root
 #RUN npm install -g opencode-ai@v0.15.18
-RUN npm install -g opencode-ai@v1.0.55
+RUN npm install -g opencode-ai@v1.0.61
 
 ENV OPENCODE_DOCKER_IMAGE=localhost/opencode-lite
 

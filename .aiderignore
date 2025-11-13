@@ -1,0 +1,31 @@
+# Ignore everything
+/*
+
+# Allow specific directories and their contents
+#!aws
+!aider-ai
+#!goose-ai
+log.txt
+!opencode-ai
+#!terraform
+#!salt
+#!ansible
+!python
+!vault
+
+!**/artifacts/**/*
+!**/bats/**/*
+!**/examples/**/*
+!**/references/**/*
+
+# Allow nested files under these directories
+#!aws/**
+!aider-ai/**
+#!goose-ai/
+#!goose-ai/artifacts
+!opencode-ai/**
+#!terraform/**
+#!salt/**
+#!ansible/**
+!python/**
+!vault/**/*

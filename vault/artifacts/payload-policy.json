@@ -1,0 +1,3 @@
+{
+  "policy": "path \"transit/encrypt/autounseal\" {\n   capabilities = [ \"update\" ]\n}\n\npath \"transit/decrypt/autounseal\" {\n   capabilities = [ \"update\" ]\n}\n"
+}

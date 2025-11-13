@@ -145,8 +145,10 @@ for dir in "\$PWD/.serena" "\$PWD/.beads" "\$PWD/.rustup" "\$PWD/.cargo" "\$HOME
 done
 
 # Prepare volume mounts with persistent Serena config and caches
-MOUNTS="-v \"\$PWD:/home/node/project:Z\" -v \"\$HOME/.config/zide/log/opencode:/home/node/.local/share/opencode:Z\" -v \"\$HOME/.config/zide/config/opencode/AGENTS.md:/home/node/.config/opencode/AGENTS.md:Z\" -v \"\$HOME/.config/zide/config/opencode/mcps/serena_config.yml:/home/node/.serena/serena_config.yml:Z\""
+MOUNTS="-v \"\$PWD:/home/node/project:Z\" -v \"\$HOME/.config/zide/log/opencode:/home/node/.local/share/opencode:Z\" -v \"\$HOME/.config/zide/config/opencode/AGENTS.md:/home/node/.config/opencode/AGENTS.md:Z\" -v \"\$HOME/.config/zide/log/serena:/home/node/.serena/logs:Z\" -v \"\$HOME/.config/zide/config/opencode/mcps/serena_config.yml:/home/node/.serena/serena_config.yml:Z\""
 [ -d "\$PWD/go" ] && MOUNTS+=" -v \"\$PWD/go:/home/node/go:Z\""
+[ -d "\$PWD/.rustup" ] && MOUNTS+=" -v \"\$PWD/.rustup:/home/node/.rustup:Z\""
+[ -d "\$PWD/.cargo" ] && MOUNTS+=" -v \"\$PWD/.cargo:/home/node/.cargo:Z\""
 
 # Handle OPENCODE_CONFIG
 CONFIG_MOUNT=""
