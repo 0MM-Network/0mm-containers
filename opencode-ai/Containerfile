@@ -126,6 +126,15 @@ RUN test -L /usr/local/bin/specify && echo "Symlink created successfully" || exi
 
 RUN npm install -g opencode-ai@v1.0.77 @ai-sdk/openai-compatible
 
+# Pre-install Opencode plugins to avoid runtime installations
+RUN mkdir -p "$HOME/project/.opencode" && cd "$HOME/project/.opencode" && /home/node/.npm-global/lib/node_modules/opencode-ai/node_modules/opencode-linux-x64/bin/opencode add @opencode-ai/plugin@1.0.77 --exact
+
+RUN cd "$HOME/.cache/opencode" && /home/node/.npm-global/lib/node_modules/opencode-ai/node_modules/opencode-linux-x64/bin/opencode add opencode-skills@0.1.0 --force --exact
+
+RUN cd "$HOME/.cache/opencode" && /home/node/.npm-global/lib/node_modules/opencode-ai/node_modules/opencode-linux-x64/bin/opencode add opencode-copilot-auth@0.0.5 --force --exact
+
+RUN cd "$HOME/.cache/opencode" && /home/node/.npm-global/lib/node_modules/opencode-ai/node_modules/opencode-linux-x64/bin/opencode add opencode-anthropic-auth@0.0.2 --force --exact
+
 #RUN curl -fsSL https://opencode.ai/install | bash
 
 # Environment variables for LSP caches (to be mounted persistently)
