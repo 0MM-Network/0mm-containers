@@ -85,7 +85,7 @@ if [ -n "${OPENCODE_CONFIG:-}" ]; then
   if [ -e "$OPENCODE_CONFIG" ]; then
     HOST_DIR=$(dirname "$OPENCODE_CONFIG")
     MOUNT_PATH="/home/node/.config/opencode"
-    CONFIG_MOUNT="-v \"$HOST_DIR:$MOUNT_PATH:ro,Z\""
+    CONFIG_MOUNT="-v \"$HOST_DIR:$MOUNT_PATH:rw,Z\""
     if [ -d "$OPENCODE_CONFIG" ]; then
       CONFIG_ENV="-e OPENCODE_CONFIG=$MOUNT_PATH/opencode.json"
     else
