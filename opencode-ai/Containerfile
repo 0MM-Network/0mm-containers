@@ -28,7 +28,7 @@ FROM base AS opencode
 # Install additional dependencies for Playwright/Chromium
 RUN apt-get update && \
     apt-get install --no-install-recommends -y \
-    jq libnspr4 libatk1.0-0 libatk-bridge2.0-0 libcups2 libdrm2 libxkbcommon0 \
+    dos2unix jq libnspr4 libatk1.0-0 libatk-bridge2.0-0 libcups2 libdrm2 libxkbcommon0 \
     libxcomposite1 libxdamage1 libxfixes3 libxrandr2 libgbm1 libpango-1.0-0 \
     libcairo2 libasound2 libatspi2.0-0 libgtk-3-0 fonts-liberation fonts-noto-color-emoji && \
     rm -rf /var/lib/apt/lists/*
@@ -50,7 +50,7 @@ RUN HOME=/root pip install sqlite-mcp-server-enhanced --break-system-packages
 RUN curl -L https://releases.hashicorp.com/terraform-ls/0.38.2/terraform-ls_0.38.2_linux_amd64.zip -o /tmp/terraform-ls.zip && \
     unzip /tmp/terraform-ls.zip -d /usr/local/bin/ && \
     rm /tmp/terraform-ls.zip
-
+    
 # Set ENV for user homes early
 ENV RUSTUP_HOME=/home/node/.rustup
 ENV CARGO_HOME=/home/node/.cargo
@@ -58,7 +58,7 @@ ENV GOPATH=/home/node/go
 ENV PLAYWRIGHT_BROWSERS_PATH=/home/node/pw-browsers
 ENV PLAYWRIGHT_SKIP_BROWSER_GC=1
 ENV NPM_CONFIG_PREFIX=/home/node/.npm-global
-ENV PATH="${PATH}:/home/node/.npm-global/bin:/home/node/.local/bin"
+ENV PATH="${PATH}:/usr/local/bin:/home/node/.npm-global/bin:/home/node/.local/bin"
 
 # Rearranged for rootless Podman compatibility: perform user-specific installs after USER node to avoid chown issues.
 
@@ -68,7 +68,7 @@ USER node
 ENV HOME=/home/node
 
 # Create user directories after USER node to ensure ownership by node, avoiding root-owned parents and chown for rootless builds.
-RUN mkdir -p "$HOME/project" "$HOME/.local/share/opencode" "$HOME/.npm" "$HOME/.config" "$HOME/.cache" "$HOME/.serena" "$HOME/pw-browsers" "$HOME/.npm-global" "$HOME/.local/share/uv/tools" "$HOME/.rustup" "$HOME/.cargo" "$HOME/go" "$HOME/.gem"
+RUN mkdir -p "$HOME/project" "$HOME/.local/share/opencode" "$HOME/.npm" "$HOME/.config/opencode" "$HOME/.cache/opencode" "$HOME/.serena" "$HOME/pw-browsers" "$HOME/.npm-global" "$HOME/.local/share/uv/tools" "$HOME/.rustup" "$HOME/.cargo" "$HOME/go" "$HOME/.gem"
 
 # Install Serena by cloning the repository locally for reliability over direct Git fetch
 # This approach ensures a stable installation process and avoids potential issues with direct pip install from Git
@@ -124,8 +124,9 @@ USER node
 ENV PATH="/usr/local/bin:${PATH}"
 RUN test -L /usr/local/bin/specify && echo "Symlink created successfully" || exit 1
 
-#RUN npm install -g opencode-ai@v0.15.18
-RUN npm install -g opencode-ai@v1.0.61
+RUN npm install -g opencode-ai@v1.0.77 @ai-sdk/openai-compatible
+
+#RUN curl -fsSL https://opencode.ai/install | bash
 
 # Environment variables for LSP caches (to be mounted persistently)
 ENV RUSTUP_HOME=/home/node/.rustup
@@ -158,9 +159,11 @@ HEALTHCHECK --interval=30s --timeout=3s CMD curl -f http://localhost:4096/doc ||
 #########################
 FROM base AS opencode-lite
 
+#RUN OPENCODE_INSTALL_DIR=/usr/local/bin curl -fsSL https://opencode.ai/install | bash
 # Install npm package as root
 #RUN npm install -g opencode-ai@v0.15.18
-RUN npm install -g opencode-ai@v1.0.61
+#RUN npm install -g opencode-ai@v1.0.72
+RUN npm install -g opencode-ai@v1.0.77 @ai-sdk/openai-compatible
 
 ENV OPENCODE_DOCKER_IMAGE=localhost/opencode-lite
 

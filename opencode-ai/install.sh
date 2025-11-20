@@ -150,6 +150,23 @@ MOUNTS="-v \"\$PWD:/home/node/project:Z\" -v \"\$HOME/.config/zide/log/opencode:
 [ -d "\$PWD/.rustup" ] && MOUNTS+=" -v \"\$PWD/.rustup:/home/node/.rustup:Z\""
 [ -d "\$PWD/.cargo" ] && MOUNTS+=" -v \"\$PWD/.cargo:/home/node/.cargo:Z\""
 
+# Project initialization
+echo "Initializing project with .opencode/templates..."
+SOURCE_DIR="\$HOME/.config/zide/config/opencode/.specify/templates"
+TARGET_DIR="\$PWD/.specify/templates"
+
+if [ ! -d "\$SOURCE_DIR" ]; then
+    echo "Warning: Source templates directory not found, skipping initialization."
+else
+    if [ -d "\$TARGET_DIR" ]; then
+        echo "Project already initialized with .opencode/templates."
+    else
+        mkdir -p "\$TARGET_DIR" || error_exit "Failed to create .opencode/templates directory."
+        cp -r "\$SOURCE_DIR/." "\$TARGET_DIR/" || error_exit "Failed to copy templates."
+        echo "Project initialized successfully."
+    fi
+fi
+
 # Handle OPENCODE_CONFIG
 CONFIG_MOUNT=""
 CONFIG_ENV=""
@@ -157,7 +174,7 @@ if [ -n "\${OPENCODE_CONFIG:-}" ]; then
   if [ -e "\$OPENCODE_CONFIG" ]; then
     HOST_DIR=\$(dirname "\$OPENCODE_CONFIG")
     MOUNT_PATH="/home/node/.config/opencode"
-    CONFIG_MOUNT="-v \"\$HOST_DIR:\$MOUNT_PATH:ro,Z\""
+    CONFIG_MOUNT="-v \"\$HOST_DIR:\$MOUNT_PATH:rw,Z\""
     if [ -d "\$OPENCODE_CONFIG" ]; then
       CONFIG_ENV="-e OPENCODE_CONFIG=\$MOUNT_PATH/opencode.json"
     else

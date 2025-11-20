@@ -87,10 +87,10 @@ if [ -n "${OPENCODE_CONFIG:-}" ]; then
     MOUNT_PATH="/home/node/.config/opencode"
     CONFIG_MOUNT="-v \"$HOST_DIR:$MOUNT_PATH:ro,Z\""
     if [ -d "$OPENCODE_CONFIG" ]; then
-      CONFIG_ENV="-e OPENCODE_CONFIG=$MOUNT_PATH/opencode.json"
+      CONFIG_ENV="-e OPENCODE_CONFIG_DIR=$MOUNT_PATH -e OPENCODE_CONFIG=$MOUNT_PATH/opencode.json"
     else
       CONFIG_FILE=$(basename "$OPENCODE_CONFIG")
-      CONFIG_ENV="-e OPENCODE_CONFIG=$MOUNT_PATH/$CONFIG_FILE"
+      CONFIG_ENV="-e OPENCODE_CONFIG_DIR=$MOUNT_PATH -e OPENCODE_CONFIG=$MOUNT_PATH/$CONFIG_FILE"
     fi
   else
     error_exit "OPENCODE_CONFIG path does not exist"

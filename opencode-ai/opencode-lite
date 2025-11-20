@@ -56,10 +56,27 @@ for dir in "$PWD/.serena" "$PWD/.beads" "$PWD/.rustup" "$PWD/.cargo" "$HOME/go";
 done
 
 # Prepare volume mounts with persistent Serena config and caches
-MOUNTS="-v \"$PWD:/home/node/project:Z\" -v \"$HOME/.config/zide/log/opencode:/home/node/.local/share/opencode:Z\" -v \"$HOME/.config/zide/config/opencode/AGENTS.md:/home/node/.config/opencode/AGENTS.md:Z\" -v \"$HOME/.config/zide/config/opencode/mcps/serena_config.yml:/home/node/.serena/serena_config.yml:Z\""
+MOUNTS="-v \"$PWD:/home/node/project:Z\" -v \"$HOME/.config/zide/log/opencode:/home/node/.local/share/opencode:Z\" -v \"$HOME/.config/zide/config/opencode/AGENTS.md:/home/node/.config/opencode/AGENTS.md:Z\" -v \"$HOME/.config/zide/log/serena:/home/node/.serena/logs:Z\" -v \"$HOME/.config/zide/config/opencode/mcps/serena_config.yml:/home/node/.serena/serena_config.yml:Z\""
 [ -d "$PWD/go" ] && MOUNTS+=" -v \"$PWD/go:/home/node/go:Z\""
 [ -d "$PWD/.rustup" ] && MOUNTS+=" -v \"$PWD/.rustup:/home/node/.rustup:Z\""
 [ -d "$PWD/.cargo" ] && MOUNTS+=" -v \"$PWD/.cargo:/home/node/.cargo:Z\""
+
+# Project initialization
+echo "Initializing project with .opencode/templates..."
+SOURCE_DIR="$HOME/.config/zide/config/opencode/.specify/templates"
+TARGET_DIR="$PWD/.specify/templates"
+
+if [ ! -d "$SOURCE_DIR" ]; then
+    echo "Warning: Source templates directory not found, skipping initialization."
+else
+    if [ -d "$TARGET_DIR" ]; then
+        echo "Project already initialized with .opencode/templates."
+    else
+        mkdir -p "$TARGET_DIR" || error_exit "Failed to create .opencode/templates directory."
+        cp -r "$SOURCE_DIR/." "$TARGET_DIR/" || error_exit "Failed to copy templates."
+        echo "Project initialized successfully."
+    fi
+fi
 
 # Handle OPENCODE_CONFIG
 CONFIG_MOUNT=""
