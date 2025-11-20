@@ -132,7 +132,7 @@ RUN curl -fsSL https://bun.sh/install | bash
 # Pre-install Opencode plugins to avoid runtime installations
 RUN cd "$HOME/.config/opencode" && "$HOME/.bun/bin/bun" add @opencode-ai/plugin@1.0.77 --exact
 
-RUN cd "$HOME/project/.opencode" && "$HOME/.bun/bin/bun" add @opencode-ai/plugin@1.0.77 --exact
+RUN mkdir -p "$HOME/project/.opencode" && cd "$HOME/project/.opencode" && "$HOME/.bun/bin/bun" add @opencode-ai/plugin@1.0.77 --exact
 
 RUN cd "$HOME/.cache/opencode" && "$HOME/.bun/bin/bun" add opencode-skills@0.1.0 --force --exact
 
