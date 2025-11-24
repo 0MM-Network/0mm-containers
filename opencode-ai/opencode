@@ -215,7 +215,7 @@ if [ ${#NEW_ARGS[@]} -gt 0 ]; then
         if ! command -v curl >/dev/null || ! command -v unzip >/dev/null; then
           echo "Warning: curl or unzip not available. Skipping initialization."
         else
-          ZIP_URL="https://github.com/github/spec-kit/releases/download/v0.0.79/spec-kit-template-opencode-sh-v0.0.79.zip"
+          ZIP_URL="https://github.com/github/spec-kit/releases/download/v0.0.85/spec-kit-template-opencode-sh-v0.0.85.zip"
           ZIP_FILE="spec-kit-template.zip"
           if curl -L "$ZIP_URL" -o "$ZIP_FILE"; then
             if unzip "$ZIP_FILE"; then
