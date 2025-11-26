@@ -37,11 +37,9 @@ RUN apt-get update && \
 RUN apt-get update && apt-get install -y golang-go ruby ruby-dev clangd && rm -rf /var/lib/apt/lists/*
 
 # Install Language Servers (LSPs) for Serena
-# Python: pyright via npm
-RUN HOME=/root npm install -g pyright
-
 # TypeScript/JavaScript: typescript-language-server via npm
-RUN HOME=/root npm install -g typescript typescript-language-server
+# Python: pyright via npm
+RUN HOME=/root npm install -g pyright typescript typescript-language-server
 
 # Install sqlite-mcp-server-enhanced using pip
 RUN HOME=/root pip install sqlite-mcp-server-enhanced --break-system-packages
@@ -68,7 +66,7 @@ USER node
 ENV HOME=/home/node
 
 # Create user directories after USER node to ensure ownership by node, avoiding root-owned parents and chown for rootless builds.
-RUN mkdir -p "$HOME/project" "$HOME/.local/share/opencode" "$HOME/.npm" "$HOME/.config/opencode" "$HOME/.cache/opencode" "$HOME/.serena" "$HOME/pw-browsers" "$HOME/.npm-global" "$HOME/.local/share/uv/tools" "$HOME/.rustup" "$HOME/.cargo" "$HOME/go" "$HOME/.gem"
+RUN mkdir -p "$HOME/project" "$HOME/.local/share/opencode" "$HOME/.npm" "$HOME/.bun" "$HOME/.config/opencode" "$HOME/.cache/opencode" "$HOME/.serena" "$HOME/pw-browsers" "$HOME/.npm-global" "$HOME/.local/share/uv/tools" "$HOME/.rustup" "$HOME/.cargo" "$HOME/go" "$HOME/.gem"
 
 # Install Serena by cloning the repository locally for reliability over direct Git fetch
 # This approach ensures a stable installation process and avoids potential issues with direct pip install from Git
@@ -124,23 +122,23 @@ USER node
 ENV PATH="/usr/local/bin:${PATH}"
 RUN test -L /usr/local/bin/specify && echo "Symlink created successfully" || exit 1
 
-RUN npm install -g opencode-ai@v1.0.77 @ai-sdk/openai-compatible
+#RUN npm install -g opencode-ai@v1.0.109 @ai-sdk/openai-compatible
 
 # Install Bun for pre-installing plugins
 RUN curl -fsSL https://bun.sh/install | bash
 
 # Pre-install Opencode plugins to avoid runtime installations
-RUN cd "$HOME/.config/opencode" && "$HOME/.bun/bin/bun" add @opencode-ai/plugin@1.0.77 --exact
+#RUN cd "$HOME/.config/opencode" && "$HOME/.bun/bin/bun" add @opencode-ai/plugin@1.0.109 --exact
 
-RUN mkdir -p "$HOME/project/.opencode" && cd "$HOME/project/.opencode" && "$HOME/.bun/bin/bun" add @opencode-ai/plugin@1.0.77 --exact
+#RUN mkdir -p "$HOME/project/.opencode" && cd "$HOME/project/.opencode" && "$HOME/.bun/bin/bun" add @opencode-ai/plugin@1.0.109 --exact
 
-RUN cd "$HOME/.cache/opencode" && "$HOME/.bun/bin/bun" add opencode-skills@0.1.0 --force --exact
+#RUN cd "$HOME/.cache/opencode" && "$HOME/.bun/bin/bun" add opencode-skills@0.1.0 --force --exact
 
-RUN cd "$HOME/.cache/opencode" && "$HOME/.bun/bin/bun" add opencode-copilot-auth@0.0.5 --force --exact
+#RUN cd "$HOME/.cache/opencode" && "$HOME/.bun/bin/bun" add opencode-copilot-auth@0.0.5 --force --exact
 
-RUN cd "$HOME/.cache/opencode" && "$HOME/.bun/bin/bun" add opencode-anthropic-auth@0.0.2 --force --exact
+#RUN cd "$HOME/.cache/opencode" && "$HOME/.bun/bin/bun" add opencode-anthropic-auth@0.0.2 --force --exact
 
-#RUN curl -fsSL https://opencode.ai/install | bash
+RUN curl -fsSL https://opencode.ai/install | bash
 
 # Environment variables for LSP caches (to be mounted persistently)
 ENV RUSTUP_HOME=/home/node/.rustup
@@ -177,7 +175,8 @@ FROM base AS opencode-lite
 # Install npm package as root
 #RUN npm install -g opencode-ai@v0.15.18
 #RUN npm install -g opencode-ai@v1.0.72
-RUN npm install -g opencode-ai@v1.0.77 @ai-sdk/openai-compatible
+#RUN npm install -g opencode-ai@v1.0.109 @ai-sdk/openai-compatible
+RUN curl -fsSL https://opencode.ai/install | bash
 
 ENV OPENCODE_DOCKER_IMAGE=localhost/opencode-lite
 
