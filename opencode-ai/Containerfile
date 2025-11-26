@@ -140,6 +140,13 @@ RUN curl -fsSL https://bun.sh/install | bash
 
 RUN curl -fsSL https://opencode.ai/install | bash
 
+USER root
+RUN cp /home/node/.opencode/bin/opencode /usr/local/bin/opencode && \
+    chmod +x /usr/local/bin/opencode && \
+    echo '#!/bin/bash\nsource /home/node/.bashrc\nexec opencode "$@"' > /usr/local/bin/opencode-wrapper && \
+    chmod +x /usr/local/bin/opencode-wrapper
+USER node
+
 # Environment variables for LSP caches (to be mounted persistently)
 ENV RUSTUP_HOME=/home/node/.rustup
 ENV CARGO_HOME=/home/node/.cargo
@@ -164,7 +171,7 @@ ENV OPENCODE_DOCKER_IMAGE=localhost/opencode
 ENV PATH="$HOME/.serena/venv/bin:$PATH:/home/node/go/bin:/home/node/.cargo/bin"
 
 # ENTRYPOINT points to user-specific install path after moving npm install to USER node for rootless compatibility.
-ENTRYPOINT ["/home/node/.npm-global/bin/opencode"]
+ENTRYPOINT ["/usr/local/bin/opencode-wrapper"]
 
 HEALTHCHECK --interval=30s --timeout=3s CMD curl -f http://localhost:4096/doc || exit 1
 
