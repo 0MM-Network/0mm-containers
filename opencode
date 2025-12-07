@@ -56,7 +56,7 @@ for dir in "$PWD/.serena" "$PWD/.beads" "$PWD/.rustup" "$PWD/.cargo" "$HOME/go";
 done
 
 # Prepare volume mounts with persistent Serena config and caches
-MOUNTS="-v \"$PWD:/home/node/project:Z\" -v \"$HOME/.config/zide/log/opencode:/home/node/.local/share/opencode:Z\" -v \"$HOME/.config/zide/config/opencode/AGENTS.md:/home/node/.config/opencode/AGENTS.md:Z\" -v \"$HOME/.config/zide/log/serena:/home/node/.serena/logs:Z\" -v \"$HOME/.config/zide/config/opencode/mcps/serena_config.yml:/home/node/.serena/serena_config.yml:Z\""
+MOUNTS="-v \"$PWD:/home/node/project:Z\" -v \"$HOME/.config/zide/log/opencode:/home/node/.local/share/opencode:Z\" -v \"$HOME/.config/zide/config/opencode/AGENTS.md:/home/node/.config/opencode/AGENTS.md:Z\" -v \"$HOME/.config/zide/log/serena:/home/node/.serena/logs:Z\" -v \"$HOME/.config/zide/config/opencode/mcps/serena_config.yml:/home/node/.serena/serena_config.yml:Z\" -v \"$HOME/.config/zide/config/opencode/resources:/home/node/.config/resources:ro,Z\""
 [ -d "$PWD/go" ] && MOUNTS+=" -v \"$PWD/go:/home/node/go:Z\""
 [ -d "$PWD/.rustup" ] && MOUNTS+=" -v \"$PWD/.rustup:/home/node/.rustup:Z\""
 [ -d "$PWD/.cargo" ] && MOUNTS+=" -v \"$PWD/.cargo:/home/node/.cargo:Z\""
@@ -131,6 +131,19 @@ PORT=4096
 HOSTNAME="0.0.0.0"
 CLIENT_HOST="localhost"
 
+STARTED_SERVER=
+# podman ps -q --filter name="$CONTAINER_NAME" --filter status=running | grep -q .
+if podman ps -q --filter "name=${CONTAINER_NAME}" --filter status=running | grep -q . ; then
+    echo "Container '${CONTAINER_NAME}' is running."
+    STARTED_SERVER=true
+    # Add commands to execute if the container is running
+    # For example: podman exec "${CONTAINER_NAME}" ls /app
+else
+    echo "Container '${CONTAINER_NAME}' is not running."
+    STARTED_SERVER=false
+    # Add commands to execute if the container is not running
+    # For example: podman start "${CONTAINER_NAME}"
+fi
 # Determine if serve is in args and collect NEW_ARGS
 SERVER_MODE=false
 NEW_ARGS=()
@@ -215,7 +228,7 @@ if [ ${#NEW_ARGS[@]} -gt 0 ]; then
         if ! command -v curl >/dev/null || ! command -v unzip >/dev/null; then
           echo "Warning: curl or unzip not available. Skipping initialization."
         else
-          ZIP_URL="https://github.com/github/spec-kit/releases/download/v0.0.79/spec-kit-template-opencode-sh-v0.0.79.zip"
+          ZIP_URL="https://github.com/github/spec-kit/releases/download/v0.0.85/spec-kit-template-opencode-sh-v0.0.85.zip"
           ZIP_FILE="spec-kit-template.zip"
           if curl -L "$ZIP_URL" -o "$ZIP_FILE"; then
             if unzip "$ZIP_FILE"; then
@@ -251,13 +264,12 @@ if [ ${#NEW_ARGS[@]} -gt 0 ]; then
 fi
 
 # Start server if not running
-STARTED_SERVER=false
-if [ "$ATTACH_MODE" = true ]; then
-  podman stop "$CONTAINER_NAME" >/dev/null 2>&1 || true
-  podman rm -f "$CONTAINER_NAME" >/dev/null 2>&1 || true
-  STARTED_SERVER=true
+if [ "$ATTACH_MODE" = true ] && [ "$STARTED_SERVER" = false ] ; then
+  #podman stop "$CONTAINER_NAME" >/dev/null 2>&1 || true
+  #podman rm -f "$CONTAINER_NAME" >/dev/null 2>&1 || true
+  START_SERVER=true
 elif ! podman ps -q --filter name="$CONTAINER_NAME" --filter status=running | grep -q . ; then
-  STARTED_SERVER=true
+  START_SERVER=false
 fi
 
 # Server startup section:
@@ -269,7 +281,7 @@ fi
 # - For modes, append custom args to SERVER_CMD based on SERVER_MODE (e.g., add --mode planning for Serena modes).
 # - Ensure fallback logic preserves original behavior; test that opencode 'serve' remains unchanged.
 # - To add new entrypoints, conditionally build SERVER_CMD based on NEW_ARGS (e.g., if NEW_ARGS includes 'serena', reroute to Serena command).
-if [ "$STARTED_SERVER" = true ]; then
+if [ "$START_SERVER" = true ]; then
   if [ "$HOSTNAME" == "0.0.0.0" ]; then
     CLIENT_HOST="localhost"
   fi
@@ -293,7 +305,7 @@ if [ "$STARTED_SERVER" = true ]; then
 fi
 
 # Echo message if started server
-if [ "$STARTED_SERVER" = true ]; then
+if [ "$START_SERVER" = true ]; then
   echo "Server at http://${CLIENT_HOST}:$PORT (API docs at /doc)"
 fi
 
@@ -337,7 +349,8 @@ else
       --userns=keep-id --security-opt=label=disable \
       $MOUNTS $CONFIG_MOUNT $CONFIG_ENV \
       $SECRETS -e USER="$USER" \
-      "$IMAGE" attach "http://$SERVER_IP:$PORT"
+      "$IMAGE"
+      # "$IMAGE" attach "http://$SERVER_IP:$PORT"
   else
     eval podman run --rm $TTY_FLAG \
       --network "$NETWORK_NAME" \
