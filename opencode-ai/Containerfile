@@ -37,11 +37,6 @@ RUN apt-get update && \
 # Consolidate apt installs for Go, Ruby, Clangd
 RUN apt-get update && apt-get install -y golang-go ruby ruby-dev clangd && rm -rf /var/lib/apt/lists/*
 
-# Install Language Servers (LSPs) for Serena
-# TypeScript/JavaScript: typescript-language-server via npm
-# Python: pyright via npm
-RUN HOME=/root npm install --prefix /home/node/.cache/opencode pyright typescript typescript-language-server opencode-skills@0.1.1
-
 # Install sqlite-mcp-server-enhanced using pip
 RUN HOME=/root pip install sqlite-mcp-server-enhanced --break-system-packages
 
@@ -81,7 +76,10 @@ RUN git clone --depth 1 https://github.com/oraios/serena /tmp/serena && \
 # Set working directory
 WORKDIR "$HOME/project"
 
-RUN npm install --prefix "$HOME/.cache/opencode" playwright chrome-devtools-mcp@latest bash-language-server @cucumber/language-server task-master-ai @byterover/cipher markdownlint-cli2 repomix opencode-skills@0.1.1
+# Install Language Servers (LSPs) for Serena
+# TypeScript/JavaScript: typescript-language-server via npm
+# Python: pyright via npm
+RUN npm install --prefix "$HOME/.cache/opencode" pyright typescript typescript-language-server playwright chrome-devtools-mcp@latest bash-language-server @cucumber/language-server task-master-ai @byterover/cipher markdownlint-cli2 repomix opencode-skills@0.1.1
 
 # Ruby: ruby-lsp via gem (user install)
 #RUN gem install --user-install ruby-lsp
