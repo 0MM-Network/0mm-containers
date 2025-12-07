@@ -66,7 +66,7 @@ USER node
 ENV HOME=/home/node
 
 # Create user directories after USER node to ensure ownership by node, avoiding root-owned parents and chown for rootless builds.
-RUN mkdir -p "$HOME/project" "$HOME/.local/share/opencode" "$HOME/.npm" "$HOME/.bun" "$HOME/.config/opencode" "$HOME/.cache/opencode" "$HOME/.serena" "$HOME/pw-browsers" "$HOME/.local/share/uv/tools" "$HOME/.rustup" "$HOME/.cargo" "$HOME/go" "$HOME/.gem"
+RUN mkdir -p "$HOME/project" "$HOME/.local/share/opencode" "$HOME/.npm" "$HOME/.bun" "$HOME/.config/opencode" "$HOME/.cache/opencode" "$HOME/.serena" "$HOME/pw-browsers" "$HOME/.local/share/uv/tools" "$HOME/.rustup" "$HOME/.cargo" "$HOME/go" "$HOME/.gem" "$HOME/.cache/uv"
 
 # Install Serena by cloning the repository locally for reliability over direct Git fetch
 # This approach ensures a stable installation process and avoids potential issues with direct pip install from Git
