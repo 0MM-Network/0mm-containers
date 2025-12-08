@@ -138,14 +138,15 @@ mkdir -p "\$HOME/.config/zide/config/opencode/mcps"
 touch "\$HOME/.config/zide/config/opencode/mcps/serena_config.yml"
 
 # Ensure optional persistent directories exist
-for dir in "\$PWD/.serena" "\$PWD/.beads" "\$PWD/.rustup" "\$PWD/.cargo" "\$HOME/go"; do
+for dir in "\$PWD/.serena" "\$PWD/.beads" "\$PWD/.rustup" "\$PWD/.cargo" "\$HOME/go" "\$PWD/.opencode/cache"; do
   if [ ! -d "\$dir" ]; then
     mkdir -p "\$dir" || echo "Warning: Failed to create \$dir for persistence."
   fi
 done
 
 # Prepare volume mounts with persistent Serena config and caches
-MOUNTS="-v \"\$PWD:/home/node/project:Z\" -v \"\$HOME/.config/zide/log/opencode:/home/node/.local/share/opencode:Z\" -v \"\$HOME/.config/zide/config/opencode/AGENTS.md:/home/node/.config/opencode/AGENTS.md:Z\" -v \"\$HOME/.config/zide/log/serena:/home/node/.serena/logs:Z\" -v \"\$HOME/.config/zide/config/opencode/mcps/serena_config.yml:/home/node/.serena/serena_config.yml:Z\" -v \"\$HOME/.config/zide/config/opencode/resources:/home/node/.config/resources:ro,Z\""
+# Added mount for persisting Node package cache to fix slow filesystem issues
+MOUNTS="-v \"\$PWD:/home/node/project:Z\" -v \"\$HOME/.config/zide/log/opencode:/home/node/.local/share/opencode:Z\" -v \"\$HOME/.config/zide/config/opencode/AGENTS.md:/home/node/.config/opencode/AGENTS.md:Z\" -v \"\$HOME/.config/zide/log/serena:/home/node/.serena/logs:Z\" -v \"\$HOME/.config/zide/config/opencode/mcps/serena_config.yml:/home/node/.serena/serena_config.yml:Z\" -v \"\$HOME/.config/zide/config/opencode/resources:/home/node/.config/resources:ro,Z\" -v \"\$PWD/.opencode/cache:/home/node/.cache/opencode:Z\""
 [ -d "\$PWD/go" ] && MOUNTS+=" -v \"\$PWD/go:/home/node/go:Z\""
 [ -d "\$PWD/.rustup" ] && MOUNTS+=" -v \"\$PWD/.rustup:/home/node/.rustup:Z\""
 [ -d "\$PWD/.cargo" ] && MOUNTS+=" -v \"\$PWD/.cargo:/home/node/.cargo:Z\""
@@ -347,7 +348,7 @@ if [ \${#NEW_ARGS[@]} -gt 0 ]; then
         --network "\$NETWORK_NAME" \
         --userns=keep-id --security-opt=label=disable \
         \$MOUNTS \$CONFIG_MOUNT \$CONFIG_ENV \
-        \$SECRETS \$PATH_EXTENSION -e USER="\$USER" \
+        \$SECRETS \$PATH_EXTENSION -e USER="\$USER" -e BUN_INSTALL_CACHE_DIR=/home/node/.cache/opencode/bun-cache \
         "\$IMAGE" "\${ADJUSTED_ARGS[@]}" || error_exit "Failed to run specify subcommand"
       exit 0
     fi
@@ -381,7 +382,7 @@ if [ "\$START_SERVER" = true ]; then
     CLIENT_HOST="localhost"
   fi
   # Retry logic
-  SERVER_CMD="podman run -d --replace --name \"\$CONTAINER_NAME\" --network \"\$NETWORK_NAME\" --publish \$PORT:\$PORT --userns=keep-id --security-opt=label=disable --cap-drop=ALL --cap-add=NET_BIND_SERVICE \$MOUNTS \$CONFIG_MOUNT \$CONFIG_ENV \$SECRETS -e USER=\"\$USER\" \"\$IMAGE\" serve --hostname \"\$HOSTNAME\" --port \$PORT"
+  SERVER_CMD="podman run -d --replace --name \"\$CONTAINER_NAME\" --network \"\$NETWORK_NAME\" --publish \$PORT:\$PORT --userns=keep-id --security-opt=label=disable --cap-drop=ALL --cap-add=NET_BIND_SERVICE \$MOUNTS \$CONFIG_MOUNT \$CONFIG_ENV \$SECRETS -e USER=\"\$USER\" -e BUN_INSTALL_CACHE_DIR=/home/node/.cache/opencode/bun-cache \"\$IMAGE\" serve --hostname \"\$HOSTNAME\" --port \$PORT"
   if [ "\$SERVER_MODE" = true ] && [ \${#NEW_ARGS[@]} -gt 0 ]; then
     SERVER_CMD="\$SERVER_CMD \"\${NEW_ARGS[@]}\""
   fi
@@ -391,7 +392,7 @@ if [ "\$START_SERVER" = true ]; then
     echo "\$ERR"
     echo "Hardened fallback: Using host network due to error."
     NETWORK_NAME="host"
-    SERVER_CMD="podman run -d --replace --name \"\$CONTAINER_NAME\" --net host --userns=keep-id --security-opt=label=disable --cap-drop=ALL --cap-add=NET_BIND_SERVICE \$MOUNTS \$CONFIG_MOUNT \$CONFIG_ENV \$SECRETS -e USER=\"\$USER\" \"\$IMAGE\" serve --hostname \"\$HOSTNAME\" --port \$PORT"
+    SERVER_CMD="podman run -d --replace --name \"\$CONTAINER_NAME\" --net host --userns=keep-id --security-opt=label=disable --cap-drop=ALL --cap-add=NET_BIND_SERVICE \$MOUNTS \$CONFIG_MOUNT \$CONFIG_ENV \$SECRETS -e USER=\"\$USER\" -e BUN_INSTALL_CACHE_DIR=/home/node/.cache/opencode/bun-cache \"\$IMAGE\" serve --hostname \"\$HOSTNAME\" --port \$PORT"
     if [ "\$SERVER_MODE" = true ] && [ \${#NEW_ARGS[@]} -gt 0 ]; then
       SERVER_CMD="\$SERVER_CMD \"\${NEW_ARGS[@]}\""
     fi
@@ -435,7 +436,7 @@ if [ \${#NEW_ARGS[@]} -eq 1 ] && [ "\${NEW_ARGS[0]}" == "--version" ] || [ "\${N
   eval podman run --rm \$TTY_FLAG \\
     --userns=keep-id --security-opt=label=disable --network=none \\
     \$MOUNTS \$CONFIG_MOUNT \$CONFIG_ENV \\
-    \$SECRETS -e USER="\$USER" \\
+    \$SECRETS -e USER="\$USER" -e BUN_INSTALL_CACHE_DIR=/home/node/.cache/opencode/bun-cache \\
     "\$IMAGE" "\${NEW_ARGS[@]}"
 else
   if [ \${#NEW_ARGS[@]} -eq 0 ]; then
@@ -443,7 +444,7 @@ else
       --network "\$NETWORK_NAME" \\
       --userns=keep-id --security-opt=label=disable \\
       \$MOUNTS \$CONFIG_MOUNT \$CONFIG_ENV \\
-      \$SECRETS -e USER="\$USER" \\
+      \$SECRETS -e USER="\$USER" -e BUN_INSTALL_CACHE_DIR=/home/node/.cache/opencode/bun-cache \\
       "\$IMAGE"
       # "\$IMAGE" attach "http://\$SERVER_IP:\$PORT"
   else
@@ -451,7 +452,7 @@ else
       --network "\$NETWORK_NAME" \\
       --userns=keep-id --security-opt=label=disable \\
       \$MOUNTS \$CONFIG_MOUNT \$CONFIG_ENV \\
-      \$SECRETS -e USER="\$USER" \\
+      \$SECRETS -e USER="\$USER" -e BUN_INSTALL_CACHE_DIR=/home/node/.cache/opencode/bun-cache \\
       "\$IMAGE" "\${NEW_ARGS[@]}"
   fi
   echo "Connect programmatically via API at http://\${CLIENT_HOST}:\$PORT"
