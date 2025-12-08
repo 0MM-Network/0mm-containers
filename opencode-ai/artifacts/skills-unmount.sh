@@ -6,17 +6,22 @@
 set -Eeuo pipefail
 shopt -s inherit_errexit
 
+set -x
+
 readonly SCRIPT_NAME='skills-unmount.sh'
 readonly MOUNTPOINT='./skills'
 
 log_info() {
-  systemd-cat -t "$SCRIPT_NAME" -p info printf '%s\n' "$@"
+  printf '%s\n' "$@"
+  #systemd-cat -t "$SCRIPT_NAME" -p info printf '%s\n' "$@"
 }
 log_warn() {
-  systemd-cat -t "$SCRIPT_NAME" -p warning printf '%s\n' "$@" >&2
+  printf '%s\n' "$@" >&2
+  #systemd-cat -t "$SCRIPT_NAME" -p warning printf '%s\n' "$@" >&2
 }
 log_error() {
-  systemd-cat -t "$SCRIPT_NAME" -p err printf '%s\n' "$@" >&2
+  printf '%s\n' "$@" >&2
+  #systemd-cat -t "$SCRIPT_NAME" -p err printf '%s\n' "$@" >&2
   exit 1
 }
 
@@ -41,11 +46,17 @@ while getopts 'fhv' opt; do
     h|?) usage ;;
   esac
 done
+shift $((OPTIND - 1))  # Consume opts
 
 [ $# -eq 0 ] || log_error 'No positional args'
 
 [ -d "$MOUNTPOINT" ] || { log_info 'Not mounted'; exit 0; }
-mountpoint -q "$MOUNTPOINT" || { log_info 'Not a mountpoint'; exit 0; }
+#mountpoint -q "$MOUNTPOINT" || { log_info 'Not a mountpoint'; exit 0; }
+
+if ! mountpoint -q "$MOUNTPOINT"; then
+  log_info 'Not a mountpoint'
+  exit 0  # Graceful
+fi
 
 if ! $FORCE; then
   if fuser "$MOUNTPOINT" >/dev/null 2>/dev/null; then
