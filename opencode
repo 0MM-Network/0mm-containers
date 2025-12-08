@@ -165,12 +165,11 @@ while [ $# -gt 0 ]; do
   shift
 done
 
-# Determine attach mode
-ATTACH_MODE=false
-if [ ${#NEW_ARGS[@]} -eq 0 ] && [ "$SERVER_MODE" != "true" ]; then
-  ATTACH_MODE=true
-elif [ ${#NEW_ARGS[@]} -gt 0 ] && [ "${NEW_ARGS[0]}" == "attach" ]; then
-  ATTACH_MODE=true
+SERVER_CLIENT_MODE=false
+if [ 0 -gt 0 ] && [ "" == "attach" ]; then
+  SERVER_CLIENT_MODE=true
+  # Strip 'attach' from NEW_ARGS for client
+  NEW_ARGS=("")
 fi
 
 # Define known API keys and warn if unset
@@ -264,13 +263,9 @@ if [ ${#NEW_ARGS[@]} -gt 0 ]; then
   fi
 fi
 
-# Start server if not running
-if [ "$ATTACH_MODE" = true ] && [ "$STARTED_SERVER" = false ] ; then
-  #podman stop "$CONTAINER_NAME" >/dev/null 2>&1 || true
-  #podman rm -f "$CONTAINER_NAME" >/dev/null 2>&1 || true
+START_SERVER=false
+if [ "" = true ] && [ "" = false ]; then
   START_SERVER=true
-elif ! podman ps -q --filter name="$CONTAINER_NAME" --filter status=running | grep -q . ; then
-  START_SERVER=false
 fi
 
 # Server startup section:
@@ -314,6 +309,26 @@ fi
 if [ "$SERVER_MODE" = true ] && [ ${#NEW_ARGS[@]} -eq 0 ]; then
   echo "Opencode server started."
   exit 0
+fi
+
+# Command execution section (updated for serverless default TUI and explicit attach):
+# Default: serverless TUI (--rm opencode on shared net).
+# attach: server + client attach w/ URL.
+if [ ${#NEW_ARGS[@]} -eq 1 ] && [[ "${NEW_ARGS[0]}" == "--version" || "${NEW_ARGS[0]}" == "--help" ]]; then
+  # Lightweight: no net
+  eval podman run --rm $TTY_FLAG     --userns=keep-id --security-opt=label=disable --network=none     $MOUNTS $CONFIG_MOUNT $CONFIG_ENV     $SECRETS -e USER="$USER" -e BUN_INSTALL_CACHE_DIR=/home/node/.cache/opencode/bun-cache     "$IMAGE" "${NEW_ARGS[@]}"
+elif [ "$SERVER_CLIENT_MODE" = true ]; then
+  # Attach: Ensure server running, get IP, pass explicit URL + args
+  if [ "$NETWORK_NAME" == "host" ]; then SERVER_IP="127.0.0.1"
+  elif [ "$NETWORK_NAME" == "bridge" ]; then SERVER_IP="localhost"
+  else SERVER_IP=$(podman inspect "$CONTAINER_NAME" --format "{{.NetworkSettings.Networks.$NETWORK_NAME.IPAddress}}") || error_exit "Server IP fetch failed"; fi
+  SERVER_URL="http://${SERVER_IP}:$PORT"
+  eval podman run --rm $TTY_FLAG     --network "$NETWORK_NAME"     --userns=keep-id --security-opt=label=disable     $MOUNTS $CONFIG_MOUNT $CONFIG_ENV $SECRETS -e USER="$USER" -e BUN_INSTALL_CACHE_DIR=/home/node/.cache/opencode/bun-cache     "$IMAGE" attach "$SERVER_URL" "${NEW_ARGS[@]}"
+  echo "Attached to server at $SERVER_URL"
+else
+  # Default/other: Serverless TUI/multi-instance safe (shared net for consistency)
+  CMD_ARGS=("${NEW_ARGS[@]}")
+  eval podman run --rm $TTY_FLAG     --network "$NETWORK_NAME"     --userns=keep-id --security-opt=label=disable     $MOUNTS $CONFIG_MOUNT $CONFIG_ENV $SECRETS -e USER="$USER" -e BUN_INSTALL_CACHE_DIR=/home/node/.cache/opencode/bun-cache     "$IMAGE" "${CMD_ARGS[@]}"
 fi
 
 # Get server IP for client
