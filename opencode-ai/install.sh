@@ -150,6 +150,12 @@ MOUNTS="-v \"\$PWD:/home/node/project:Z\" -v \"\$HOME/.config/zide/log/opencode:
 [ -d "\$PWD/go" ] && MOUNTS+=" -v \"\$PWD/go:/home/node/go:Z\""
 [ -d "\$PWD/.rustup" ] && MOUNTS+=" -v \"\$PWD/.rustup:/home/node/.rustup:Z\""
 [ -d "\$PWD/.cargo" ] && MOUNTS+=" -v \"\$PWD/.cargo:/home/node/.cargo:Z\""
+if [ -d "$PWD/skills" ]; then
+  MOUNTS+=" -v "$PWD/skills:/home/node/project/skills:Z""
+  echo "Skills dir mounted (/home/node/project/skills)"
+else
+  echo "Warning: No $PWD/skills dir (run skills-mount.sh?) - skipping"
+fi
 
 # Project initialization
 echo "Initializing project with .opencode/templates..."
