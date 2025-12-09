@@ -8,7 +8,7 @@ shopt -s inherit_errexit
 
 readonly SCRIPT_NAME='skills-mount-prefixed.sh'
 readonly SKILLS_FILE='./skills.txt'
-readonly LOCKFILE='/tmp/skills-mount-prefixed.lock'
+readonly LOCKFILE='./skills.lock'
 readonly DEFAULT_POLICY='mfs'
 
 log_info() { printf '%s\n' "$@" >&2; }
