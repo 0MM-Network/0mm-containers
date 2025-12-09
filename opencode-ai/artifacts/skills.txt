@@ -1,2 +1,2 @@
-/tmp/skill1
-/tmp/skill2
+../../resources/anthropic/skills/skill-creator
+../resources/skills/serena-tools

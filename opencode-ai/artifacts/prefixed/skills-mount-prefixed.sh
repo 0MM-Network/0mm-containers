@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
-# skills-mount.sh - Idempotent rootless MergerFS mount for skills union
-# Usage: ./skills-mount.sh [-d] [-v] [-p policy] [-h]
+# skills-mount-prefixed.sh - Idempotent rootless MergerFS mount for skills union
+# Usage: ./skills-mount-prefixed.sh [-d] [-v] [-p policy] [-h]
 # Branches from ./skills.txt into ./skills (mfs policy default)
 
 set -Eeuo pipefail
 shopt -s inherit_errexit  # Bash 4.4+
 
-readonly SCRIPT_NAME='skills-mount.sh'
+readonly SCRIPT_NAME='skills-mount-prefixed.sh'
 readonly MOUNTPOINT='./skills'
 readonly SKILLS_FILE='./skills.txt'
-readonly LOCKFILE='/tmp/skills-mount.lock'
+readonly LOCKFILE='/tmp/skills-mount-prefixed.lock'
 readonly DEFAULT_POLICY='mfs'
 
 # Logging (dual: stderr + journald for tests/CI)
