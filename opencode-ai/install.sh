@@ -11,6 +11,21 @@ error_exit() {
     exit 1
 }
 
+cleanup_podman() {
+  local force="${1:-false}"
+  echo "🧹 Pruning Podman storage (pre-build safety)..."
+  #podman system prune -a -f --volumes || true
+  buildah rm --all
+  podman builder prune --build-cache --force || true
+  podman volume prune --force || true
+  if [[ $force == true ]]; then
+    echo podman rmi localhost/opencode localhost/trusted/opencode localhost/opencode-lite localhost/trusted/opencode-lite -f || true
+  fi
+  echo "✅ Podman cleaned. Free space: $(df -h /var | awk 'NR==2{print $4}')"
+}
+
+trap 'echo "💥 Build failed. Auto-pruning..."; cleanup_podman; exit 1' ERR EXIT INT
+
 # Check if Podman is installed
 if ! command -v podman &> /dev/null; then
     error_exit "Podman is not installed. Please install Podman first."
@@ -29,10 +44,15 @@ OPENCODE_LITE_IMAGE="localhost/opencode-lite"
 
 BUILD_CONTEXT="$SCRIPTS_DIR"
 
+cleanup_podman false
+
 # Build the container images
 echo "Building Opencode container images..."
-podman build --build-arg CACHE_BUSTER=$(date +%s) --target opencode -t $OPENCODE_IMAGE -f "$SCRIPTS_DIR/Containerfile" "$BUILD_CONTEXT" || error_exit "Failed to build opencode container image"
-podman build --build-arg CACHE_BUSTER=$(date +%s) --target opencode-lite -t $OPENCODE_LITE_IMAGE -f "$SCRIPTS_DIR/Containerfile" "$BUILD_CONTEXT" || error_exit "Failed to build opencode-lite container image"
+podman image exists localhost/opencode:latest || podman build --no-cache --build-arg CACHE_BUSTER=$(date +%s) --target opencode -t $OPENCODE_IMAGE -f "$SCRIPTS_DIR/Containerfile" "$BUILD_CONTEXT" || error_exit "Failed to build opencode container image"
+podman image exists localhost/opencode-lite:latest || podman build --no-cache --build-arg CACHE_BUSTER=$(date +%s) --target opencode-lite -t $OPENCODE_LITE_IMAGE -f "$SCRIPTS_DIR/Containerfile" "$BUILD_CONTEXT" || error_exit "Failed to build opencode-lite container image"
+
+cleanup_podman false
+trap - ERR EXIT INT
 
 # Tag images with trusted label
 podman tag $OPENCODE_IMAGE trusted/opencode:latest
@@ -90,11 +110,44 @@ for cmd in "${OPENCODE_COMMANDS[@]}"; do
 #!/bin/bash
 
 # Define variables
-IMAGE="$IMAGE"
+readonly IMAGE="$IMAGE"
 
-# Error handling
-set -e
+# Parse shim options
+DRY_RUN=false
+TRACE=false
+while [[ \$# -gt 0 && \$1 == --* ]]; do
+  case \$1 in
+    --dry-run)
+      DRY_RUN=true
+      shift
+      ;;
+    --trace)
+      TRACE=true
+      shift
+      ;;
+    --)
+      shift
+      break
+      ;;
+    --help|-h|--version|-v)
+      break
+      ;;
+    -*)
+      printf 'Unknown option: %s\n' "\$1" >&2
+      exit 1
+      ;;
+  esac
+done
+
+# Strict mode
+set -Eeuo pipefail
+readonly DRY_RUN TRACE
+
+if [[ \$TRACE == true ]]; then
+  set -x
+fi
 set -x
+# Error handling
 
 # Function to display error messages
 error_exit() {
@@ -144,17 +197,64 @@ for dir in "\$PWD/.serena" "\$PWD/.beads" "\$PWD/.rustup" "\$PWD/.cargo" "\$HOME
   fi
 done
 
+retry_podman_run() {
+  local cmd="\$1"
+  local max_retries="\${2:-3}"
+  local i
+
+  if [[ \$DRY_RUN == "true" ]]; then
+    printf '[DRY] would run podman bash -c %s\n' "\$cmd" >&2
+    return 0
+  fi
+
+  for ((i = 1; i <= max_retries; i++)); do
+    timeout 60s podman run --rm --user node -v "\$PWD/.openagents:/home/node/.openagents:ro,Z"  -v "\$PWD:/home/node/project:Z" --workdir /home/node/project --userns=keep-id --entrypoint bash "\$IMAGE" -c "\$cmd" 2>&1 | tee -a /tmp/shim-init.log && return 0 || sleep 2
+  done
+
+    printf 'WARN: %s failed after %d retries\n' "\$cmd" "\$max_retries" >&2
+  return 1
+}
+
+
+init_tools() {
+  shopt -s nullglob dotglob
+  mkdir -p .openagents
+
+  # beads
+  local marker="\$PWD/.beads"
+  if [[ ! -d "\$marker" || -z "\$(ls -A "\$marker" 2>/dev/null)" ]]; then
+    printf '[INFO] Init beads\n' >&2
+    retry_podman_run "bd init --quiet --team"
+    retry_podman_run "bd hooks install"
+    retry_podman_run "bd onboard >.beads/BD_GUIDE.md"
+    retry_podman_run "bd prime >>.beads/BD_GUIDE.md"
+    printf '[INFO] Follow .beads/BD_GUIDE.md\n' >&2
+  fi
+
+  # serena
+  marker="\$PWD/.serena/onboarded"
+  if [[ ! -f "\$marker" ]]; then
+    printf '[INFO] Init Serena\n' >&2
+    # if ! retry_podman_run "serena print-system-prompt"; then
+    #   printf '[INFO] Serena onboarding completed' >&2
+    #   touch "\$marker"
+    # fi
+  fi
+}
+
+init_tools
+
 # Prepare volume mounts with persistent Serena config and caches
 # Added mount for persisting Node package cache to fix slow filesystem issues
 MOUNTS="-v \"\$PWD:/home/node/project:Z\" -v \"\$HOME/.config/zide/log/opencode:/home/node/.local/share/opencode:Z\" -v \"\$HOME/.config/zide/config/opencode/AGENTS.md:/home/node/.config/opencode/AGENTS.md:Z\" -v \"\$HOME/.config/zide/log/serena:/home/node/.serena/logs:Z\" -v \"\$HOME/.config/zide/config/opencode/mcps/serena_config.yml:/home/node/.serena/serena_config.yml:Z\" -v \"\$HOME/.config/zide/config/opencode/resources:/home/node/.config/resources:ro,Z\" -v \"\$PWD/.opencode/cache:/home/node/.cache/opencode:Z\""
 [ -d "\$PWD/go" ] && MOUNTS+=" -v \"\$PWD/go:/home/node/go:Z\""
 [ -d "\$PWD/.rustup" ] && MOUNTS+=" -v \"\$PWD/.rustup:/home/node/.rustup:Z\""
 [ -d "\$PWD/.cargo" ] && MOUNTS+=" -v \"\$PWD/.cargo:/home/node/.cargo:Z\""
-if [ -d "$PWD/skills" ]; then
-  MOUNTS+=" -v "$PWD/skills:/home/node/project/skills:Z""
-  echo "Skills dir mounted (/home/node/project/skills)"
+if [ -d "\$PWD/skills" ]; then
+  MOUNTS+=" -v \"\$PWD/skills:/home/node/project/skills:Z\""
+  echo "Skills dir mounted (\$PWD/skills)"
 else
-  echo "Warning: No $PWD/skills dir (run skills-mount.sh?) - skipping"
+  echo "Warning: No \$PWD/skills dir (run skills-mount.sh?) - skipping"
 fi
 
 # Project initialization
@@ -261,10 +361,10 @@ while [ \$# -gt 0 ]; do
 done
 
 SERVER_CLIENT_MODE=false
-if [ ${#NEW_ARGS[@]} -gt 0 ] && [ "${NEW_ARGS[0]}" == "attach" ]; then
+if [ \${#NEW_ARGS[@]} -gt 0 ] && [ "\${NEW_ARGS[0]}" == "attach" ]; then
   SERVER_CLIENT_MODE=true
   # Strip 'attach' from NEW_ARGS for client
-  NEW_ARGS=("${NEW_ARGS[@]:1}")
+  NEW_ARGS=("\${NEW_ARGS[@]:1}")
 fi
 
 # Define known API keys and warn if unset
@@ -365,7 +465,7 @@ if [ \${#NEW_ARGS[@]} -gt 0 ]; then
 fi
 
 START_SERVER=false
-if [ "$SERVER_CLIENT_MODE" = true ] && [ "$STARTED_SERVER" = false ]; then
+if [ "\$SERVER_CLIENT_MODE" = true ] && [ "\$STARTED_SERVER" = false ]; then
   START_SERVER=true
 fi
 
@@ -498,6 +598,9 @@ done
 # Ensure cache directory exists for testing
 mkdir -p "$HOME/.config/zide/log/opencode"
 
+# Clear markers for tool init test
+rm -rf .beads .serena .openagents
+
 # Test commands
 echo "Testing ${#OPENCODE_COMMANDS[@]} Opencode commands..."
 echo "============================"
@@ -514,6 +617,16 @@ for cmd in "${OPENCODE_COMMANDS[@]}"; do
         FAILED_COMMANDS+=("$cmd --version")
     fi
 done
+
+# Check tool init markers
+echo -n "Checking tool init markers... "
+if [[ -d .beads && -n "$(ls -A .beads 2>/dev/null)" && -f .serena/onboarded && -f .openagents/initialized ]]; then
+  echo "✅ Success"
+  SUCCESS_COUNT=$((SUCCESS_COUNT + 1))
+else
+  echo "❌ Failed"
+  FAILED_COMMANDS+=("tool init markers")
+fi
 
 # Test opencode serve
 echo -n "Testing opencode serve... "
@@ -539,7 +652,7 @@ else
 fi
 
 # Print summary
-TOTAL_TESTS=$((${#OPENCODE_COMMANDS[@]} + 1))
+TOTAL_TESTS=$((${#OPENCODE_COMMANDS[@]} + 2))
 echo "============================"
 echo "Test summary: $SUCCESS_COUNT/$TOTAL_TESTS tests passed"
 

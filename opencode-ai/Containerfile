@@ -61,7 +61,7 @@ USER node
 ENV HOME=/home/node
 
 # Create user directories after USER node to ensure ownership by node, avoiding root-owned parents and chown for rootless builds.
-RUN mkdir -p "$HOME/project" "$HOME/.local/share/opencode" "$HOME/.npm" "$HOME/.bun" "$HOME/.config/opencode" "$HOME/.cache/opencode" "$HOME/.serena" "$HOME/pw-browsers" "$HOME/.local/share/uv/tools" "$HOME/.rustup" "$HOME/.cargo" "$HOME/go" "$HOME/.gem" "$HOME/.cache/uv"
+RUN mkdir -p "$HOME/project" "$HOME/.local/share/opencode" "$HOME/.npm" "$HOME/.bun" "$HOME/.config/opencode" "$HOME/.cache/opencode" "$HOME/.serena" "$HOME/pw-browsers" "$HOME/.local/share/uv/tools" "$HOME/.rustup" "$HOME/.cargo" "$HOME/go" "$HOME/.gem" "$HOME/.cache/uv" "$HOME/.openagents"
 
 # Install Serena by cloning the repository locally for reliability over direct Git fetch
 # This approach ensures a stable installation process and avoids potential issues with direct pip install from Git
@@ -79,7 +79,7 @@ WORKDIR "$HOME/project"
 # Install Language Servers (LSPs) for Serena
 # TypeScript/JavaScript: typescript-language-server via npm
 # Python: pyright via npm
-RUN npm install --prefix "$HOME/.cache/opencode" pyright typescript typescript-language-server playwright chrome-devtools-mcp@latest bash-language-server @cucumber/language-server task-master-ai @byterover/cipher markdownlint-cli2 repomix opencode-skills@0.1.1
+RUN npm install --prefix "$HOME/.cache/opencode" pyright typescript typescript-language-server playwright chrome-devtools-mcp@latest bash-language-server @cucumber/language-server task-master-ai @byterover/cipher markdownlint-cli2 repomix
 
 # Ruby: ruby-lsp via gem (user install)
 #RUN gem install --user-install ruby-lsp
@@ -89,9 +89,14 @@ RUN export PATH="${PATH}:${GOPATH}/bin" && \
     go install golang.org/x/tools/gopls@latest && \
     [ -f "${GOPATH}/bin/gopls" ] || { echo "gopls not found" && exit 1; }
 
-# Install beads
+# Install beads and beads viewer
 RUN export PATH="${PATH}:${GOPATH}/bin" && \
     curl -fsSL https://raw.githubusercontent.com/steveyegge/beads/main/scripts/install.sh | bash && \
+    curl -fsSL "https://raw.githubusercontent.com/Dicklesworthstone/beads_viewer/main/install.sh?$(date +%s)" | bash && \
+    curl -fsSL https://raw.githubusercontent.com/darrenhinde/OpenAgents/main/install.sh | bash -s advanced && \
+    cp -r .opencode/agent ~/.openagents/ && \
+    cp -r .opencode/command ~/.openagents/ && \
+    cp -r .opencode/context ~/.openagents/ && \
     [ -f "/home/node/.local/bin/bd" ] || { echo "bd not found" && exit 1; }
 
 # Rust: rustup and rust-analyzer
@@ -123,7 +128,10 @@ RUN curl -fsSL https://bun.sh/install | bash
 # Pre-install Opencode plugins to avoid runtime installations
 #RUN cd "$HOME/.config/opencode" && "$HOME/.bun/bin/bun" add @opencode-ai/plugin@1.0.109 roject/.opencode" && cd "$HOME/project/.opencode" && "$HOME/.bun/bin/bun" add @opencode-ai/plugin@1.0.109 --exact
 
-RUN cd "$HOME/.cache/opencode" && "$HOME/.bun/bin/bun" add opencode-skills@0.1.1 --force --exact
+# RUN /bin/bash -c "source /home/node/.bashrc && \
+#     bun pm untrusted && \
+#     cd \"\$HOME/.cache/opencode\" && \
+#     bun pm cache rm --all"
 
 #RUN cd "$HOME/.cache/opencode" && "$HOME/.bun/bin/bun" add opencode-copilot-auth@0.0.5 --force --exact
 
@@ -133,8 +141,8 @@ FROM preopencode AS opencode
 
 COPY artifacts/opencode-install.sh /tmp/opencode-install.sh
 
-ENV VERSION=1.0.126
-RUN VERSION=1.0.126 /tmp/opencode-install.sh
+ENV VERSION=1.0.193
+RUN VERSION=1.0.193 /tmp/opencode-install.sh
 
 USER root
 RUN cp /home/node/.opencode/bin/opencode /usr/local/bin/opencode && \
@@ -184,8 +192,8 @@ FROM base AS opencode-lite
 
 COPY artifacts/opencode-install.sh /tmp/opencode-install.sh
 
-ENV VERSION=1.0.126
-RUN VERSION=1.0.126 /tmp/opencode-install.sh
+ENV VERSION=1.0.193
+RUN VERSION=1.0.193 /tmp/opencode-install.sh
 
 ENV OPENCODE_DOCKER_IMAGE=localhost/opencode-lite
 
