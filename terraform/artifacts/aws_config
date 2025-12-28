@@ -1,6 +1,9 @@
 [default]
-region = us-west-2
+region = us-east-1
 output = json
 endpoint_url = http://localhost:4566
-s3 =
-    endpoint_url = http://localhost:4566
+[profile localstack]
+region = us-east-1
+output = json
+endpoint_url = http://localhost:4566
+s3_force_path_style = true

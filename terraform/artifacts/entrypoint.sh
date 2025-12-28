@@ -16,6 +16,8 @@
 #set -e
 set -x
 
+sudo chmod 755 /home/tofu
+
 source /home/tofu/.bashrc
 source /home/tofu/.profile
 
@@ -158,16 +160,28 @@ sudo chmod 755 /run/dbus || echo "Warning: Failed to create /run/dbus - Continui
     #     # LocalStack to use Podman for service isolation while systemd handles overall process
     #     # management, as suggested in how_to_run_systemd_in_a_container.md for multi-service
     #     # containers.
+
+          sudo mkdir -p /home/tofu/.local/share/containers/storage/libpod
+          sudo chown -R tofu:tofu /home/tofu/.local/share/containers/storage
+          sudo chmod -R 700 /home/tofu/.local/share/containers/storage
+          sudo chmod 755 /home/tofu
+          
           export CONTAINERS_CONF=/home/tofu/.config/containers/containers.conf
-          /usr/bin/podman system service --time 0 unix:///run/user/1001/podman/podman.sock &
-          sleep 3
+          (cd /home/tofu && /usr/bin/podman system service --time 0 unix:///run/user/1001/podman/podman.sock )&
+          PODMAN_SOCK=/run/user/1001/podman/podman.sock
+          mkdir -p ~/.cache/localstack/volume && chmod 755 ~/.cache/localstack
+          for i in {1..30};
+            do
+              timeout 1 podman --url=unix://$PODMAN_SOCK system info >/dev/null 2>&1 && break
+              sleep 1
+            done
           export LOCALSTACK_VOLUME_DIR=~/.cache/localstack/volume
           # LOCALSTACK_MAIN_DOCKER_NETWORK
           # LOCALSTACK_HOST
-          LOCALSTACK_DEBUG=1 DOCKER_CMD="podman" DOCKER_SOCK=/run/user/1001/podman/podman.sock DOCKER_HOST=unix:///run/user/1001/podman/podman.sock localstack start --network host &
+          (LOCALSTACK_DEBUG=1 DOCKER_CMD="podman" DOCKER_SOCK=/run/user/1001/podman/podman.sock DOCKER_HOST=unix:///run/user/1001/podman/podman.sock cd /home/tofu && localstack start --network host) &
 
          # Wait for LocalStack to be ready (container download)
-         for i in $(seq 1 180); do
+         for i in $(seq 1 30); do
            if curl -s http://localhost:4566/_localstack/health > /dev/null; then
              break
            fi
@@ -178,7 +192,7 @@ sudo chmod 755 /run/dbus || echo "Warning: Failed to create /run/dbus - Continui
            #exit 1
          fi
      
-         localstack config validate -h
+         #localstack config validate -h
     # }
     # # Temporarily disable set -e for setup to allow continuation on errors
     # #set +e

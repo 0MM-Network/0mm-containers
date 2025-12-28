@@ -90,7 +90,7 @@ IMAGE="localhost/opentofu-container:latest"
 # Build the container image
 
 echo "Building OpenTofu container image..."
-podman build --format docker -t $IMAGE -f "$SCRIPTS_DIR/Containerfile.debian" "$SCRIPTS_DIR" || error_exit "Failed to build container image"
+podman build --format docker -t $IMAGE -f "$SCRIPTS_DIR/Containerfile" "$SCRIPTS_DIR" || error_exit "Failed to build container image"
 
 # Create the main tofu wrapper script
 # Generate tofu wrapper matching source tofu file
@@ -125,8 +125,8 @@ mkdir -p "\$PWD/.terraform.d"
 mkdir -p "\$PWD/.aws"
 
 # Ensure proper permissions
-chmod -R 755 "\$PWD/.terraform"
-chmod -R 755 "\$PWD/.terraform.d"
+sudo chmod -R 755 "\$PWD"
+sudo chmod -R a+rwX "\$PWD"
 
 # Check if stdin is a TTY and set flags accordingly
 TTY_FLAG=""
@@ -182,34 +182,40 @@ if [ ! -f /sys/fs/cgroup/cgroup.controllers ]; then
 fi
 
 # Prepare volume mounts
-MOUNTS="-v \"\$PWD:/infra:Z,rw\" -v \"\$HOME/.aws:/home/tofu/.aws:Z\" -v \"\$PWD/.terraform:/home/tofu/.terraform:Z\" -v \"\$PWD/.terraform.d:/home/tofu/.terraform.d:Z\""
+MOUNTS=" -v \"\$PWD:/home/tofu/project:Z,U,rw\" -v \"\$HOME/.aws:/home/tofu/.aws:Z,U,ro\""
+MOUNTS="\$MOUNTS -v \"\$HOME/.aws:/home/tofu/.aws:Z,U,ro\""
 # Mount named volume for simplified cgroup subtree access
 #MOUNTS="\$MOUNTS -v cgroup-user-slice:/sys/fs/cgroup:rw"
-
+#   --uidmap +\$CUID:@\$HUID:1 \\
+#   --gidmap +\$CGID:@\$HGID:1 \\
+#   --userns=keep-id \\
+  
 # Execute tofu command in container
 eval podman run --rm \$TTY_FLAG \\
     --systemd=always \\
+    --security-opt=label=disable \\
+    --uidmap +\$CUID:@\$HUID:1 \\
+    --gidmap +\$CGID:@\$HGID:1 \\
     --privileged \\
     --cgroup-manager=systemd \\
     --cap-add=sys_admin \\
-    --uidmap +\$CUID:@\$HUID:1 \\
-    --gidmap +\$CGID:@\$HGID:1 \\
     --device /dev/fuse \\
+    --workdir=/home/tofu/project \\
     --storage-opt=overlay.mount_program=/usr/bin/fuse-overlayfs \\
     \$MOUNTS \\
     -v tofu-internal-containers:/home/tofu/.local/share/containers \\
     -e ENABLE_SYSTEM_DBUS=\${ENABLE_SYSTEM_DBUS:-1} \\
     -e ENABLE_CGROUP_SETUP=\${ENABLE_CGROUP_SETUP:-1} \\
     -e HOME=/home/tofu \\
-    -e USER="\$USER" \\
     -e AWS_PROFILE=localstack \\
     -e DNS_ADDRESS=0 \\
+    -e LOCALSTACK_DNS_ADDRESS=0 \\
     -e AWS_ACCESS_KEY_ID \\
     -e AWS_SECRET_ACCESS_KEY \\
     -e AWS_SESSION_TOKEN \\
     -e TF_LOG \\
     -e TF_VAR_* \\
-    "\$IMAGE" bash "\$@"
+    "\$IMAGE" tofu "\$@"
 EOF
 # End of generated tofu wrapper matching source tofu file
 chmod +x "$SCRIPTS_DIR/tofu"
@@ -222,7 +228,7 @@ SUCCESS_COUNT=0
 FAILED_COMMANDS=()
 
 echo -n "Testing tofu... "
-if "$SCRIPTS_DIR/tofu" --help &>/dev/null; then
+if "$SCRIPTS_DIR/tofu" --help &>test-help.log; then
     echo "✅ Success"
     SUCCESS_COUNT=$((SUCCESS_COUNT + 1))
 else
@@ -236,21 +242,25 @@ pushd "$TEMP_DIR" > /dev/null
 cat > main.tf <<TFEOF
 provider "aws" {
   profile = "localstack"
+  skip_credentials_validation = true
+  skip_metadata_api_check     = true
+  skip_region_validation      = true
 }
-
 resource "aws_s3_bucket" "test_bucket" {
   bucket = "my-test-bucket"
 }
 TFEOF
-if "$SCRIPTS_DIR/tofu" init > /dev/null 2>&1 && "$SCRIPTS_DIR/tofu" apply -auto-approve > /dev/null 2>&1; then
+if "$SCRIPTS_DIR/tofu" init > test-integration.log 2>&1 && "$SCRIPTS_DIR/tofu" apply -auto-approve > test-integration.log 2>&1; then
     echo "✅ Success"
     SUCCESS_COUNT=$((SUCCESS_COUNT + 1))
 else
     echo "❌ Failed"
     FAILED_COMMANDS+=("LocalStack integration")
 fi
-"$SCRIPTS_DIR/tofu" destroy -auto-approve > /dev/null 2>&1 || true
+"$SCRIPTS_DIR/tofu" destroy -auto-approve > test-integration.log 2>&1 || true
 popd > /dev/null
+podman volume rm tofu-internal-containers || true
+cp -f "$TEMP_DIR/test-integration.log" .
 rm -rf "$TEMP_DIR"
 
 # Print summary

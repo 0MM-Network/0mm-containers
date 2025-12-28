@@ -155,7 +155,7 @@ COPY artifacts/podman.service artifacts/podman.socket /home/tofu/.config/systemd
 COPY artifacts/policy.json /home/tofu/.config/containers/policy.json
 
 # Create and chown storage directory for Podman
-RUN mkdir -p /home/tofu/.config/containers/registries.d /home/tofu/.local/share/containers /home/tofu/.local/share/containers/storage /run/user/1001/containers /run/user/1001/podman && \
+RUN mkdir -p /home/tofu/.config/containers/registries.d /home/tofu/.local/share/containers /home/tofu/.local/share/containers/storage/libpod /run/user/1001/containers /run/user/1001/podman && \
     chown -R tofu:tofu /home/tofu /run/user/1001 && \
     chmod -R 0755 /etc/containers && \
     chmod -R 700 /home/tofu/.local/share/containers /run/user/1001/containers /run/user/1001/podman && \
@@ -246,9 +246,12 @@ RUN /bin/bash -c 'chmod +x /usr/local/bin/entrypoint.sh && \
 RUN mkdir -p /var/lib/journal && chmod -R 777 /var/lib/journal && chown -R tofu:tofu /var/lib/journal
 
 # Install qemu dependencies
-RUN apt update -y && \
-    apt install -y libvirt-clients qemu-system-x86 libvirt-daemon libvirt-daemon-system
-
+RUN mkdir -p /etc/systemd/system/libvirtd.service.d && \
+    mkdir -p /etc/systemd/system/virtlockd.service.d && \
+    printf '[Service]\nExecStart=\nExecStop=\nRemainAfterExit=no\n' > /etc/systemd/system/libvirtd.service.d/override.conf && \
+    printf '[Service]\nExecStart=\nExecStop=\nRemainAfterExit=no\n' > /etc/systemd/system/virtlockd.service.d/override.conf && \
+    apt-get update -y && apt-get install -y --no-install-recommends libvirt-clients qemu-system-x86 libvirt-daemon libvirt-daemon-system
+    
 # Manually enable services via symlinks (bypasses need for running systemd during build)
 RUN mkdir -p /etc/systemd/system/multi-user.target.wants && \
    ln -sf /usr/lib/systemd/system/libvirtd.service /etc/systemd/system/multi-user.target.wants/libvirtd.service && \
@@ -267,7 +270,9 @@ RUN mkdir -p /etc/systemd/system/multi-user.target.wants && \
    ln -sf /etc/systemd/system/root-autologin.service /etc/systemd/system/multi-user.target.wants/root-autologin.service && \
    ln -sf /etc/systemd/system/tofu-autologin.service /etc/systemd/system/multi-user.target.wants/tofu-autologin.service
 
-RUN chown tofu:tofu -R /home/tofu
+RUN chown tofu:tofu -R /home/tofu && \
+    chmod 755 /home/tofu && \
+    chown tofu:tofu /home/tofu
 
 RUN mkdir -p /var/lib/shared/overlay-images /var/lib/shared/overlay-layers /var/lib/shared/vfs-images /var/lib/shared/vfs-layers && \
     touch /var/lib/shared/overlay-images/images.lock && \
@@ -281,17 +286,18 @@ RUN mkdir -p /etc/systemd/journald.conf.d && \
     echo 'Storage=persistent' >> /etc/systemd/journald.conf.d/persist.conf && \
     echo 'SyncIntervalSec=1s' >> /etc/systemd/journald.conf.d/persist.conf && \ 
     mkdir -p /var/log/journal && chmod -R 777 /var/log/journal
-
-RUN chown -R tofu:tofu /home/tofu/.config /home/tofu/.local/share/containers /run/user/1001 && \
-    chmod -R 755 /home/tofu/.config/containers && \
-    chmod -R 644 /home/tofu/.config/containers/*.conf
-        
+       
 # Volume for systemd
 VOLUME ["/sys/fs/cgroup"]
 
 USER tofu
-WORKDIR /infra
+WORKDIR /home/tofu/project
 
+RUN sudo chown -R tofu:tofu /home/tofu /home/tofu/.local/share/containers /run/user/1001 && \
+    sudo chmod 755 /home/tofu && \
+    sudo chmod -R 755 /home/tofu/.config/containers && \
+    sudo chmod -R 644 /home/tofu/.config/containers/*.conf
+ 
 # Setup tofu plugin cache
 ENV XDG_RUNTIME_DIR=/run/user/1001
 ENV DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1001/bus
