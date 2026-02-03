@@ -16,8 +16,24 @@ error_exit() {
 if ! command -v podman &> /dev/null; then
     error_exit "Podman is not installed. Please install Podman first."
 fi
+
 # Check if newuidmap and newgidmap have required capabilities for rootless mode
 export PATH="$PATH:/usr/sbin"
+# Fix newuidmap/newgidmap permissions if needed
+for bin in /usr/bin/newuidmap /usr/bin/newgidmap; do
+  if [[ -f "$bin" ]]; then
+    # Remove setuid/setgid bits if present
+    sudo chmod u-s,g-s "$bin"
+
+    # Ensure 0755 and correct capabilities
+    sudo chmod 0755 "$bin"
+    if [[ "$bin" == */newuidmap ]]; then
+      sudo setcap cap_setuid+ep "$bin" 2>/dev/null
+    else
+      sudo setcap cap_setgid+ep "$bin" 2>/dev/null
+    fi
+  fi
+done
 if ! command -v getcap &> /dev/null; then
   echo "Error: getcap not found. Ensure libcap2-bin is installed and /usr/sbin is in PATH."
   export PATH="$PATH:/usr/sbin"
@@ -250,14 +266,14 @@ resource "aws_s3_bucket" "test_bucket" {
   bucket = "my-test-bucket"
 }
 TFEOF
-if "$SCRIPTS_DIR/tofu" init > test-integration.log 2>&1 && "$SCRIPTS_DIR/tofu" apply -auto-approve > test-integration.log 2>&1; then
+if "$SCRIPTS_DIR/tofu" init > test-integration.log 2>&1 && "$SCRIPTS_DIR/tofu" apply -auto-approve >> test-integration.log 2>&1; then
     echo "✅ Success"
     SUCCESS_COUNT=$((SUCCESS_COUNT + 1))
 else
     echo "❌ Failed"
     FAILED_COMMANDS+=("LocalStack integration")
 fi
-"$SCRIPTS_DIR/tofu" destroy -auto-approve > test-integration.log 2>&1 || true
+"$SCRIPTS_DIR/tofu" destroy -auto-approve >> test-integration.log 2>&1 || true
 popd > /dev/null
 podman volume rm tofu-internal-containers || true
 cp -f "$TEMP_DIR/test-integration.log" .
