@@ -1,0 +1,12 @@
+; DO NOT EDIT (unless you know what you are doing)
+;
+; This subdirectory is a git "subrepo", and this file is maintained by the
+; git-subrepo command. See https://github.com/ingydotnet/git-subrepo#readme
+;
+[subrepo]
+	remote = https://github.com/rokicool/gsd-opencode.git
+	branch = main
+	commit = c1ee8c4bc612d2f5235b78c43713f68848e1091e
+	parent = f124345db60cff350026bb916d5c5ae71a6a1d55
+	method = merge
+	cmdver = 0.4.5

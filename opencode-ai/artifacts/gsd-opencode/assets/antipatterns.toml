@@ -1,0 +1,33 @@
+title = "Checks"
+
+[checklist]
+folder = "./gsd-opencode/"
+file = "*.md"
+exclude_dir = "node_modules"
+forbidden_strings = [
+        "Claude",
+        "Claude Code",
+        "<sub>",
+        'general-purpose',
+        'subagent_type="Explore"',
+        "~/.claude",
+        "/gsd:",
+        "get-shit-done-cc",
+        "glittercowboy",
+        "AskUserQuestion",
+        "All arguments become",
+        "/clear",
+        "SlashCommand",
+        "TodoWrite",
+        "WebSearch",
+        "WebFetch",
+        "BashOutput",
+        "rokicool/get-shit-done",
+        "color: cyan",
+        "color: orange",
+        "color: yellow",
+        "color: blue",
+        "color: green",
+        "color: purple",
+        "name: set-profile",
+        ]
