@@ -16,6 +16,7 @@
 !LICENSE
 !aider
 !goose
+!gsd
 !opencode
 !opencode-lite
 !*-setup.sh
@@ -36,6 +37,10 @@
 !goose-ai/
 !goose-ai/artifacts/
 !goose-ai/tests/
+
+!gsd-ai/
+!gsd-ai/artifacts/
+!gsd-ai/tests/
 
 !opencode-ai/
 !opencode-ai/artifacts
