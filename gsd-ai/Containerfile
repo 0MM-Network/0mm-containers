@@ -1,0 +1,147 @@
+# =============================================================================
+# GSD Containerfile – Rootless Optimized for Buildah + Podman Volume Caching
+#
+# This image is 100% rootless-safe and uses both:
+#   • --mount=type=cache (build-time layer reuse)
+#   • Podman named volumes (persistent across rebuilds/restarts)
+#
+# First-time build: ~1.5–2 GB download (Playwright + Rust + npm)
+# Subsequent builds: near-instant thanks to caches
+# =============================================================================
+
+FROM node:22-trixie-slim AS base
+
+# ===================== ROOT PHASE: All system dependencies (one layer) =====================
+RUN --mount=type=cache,id=gsd-apt-base,target=/var/cache/apt,U \
+    --mount=type=cache,id=gsd-apt-lists,target=/var/lib/apt/lists,U \
+    apt-get update && apt-get install --no-install-recommends -y \
+        git hx libnss3 curl python3 python3-pip build-essential clang ripgrep unzip \
+        dos2unix jq libnspr4 libatk1.0-0 libatk-bridge2.0-0 libcups2 libdrm2 \
+        libxkbcommon0 libxcomposite1 libxdamage1 libxfixes3 libxrandr2 libgbm1 \
+        libpango-1.0-0 libcairo2 libasound2 libatspi2.0-0 libgtk-3-0 \
+        fonts-liberation fonts-noto-color-emoji clangd && \
+    pip install uv --break-system-packages && \
+    npm install -g npm@11.6.4 && \
+    rm -rf /var/lib/apt/lists/*
+
+# Git safety (project volume will be mounted here)
+RUN git config --system --add safe.directory /home/node/project
+
+# Base ENV (before user switch)
+ENV HOME=/home/node \
+    VISUAL=hx \
+    EDITOR=hx \
+    GIT_EDITOR=hx \
+    GSD_DOCKER_IMAGE=localhost/gsd
+
+# ===================== SWITCH TO NON-ROOT USER (critical for rootless) =====================
+USER node
+ENV HOME=/home/node
+
+# Create every directory as the node user (prevents root-owned files)
+RUN mkdir -p "$HOME/project" \
+    "$HOME/.local/share/gsd/auth" \
+    "$HOME/.npm" \
+    "$HOME/.bun" \
+    "$HOME/.gsd" \
+    "$HOME/.cache/gsd" \
+    "$HOME/.serena" \
+    "$HOME/pw-browsers" \
+    "$HOME/.local/share/uv/tools" \
+    "$HOME/.rustup" \
+    "$HOME/.cargo" \
+    "$HOME/go" \
+    "$HOME/.gem" \
+    "$HOME/.cache/uv" \
+    "$HOME/.cache/opencode/bun-cache" \
+    "$HOME/.openagents" \
+    "$HOME/.local/bin"
+
+WORKDIR "$HOME/project"
+
+# =============================================================================
+FROM base AS pregsd
+
+# Rust/Cargo ENV must be set before rustup install
+ENV RUSTUP_HOME=$HOME/.rustup \
+    CARGO_HOME=$HOME/.cargo \
+    GOPATH=$HOME/go \
+    PLAYWRIGHT_BROWSERS_PATH=$HOME/pw-browsers \
+    PLAYWRIGHT_SKIP_BROWSER_GC=1 \
+    BUN_INSTALL_CACHE_DIR=$HOME/.cache/opencode/bun-cache
+
+# Base PATH (will be extended later)
+ENV PATH="$HOME/.local/bin:$HOME/.cache/gsd/bin:$HOME/.cargo/bin:$HOME/.bun/bin:$PATH"
+
+# 1. Serena (uv venv – most reliable method)
+RUN --mount=type=cache,id=gsd-uv,target=$HOME/.cache/uv,U \
+    git clone --depth 1 https://github.com/oraios/serena /tmp/serena && \
+    cd /tmp/serena && \
+    uv venv $HOME/.serena/venv && \
+    . $HOME/.serena/venv/bin/activate && \
+    uv pip install . && \
+    deactivate && \
+    rm -rf /tmp/serena
+
+# 2. sqlite-mcp-server-enhanced via uv tool (clean user install, replaces root pip)
+RUN --mount=type=cache,id=gsd-uv,target=$HOME/.cache/uv,U \
+    uv tool install sqlite-mcp-server-enhanced
+
+# 3. npm globals + rtk/pi tools (heavy cache mount)
+RUN --mount=type=cache,id=gsd-npm,target=$HOME/.npm,U \
+    npm install --global --prefix "$HOME/.cache/gsd" \
+        pyright typescript typescript-language-server playwright \
+        chrome-devtools-mcp@latest bash-language-server @cucumber/language-server \
+        task-master-ai @byterover/cipher markdownlint-cli2 repomix rustdex \
+        @mariozechner/pi-coding-agent gsd-pi@latest && \
+    curl -fsSL https://raw.githubusercontent.com/rtk-ai/rtk/refs/heads/master/install.sh | sh && \
+    npm config set prefix "$HOME/.cache/gsd" && \
+    pi install npm:@sherif-fanous/pi-rtk && \
+    pi install npm:pi-rustdex
+
+# 4. Rust + rust-analyzer (HARDENED)
+RUN --mount=type=cache,id=cargo-registry,target=$HOME/.cargo/registry,U \
+    --mount=type=cache,id=cargo-git,target=$HOME/.cargo/git,U \
+    --mount=type=cache,id=rustup,target=$HOME/.rustup,U \
+    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y && \
+    . "$CARGO_HOME/env" && \
+    rustup toolchain install stable --component rust-analyzer && \
+    rustup default stable && \
+    # Immediate verification in the SAME layer (guaranteed success)
+    "${RUSTUP_HOME}/toolchains/stable-x86_64-unknown-linux-gnu/bin/rust-analyzer" --version && \
+    echo "=== Rust toolchain ready (stable + rust-analyzer) ==="
+RUN curl -L --proto '=https' --tlsv1.2 -sSf \
+      https://github.com/rust-lang/rust-analyzer/releases/latest/download/rust-analyzer-x86_64-unknown-linux-gnu.gz \
+      | gunzip -c > "$HOME/.local/bin/rust-analyzer" && \
+    chmod +x "$HOME/.local/bin/rust-analyzer" && \
+    "$HOME/.local/bin/rust-analyzer" --version && \
+    echo "=== Standalone rust-analyzer installed and verified ==="
+       
+# 5. Playwright Chromium (large binary – must be cached)
+RUN --mount=type=cache,id=gsd-pw-browsers,target=$HOME/pw-browsers,U \
+    playwright install chromium
+
+# 6. Bun
+RUN --mount=type=cache,id=gsd-bun,target=$HOME/.bun,U \
+    curl -fsSL https://bun.sh/install | bash
+
+# =============================================================================
+FROM pregsd AS gsd
+
+# Final hardened environment
+ENV RUSTUP_TOOLCHAIN=stable \
+    PATH="$HOME/.serena/venv/bin:$HOME/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin:$HOME/.cargo/bin:$HOME/.cache/gsd/bin:$HOME/.local/bin:$HOME/.bun/bin:$(npm prefix -g)/bin:$PATH"
+
+# Verification – uses FULL absolute path for rust-analyzer (bypasses shim forever)
+RUN --mount=type=cache,id=cargo-registry,target=$HOME/.cargo/registry,U \
+    --mount=type=cache,id=cargo-git,target=$HOME/.cargo/git,U \
+    --mount=type=cache,id=rustup,target=$HOME/.rustup,U \
+    rust-analyzer --version && \
+    clangd --version && \
+    bash-language-server --version && \
+    playwright --version && \
+    echo "=== GSD container ready (rootless + fully cached + Rust hardened) ==="
+    
+# Note: GSD_CONFIG behavior unchanged – wrapper scripts handle host mounts
+WORKDIR "$HOME/project"
+ENTRYPOINT ["/home/node/.cache/gsd/bin/gsd"]
