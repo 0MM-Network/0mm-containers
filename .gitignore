@@ -20,6 +20,7 @@
 !gsd
 !opencode
 !opencode-lite
+!**/*.do
 !*-setup.sh
 !**/artifacts/**/*
 **/artifacts/**/*.log*
@@ -27,6 +28,7 @@
 !**/examples/**/*
 !**/references/**/*
 !**/tests/**/*
+!**/unit/**/*
 
 # ...even if they are in subdirectories
 !aider-ai/
@@ -60,7 +62,7 @@ terraform/examples/**/container-storage/
 terraform/examples/**/node_modules/
 
 !test/
-!test/unit
+!test/unit/
 
 !vault/
 !vault/references/
