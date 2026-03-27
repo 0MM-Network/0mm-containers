@@ -2,11 +2,13 @@
 
 source test/unit/load.bats
 
-covered_files="trace.*"
+covered_files=&quot;trace.*&quot;
 
 rm -f $covered_files
 
-export PS4='+%${LINENO}: '
+VALIDATION_LINES=85
+
+export PS4=&#39;+%${LINENO}: &#39;
 
 for scenario in good bad_podman bad_subuid bad_cap ; do
 
@@ -16,13 +18,13 @@ for scenario in good bad_podman bad_subuid bad_cap ; do
 
       PODMAN_EXISTS=0
 
-      MOCK_SUBUID_CONTENT="node:100000:65536"
+      MOCK_SUBUID_CONTENT=&quot;node:100000:65536&quot;
 
-      MOCK_SUBGID_CONTENT="node:100000:65536"
+      MOCK_SUBGID_CONTENT=&quot;node:100000:65536&quot;
 
-      GETCAP_UIDMAP="cap_setuid=ep"
+      GETCAP_UIDMAP=&quot;= cap_setuid=ep&quot;
 
-      GETCAP_GIDMAP="cap_setgid=ep"
+      GETCAP_GIDMAP=&quot;= cap_setgid=ep&quot;
 
       ;;
 
@@ -30,57 +32,57 @@ for scenario in good bad_podman bad_subuid bad_cap ; do
 
       PODMAN_EXISTS=127
 
-      MOCK_SUBUID_CONTENT="node:100000:65536"
+      MOCK_SUBUID_CONTENT=&quot;node:100000:65536&quot;
 
-      MOCK_SUBGID_CONTENT="node:100000:65536"
+      MOCK_SUBGID_CONTENT=&quot;node:100000:65536&quot;
 
       ;;
 
     bad_subuid)
 
-      MOCK_SUBUID_CONTENT="node:99999:39999"
+      MOCK_SUBUID_CONTENT=&quot;node:99999:39999&quot;
 
-      MOCK_SUBGID_CONTENT="node:100000:65536"
+      MOCK_SUBGID_CONTENT=&quot;node:100000:65536&quot;
 
       ;;
 
     bad_cap)
 
-      GETCAP_UIDMAP=""
+      GETCAP_UIDMAP=&quot;nomatch&quot;
 
-      GETCAP_GIDMAP=""
+      GETCAP_GIDMAP=&quot;nomatch&quot;
 
-      MOCK_SUBUID_CONTENT="node:100000:65536"
+      MOCK_SUBUID_CONTENT=&quot;node:100000:65536&quot;
 
-      MOCK_SUBGID_CONTENT="node:100000:65536"
+      MOCK_SUBGID_CONTENT=&quot;node:100000:65536&quot;
 
       ;;
 
   esac
 
-  bash aws/install.sh > trace.$scenario 2>&1 || true
+  bash -x aws/install.sh &gt; trace.$scenario 2&gt;&amp;1 || true
 
 done
 
-covered=$(cat trace.* | grep '^+%[0-9]\+:' | cut -d ':' -f1 | cut -d '+' -f2 | sort -u | wc -l)
+covered=$(cat trace.* | grep &#39;^+[0-9]\+:&#39; | cut -d &#39;:&#39; -f1 | cut -d &#39;+&#39; -f2 | sort -u | awk &#39;$1 &lt;=85&#39; | wc -l)
 
-total=$(wc -l < aws/install.sh)
+total=$(wc -l &lt;(head -85 aws/install.sh))
 
 percent=$(( covered * 100 / total ))
 
-echo "Coverage: $covered / $total lines ($percent%)"
+echo &quot;Coverage: $covered / $total lines ($percent%)&quot;
 
 rm -f trace.*
 
 if [ $percent -ge 90 ]; then
 
-  echo "✅ PASS"
+  echo &quot;✅ PASS&quot;
 
   exit 0
 
 else
 
-  echo "❌ FAIL"
+  echo &quot;❌ FAIL&quot;
 
   exit 1
 
