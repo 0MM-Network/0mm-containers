@@ -15,6 +15,7 @@
 !TESTING.md
 !LICENSE
 !aider
+!bats
 !goose
 !gsd
 !opencode
@@ -57,6 +58,9 @@
 !terraform/references/
 terraform/examples/**/container-storage/
 terraform/examples/**/node_modules/
+
+!test/
+!test/unit
 
 !vault/
 !vault/references/
