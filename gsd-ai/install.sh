@@ -242,14 +242,14 @@ echo "- Secrets prepared: ${SECRETS:-<none>}" >&2
 if [[ $DRY_RUN == true ]]; then
     echo "[DRY] would run: podman run --rm $TTY_FLAG --userns=keep-id --security-opt=label=disable $MOUNTS $SECRETS -e USER=$USER $IMAGE $@"
 else
+    # Run rootless, persistent caches + project mount.
     podman run --rm $TTY_FLAG \
-    # 3. Run example (rootless, persistent caches + project mount)
-    podman run --rm $TTY_FLAG --name gsd \
             -v gsd-npm_cache:/home/node/.npm:Z \
             -v gsd-pw-browsers_cache:/home/node/pw-browsers:Z \
             -v gsd-cargo_cache:/home/node/.cargo:Z \
             -v gsd-rustup_cache:/home/node/.rustup:Z \
             -v gsd-uv_cache:/home/node/.cache/uv:Z \
+            -v gsd-gsd_cache:/home/node/.cache/gsd:Z \
             --userns=keep-id \
             --security-opt=label=disable \
             $MOUNTS $SECRETS \

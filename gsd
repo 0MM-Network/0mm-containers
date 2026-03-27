@@ -132,6 +132,7 @@ else
             -v gsd-cargo_cache:/home/node/.cargo:Z \
             -v gsd-rustup_cache:/home/node/.rustup:Z \
             -v gsd-uv_cache:/home/node/.cache/uv:Z \
+            -v gsd-gsd_cache:/home/node/.cache/gsd:Z \
             --userns=keep-id \
             --security-opt=label=disable \
             $MOUNTS $SECRETS \
