@@ -1,10 +1,10 @@
 #!/usr/bin/env bats
 
-load &#39;load.bats&#39;
+load 'load.bats'
 
 error_exit() {
 
-    echo &quot;Error: $*&quot; &gt;&amp;2
+    echo "Error: $*" >&2
 
     exit 1
 
@@ -14,23 +14,23 @@ validate_ranges() {
 
     CURRENT_USER=$(whoami)
 
-    SUBUID_LINE=$(podman unshare cat /etc/subuid | grep &quot;^$CURRENT_USER:&quot; || true)
+    SUBUID_LINE=$(podman unshare cat /etc/subuid | grep "^$CURRENT_USER:" || true)
 
-    SUBGID_LINE=$(podman unshare cat /etc/subgid | grep &quot;^$CURRENT_USER:&quot; || true)
+    SUBGID_LINE=$(podman unshare cat /etc/subgid | grep "^$CURRENT_USER:" || true)
 
-    if [ -z &quot;$SUBUID_LINE&quot; ] || [ -z &quot;$SUBGID_LINE&quot; ]; then
+    if [ -z "$SUBUID_LINE" ] || [ -z "$SUBGID_LINE" ]; then
 
-        error_exit &quot;No subuid/subgid ranges found for user &#39;$CURRENT_USER&#39;. Rootless Podman requires configured ranges (e.g., usermod --add-subuids 100000-165535 --add-subgids 100000-165535 $CURRENT_USER).&quot;
+        error_exit "No subuid/subgid ranges found for user '$CURRENT_USER'. Rootless Podman requires configured ranges (e.g., usermod --add-subuids 100000-165535 --add-subgids 100000-165535 $CURRENT_USER)."
 
     fi
 
-    HOST_SUBUID_START=$(echo &quot;$SUBUID_LINE&quot; | cut -d: -f2)
+    HOST_SUBUID_START=$(echo "$SUBUID_LINE" | cut -d: -f2)
 
-    HOST_SUBUID_COUNT=$(echo &quot;$SUBUID_LINE&quot; | cut -d: -f3)
+    HOST_SUBUID_COUNT=$(echo "$SUBUID_LINE" | cut -d: -f3)
 
-    HOST_SUBGID_START=$(echo &quot;$SUBGID_LINE&quot; | cut -d: -f2)
+    HOST_SUBGID_START=$(echo "$SUBGID_LINE" | cut -d: -f2)
 
-    HOST_SUBGID_COUNT=$(echo &quot;$SUBGID_LINE&quot; | cut -d: -f3)
+    HOST_SUBGID_COUNT=$(echo "$SUBGID_LINE" | cut -d: -f3)
 
     INNER_START=10000
 
@@ -40,11 +40,11 @@ validate_ranges() {
 
     MIN_HOST_COUNT=$((INNER_START + INNER_COUNT))
 
-    if [ &quot;$HOST_SUBUID_START&quot; -lt &quot;$MIN_HOST_START&quot; ] || [ &quot;$HOST_SUBUID_COUNT&quot; -lt &quot;$MIN_HOST_COUNT&quot; ] || \
+    if [ "$HOST_SUBUID_START" -lt "$MIN_HOST_START" ] || [ "$HOST_SUBUID_COUNT" -lt "$MIN_HOST_COUNT" ] || \
 
-       [ &quot;$HOST_SUBGID_START&quot; -lt &quot;$MIN_HOST_START&quot; ] || [ &quot;$HOST_SUBGID_COUNT&quot; -lt &quot;$MIN_HOST_COUNT&quot; ]; then
+       [ "$HOST_SUBGID_START" -lt "$MIN_HOST_START" ] || [ "$HOST_SUBGID_COUNT" -lt "$MIN_HOST_COUNT" ]; then
 
-        error_exit &quot;Host subuid/subgid ranges are insufficient for nested Podman. Required: start &gt;= $MIN_HOST_START, count &gt;= $MIN_HOST_COUNT. Current: subuid $HOST_SUBUID_START:$HOST_SUBUID_COUNT, subgid $HOST_SUBGID_START:$HOST_SUBGID_COUNT.&quot;
+        error_exit "Host subuid/subgid ranges are insufficient for nested Podman. Required: start >= $MIN_HOST_START, count >= $MIN_HOST_COUNT. Current: subuid $HOST_SUBUID_START:$HOST_SUBUID_COUNT, subgid $HOST_SUBGID_START:$HOST_SUBGID_COUNT."
 
     fi
 
@@ -54,125 +54,115 @@ validate_ranges() {
 
        [ $((HOST_SUBGID_START + NESTED_MAX)) -gt $((HOST_SUBGID_START + HOST_SUBGID_COUNT - 1)) ]; then
 
-        error_exit &quot;Nested range overflow detected. Inner range ($INNER_START:$INNER_COUNT) does not fit within host ranges. Consider increasing host count or reducing inner range in Containerfile.&quot;
+        error_exit "Nested range overflow detected. Inner range ($INNER_START:$INNER_COUNT) does not fit within host ranges. Consider increasing host count or reducing inner range in Containerfile."
 
     fi
 
-    echo &quot;Host ranges validated successfully: subuid $HOST_SUBUID_START:$HOST_SUBUID_COUNT, subgid $HOST_SUBGID_START:$HOST_SUBGID_COUNT&quot;
+    echo "Host ranges validated successfully: subuid $HOST_SUBUID_START:$HOST_SUBUID_COUNT, subgid $HOST_SUBGID_START:$HOST_SUBGID_COUNT"
 
 }
 
-@test &quot;validate_ranges succeeds with default good ranges&quot; {
+@test "validate_ranges succeeds with default good ranges" {
 
   run validate_ranges
 
-  [ &quot;$status&quot; -eq 0 ]
+  [ "$status" -eq 0 ]
 
-  [[ &quot;$output&quot; =~ &quot;Host ranges validated successfully: subuid 100000:65536, subgid 100000:65536&quot; ]]
+  [[ "$output" =~ "Host ranges validated successfully: subuid 100000:65536, subgid 100000:65536" ]]
 
 }
 
-@test &quot;validate_ranges fails on empty subuid file&quot; {
+@test "validate_ranges fails on empty subuid file" {
 
-  MOCK_SUBUID_CONTENT=&quot;&quot;
+  export MOCK_SUBUID_CONTENT=""
 
   run validate_ranges
 
-  [ &quot;$status&quot; -eq 1 ]
+  [ "$status" -eq 1 ]
 
 }
 
-@test &quot;validate_ranges fails on empty subgid file&quot; {
+@test "validate_ranges fails on empty subgid file" {
 
-  MOCK_SUBGID_CONTENT=&quot;&quot;
+  export MOCK_SUBGID_CONTENT=""
 
   run validate_ranges
 
-  [ &quot;$status&quot; -eq 1 ]
+  [ "$status" -eq 1 ]
 
 }
 
-@test &quot;validate_ranges fails when no matching user line in subuid (grep empty)&quot; {
+@test "validate_ranges fails when no matching user line in subuid (grep empty)" {
 
-  MOCK_SUBUID_CONTENT=&quot;otheruser:100000:65536&quot;
+  export MOCK_SUBUID_CONTENT="otheruser:100000:65536"
 
   run validate_ranges
 
-  [ &quot;$status&quot; -eq 1 ]
+  [ "$status" -eq 1 ]
 
 }
 
-@test &quot;validate_ranges fails on subuid start &lt; 100000&quot; {
+@test "validate_ranges fails on subuid start < 100000" {
 
-  MOCK_SUBUID_CONTENT=&quot;node:99999:65536&quot;
+  export MOCK_SUBUID_CONTENT="node:99999:65536"
 
   run validate_ranges
 
-  [ &quot;$status&quot; -eq 1 ]
+  [ "$status" -eq 1 ]
 
-  [[ &quot;$output&quot; =~ &quot;subuid 99999:65536&quot; ]]
+  [[ "$output" =~ "subuid 99999:65536" ]]
 
 }
 
-@test &quot;validate_ranges fails on subuid count &lt; 40000&quot; {
+@test "validate_ranges fails on subuid count < 40000" {
 
-  MOCK_SUBUID_CONTENT=&quot;node:100000:39999&quot;
+  export MOCK_SUBUID_CONTENT="node:100000:39999"
 
   run validate_ranges
 
-  [ &quot;$status&quot; -eq 1 ]
+  [ "$status" -eq 1 ]
 
-  [[ &quot;$output&quot; =~ &quot;subuid 100000:39999&quot; ]]
+  [[ "$output" =~ "subuid 100000:39999" ]]
 
 }
 
-@test &quot;validate_ranges fails on subgid start &lt; 100000&quot; {
+@test "validate_ranges fails on subgid start < 100000" {
 
-  MOCK_SUBGID_CONTENT=&quot;node:99999:65536&quot;
+  export MOCK_SUBGID_CONTENT="node:99999:65536"
 
   run validate_ranges
 
-  [ &quot;$status&quot; -eq 1 ]
+  [ "$status" -eq 1 ]
 
-  [[ &quot;$output&quot; =~ &quot;subgid 99999:65536&quot; ]]
+  [[ "$output" =~ "subgid 99999:65536" ]]
 
 }
 
-@test &quot;validate_ranges fails on subgid count &lt; 40000&quot; {
+@test "validate_ranges fails on subgid count < 40000" {
 
-  MOCK_SUBGID_CONTENT=&quot;node:100000:39999&quot;
+  export MOCK_SUBGID_CONTENT="node:100000:39999"
 
   run validate_ranges
 
-  [ &quot;$status&quot; -eq 1 ]
+  [ "$status" -eq 1 ]
 
-  [[ &quot;$output&quot; =~ &quot;subgid 100000:39999&quot; ]]
+  [[ "$output" =~ "subgid 100000:39999" ]]
 
 }
 
-@test &quot;validate_ranges fails on nested overflow (equiv to small count, but tests arith)&quot; {
+@test "validate_ranges fails on nested overflow (equiv to small count, but tests arith)" {
 
-  MOCK_SUBUID_CONTENT=&quot;node:100000:39999&quot;
+  export MOCK_SUBUID_CONTENT="node:100000:39999"
 
   run validate_ranges
 
-  [ &quot;$status&quot; -eq 1 ]
+  [ "$status" -eq 1 ]
 
 }
 
-@test &quot;validate_ranges handles parse malformed start (non-numeric)&quot; {
+@test "validate_ranges handles parse malformed start (non-numeric)" {
 
-  MOCK_SUBUID_CONTENT=&quot;node:abc:65536&quot;
-
-  run validate_ranges
-
-  [ $status -ne 0 ]
-
-}
-
-@test &quot;validate_ranges handles parse malformed count (non-numeric)&quot; {
-
-  MOCK_SUBUID_CONTENT=&quot;node:100000:abc&quot;
+  export MOCK_SUBUID_CONTENT="node:abc:65536"
 
   run validate_ranges
 
@@ -180,19 +170,9 @@ validate_ranges() {
 
 }
 
-@test &quot;validate_ranges handles missing count field&quot; {
+@test "validate_ranges handles parse malformed count (non-numeric)" {
 
-  MOCK_SUBUID_CONTENT=&quot;node:100000&quot;
-
-  run validate_ranges
-
-  [ $status -ne 0 ]
-
-}
-
-@test &quot;validate_ranges handles no colon (empty fields)&quot; {
-
-  MOCK_SUBUID_CONTENT=&quot;node&quot;
+  export MOCK_SUBUID_CONTENT="node:100000:abc"
 
   run validate_ranges
 
@@ -200,38 +180,59 @@ validate_ranges() {
 
 }
 
-@test &quot;validate_ranges handles extra fields (cut still works)&quot; {
+@test "validate_ranges handles missing count field" {
 
-  MOCK_SUBUID_CONTENT=&quot;node:100000:65536:extra&quot;
+  export MOCK_SUBUID_CONTENT="node:100000"
 
   run validate_ranges
 
-  [ &quot;$status&quot; -eq 0 ]
-
-  [[ &quot;$output&quot; =~ &quot;subuid 100000:65536&quot; ]]
+  [ $status -ne 0 ]
 
 }
 
-@test &quot;validate_ranges is idempotent (succeeds multiple calls)&quot; {
+@test "validate_ranges handles no colon (empty fields)" {
+
+  export MOCK_SUBUID_CONTENT="node"
 
   run validate_ranges
 
-  [ &quot;$status&quot; -eq 0 ]
-
-  run validate_ranges
-
-  [ &quot;$status&quot; -eq 0 ]
+  [ $status -ne 0 ]
 
 }
 
-@test &quot;validate_ranges with different user no match&quot; {
+@test "validate_ranges handles extra fields (cut still works)" {
 
-  MOCK_WHOAMI=&quot;testuser&quot;
-
-  MOCK_SUBUID_CONTENT=&quot;node:100000:65536&quot;
+  export MOCK_SUBUID_CONTENT="node:100000:65536:extra"
 
   run validate_ranges
 
-  [ &quot;$status&quot; -eq 1 ]
+  [ "$status" -eq 0 ]
+
+  [[ "$output" =~ "subuid 100000:65536" ]]
 
 }
+
+@test "validate_ranges is idempotent (succeeds multiple calls)" {
+
+  run validate_ranges
+
+  [ "$status" -eq 0 ]
+
+  run validate_ranges
+
+  [ "$status" -eq 0 ]
+
+}
+
+@test "validate_ranges with different user no match" {
+
+  export MOCK_WHOAMI="testuser"
+
+  export MOCK_SUBUID_CONTENT="node:100000:65536"
+
+  run validate_ranges
+
+  [ "$status" -eq 1 ]
+
+}
+
