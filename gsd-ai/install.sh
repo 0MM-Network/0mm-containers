@@ -65,17 +65,17 @@ if ! $RUNTIME image inspect "$IMAGE_TAG" >/dev/null 2>&1; then
   echo "Building $IMAGE_TAG first-run image (Containerfile)..."
 
   # 1. Create persistent volumes once (highly recommended)
-  podman volume create gsd-npm_cache
-  podman volume create gsd-uv_cache
-  podman volume create gsd-cargo_cache
-  podman volume create gsd-rustup_cache
-  podman volume create gsd-pw-browsers_cache
-  podman volume create gsd-bun_cache
-  podman volume create gsd-serena_cache
-  podman volume create gsd-project
-  podman volume create gsd-gsd-config
-  podman volume create gsd-apt-base_cache
-  podman volume create gsd-apt-lists_cache
+  podman volume create gsd-npm_cache || true
+  podman volume create gsd-uv_cache || true
+  podman volume create gsd-cargo_cache || true
+  podman volume create gsd-rustup_cache || true
+  podman volume create gsd-pw-browsers_cache || true
+  podman volume create gsd-bun_cache || true
+  podman volume create gsd-serena_cache || true
+  podman volume create gsd-project || true
+  podman volume create gsd-gsd-config || true
+  podman volume create gsd-apt-base_cache || true
+  podman volume create gsd-apt-lists_cache || true
   
   # 2. Build (rootless, with volume caching for maximum speed)
   buildah bud --userns=host -t ${IMAGE_TAG} \
