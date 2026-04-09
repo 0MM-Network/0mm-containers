@@ -1,6 +1,6 @@
 #!/bin/bash
 readonly IMAGE="trusted/gsd:latest"
-set -x
+
 # Basic shim options (preserved)
 DRY_RUN=false
 TRACE=false
@@ -51,7 +51,7 @@ case "${1:-}" in
 esac
 
 # Persistence mounts (GSD's exact requirements)
-MOUNTS="-v $HOME/.pi:/home/node/.pi:Z -v $PWD:/home/node/project:Z -v $HOME/.gsd:/home/node/.gsd:Z -v $PWD/.gsd:/home/node/project/.gsd:Z"
+MOUNTS="-v $PWD:/home/node/project:Z -v $HOME/.gsd:/home/node/.gsd:Z -v $PWD/.gsd:/home/node/project/.gsd:Z"
 
 # Optional caches
 [ -d "$PWD/.gsd/cache" ] || mkdir -p "$PWD/.gsd/cache"
@@ -125,7 +125,7 @@ echo "- Secrets prepared: ${SECRETS:-<none>}" >&2
 if [[ $DRY_RUN == true ]]; then
     echo "[DRY] would run: podman run --rm $TTY_FLAG --userns=keep-id --security-opt=label=disable $MOUNTS $SECRETS -e USER=$USER $IMAGE $@"
 else
-    # Run (rootless, persistent caches + project mount)
+    # Run rootless, persistent caches + project mount.
     podman run --rm $TTY_FLAG \
             -v gsd-npm_cache:/home/node/.npm:Z \
             -v gsd-pw-browsers_cache:/home/node/pw-browsers:Z \

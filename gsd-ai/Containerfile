@@ -21,12 +21,13 @@ RUN --mount=type=cache,id=gsd-apt-base,target=/var/cache/apt,U \
     && chmod go+r /etc/apt/keyrings/githubcli-archive-keyring.gpg \
     && mkdir -p -m 755 /etc/apt/sources.list.d \
     && echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | tee /etc/apt/sources.list.d/github-cli.list > /dev/null \
+    && wget -qO- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh | bash \
     && apt-get update && apt-get install --no-install-recommends -y \
         git gh hx libnss3 curl python3 python3-pip build-essential clang ripgrep unzip \
         dos2unix jq libnspr4 libatk1.0-0 libatk-bridge2.0-0 libcups2 libdrm2 \
         libxkbcommon0 libxcomposite1 libxdamage1 libxfixes3 libxrandr2 libgbm1 \
         libpango-1.0-0 libcairo2 libasound2 libatspi2.0-0 libgtk-3-0 \
-        fonts-liberation fonts-noto-color-emoji clangd && \
+        fonts-liberation fonts-noto-color-emoji clangd sqlite3 && \
     pip install uv --break-system-packages && \
     npm install -g npm@11.6.4 && \
     rm -rf /var/lib/apt/lists/*
@@ -49,7 +50,6 @@ ENV HOME=/home/node
 RUN mkdir -p "$HOME/project" \
     "$HOME/.local/share/gsd/auth" \
     "$HOME/.npm" \
-    "$HOME/.bun" \
     "$HOME/.gsd" \
     "$HOME/.cache/gsd" \
     "$HOME/.serena" \
@@ -60,7 +60,6 @@ RUN mkdir -p "$HOME/project" \
     "$HOME/go" \
     "$HOME/.gem" \
     "$HOME/.cache/uv" \
-    "$HOME/.cache/opencode/bun-cache" \
     "$HOME/.openagents" \
     "$HOME/.local/bin"
 
@@ -74,11 +73,10 @@ ENV RUSTUP_HOME=$HOME/.rustup \
     CARGO_HOME=$HOME/.cargo \
     GOPATH=$HOME/go \
     PLAYWRIGHT_BROWSERS_PATH=$HOME/pw-browsers \
-    PLAYWRIGHT_SKIP_BROWSER_GC=1 \
-    BUN_INSTALL_CACHE_DIR=$HOME/.cache/opencode/bun-cache
+    PLAYWRIGHT_SKIP_BROWSER_GC=1
 
 # Base PATH (will be extended later)
-ENV PATH="$HOME/.local/bin:$HOME/.cache/gsd/bin:$HOME/.cargo/bin:$HOME/.bun/bin:$PATH"
+ENV PATH="$HOME/.local/bin:$HOME/.cache/gsd/bin:$HOME/.cargo/bin:$PATH"
 
 # 1. Serena (uv venv – most reliable method)
 RUN --mount=type=cache,id=gsd-uv,target=$HOME/.cache/uv,U \
@@ -91,16 +89,20 @@ RUN --mount=type=cache,id=gsd-uv,target=$HOME/.cache/uv,U \
     rm -rf /tmp/serena
 
 # 2. sqlite-mcp-server-enhanced via uv tool (clean user install, replaces root pip)
-RUN --mount=type=cache,id=gsd-uv,target=$HOME/.cache/uv,U \
-    uv tool install sqlite-mcp-server-enhanced
+#RUN --mount=type=cache,id=gsd-uv,target=$HOME/.cache/uv,U \
+#    uv tool install sqlite-mcp-server-enhanced
 
 # 3. npm globals + rtk/pi tools (heavy cache mount)
-RUN --mount=type=cache,id=gsd-npm,target=$HOME/.npm,U \
+RUN --mount=type=cache,id=gsd-uv,target=$HOME/.cache/uv,U \
+    --mount=type=cache,id=gsd-npm,target=$HOME/.npm,U \
+    uv tool install sqlite-mcp-server-enhanced && \
     npm install --global --prefix "$HOME/.cache/gsd" \
+        --no-audit --no-fund --omit=dev \
         pyright typescript typescript-language-server playwright \
         chrome-devtools-mcp@latest bash-language-server @cucumber/language-server \
         task-master-ai @byterover/cipher markdownlint-cli2 repomix rustdex \
-        @mariozechner/pi-coding-agent gsd-pi@latest && \
+        @mariozechner/pi-coding-agent @mariozechner/lsp-cli \
+        github:0mm-mark/gsd-2#v2.66.1e && \
     curl -fsSL https://raw.githubusercontent.com/rtk-ai/rtk/refs/heads/master/install.sh | sh && \
     npm config set prefix "$HOME/.cache/gsd" && \
     pi install npm:@sherif-fanous/pi-rtk && \
@@ -116,8 +118,8 @@ RUN --mount=type=cache,id=cargo-registry,target=$HOME/.cargo/registry,U \
     rustup default stable && \
     # Immediate verification in the SAME layer (guaranteed success)
     "${RUSTUP_HOME}/toolchains/stable-x86_64-unknown-linux-gnu/bin/rust-analyzer" --version && \
-    echo "=== Rust toolchain ready (stable + rust-analyzer) ==="
-RUN curl -L --proto '=https' --tlsv1.2 -sSf \
+    echo "=== Rust toolchain ready (stable + rust-analyzer) ===" && \
+    curl -L --proto '=https' --tlsv1.2 -sSf \
       https://github.com/rust-lang/rust-analyzer/releases/latest/download/rust-analyzer-x86_64-unknown-linux-gnu.gz \
       | gunzip -c > "$HOME/.local/bin/rust-analyzer" && \
     chmod +x "$HOME/.local/bin/rust-analyzer" && \
@@ -125,19 +127,19 @@ RUN curl -L --proto '=https' --tlsv1.2 -sSf \
     echo "=== Standalone rust-analyzer installed and verified ==="
        
 # 5. Playwright Chromium (large binary – must be cached)
-RUN --mount=type=cache,id=gsd-pw-browsers,target=$HOME/pw-browsers,U \
-    playwright install chromium
+#RUN --mount=type=cache,id=gsd-pw-browsers,target=$HOME/pw-browsers,U \
+#    playwright install chromium
 
 # 6. Bun
-RUN --mount=type=cache,id=gsd-bun,target=$HOME/.bun,U \
-    curl -fsSL https://bun.sh/install | bash
+#RUN --mount=type=cache,id=gsd-bun,target=$HOME/.bun,U \
+#    curl -fsSL https://bun.sh/install | bash
 
 # =============================================================================
 FROM pregsd AS gsd
 
 # Final hardened environment
 ENV RUSTUP_TOOLCHAIN=stable \
-    PATH="$HOME/.serena/venv/bin:$HOME/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin:$HOME/.cargo/bin:$HOME/.cache/gsd/bin:$HOME/.local/bin:$HOME/.bun/bin:$(npm prefix -g)/bin:$PATH"
+    PATH="$HOME/.serena/venv/bin:$HOME/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin:$HOME/.cargo/bin:$HOME/.cache/gsd/bin:$HOME/.local/bin:$HOME/.cache/gsd/bin:$PATH"
 
 # Verification – uses FULL absolute path for rust-analyzer (bypasses shim forever)
 RUN --mount=type=cache,id=cargo-registry,target=$HOME/.cargo/registry,U \
