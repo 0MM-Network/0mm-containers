@@ -1,0 +1,152 @@
+#!/usr/bin/env bash
+# Thin host shim → localhost/0mm-atlas-lean:local (Pi-style Podman socket).
+# Nested Pi: exec the in-tree Rust CLI (do not nest podman against guest /work).
+set -euo pipefail
+
+export PATH="${HOME}/.local/bin:${PATH}"
+
+IMAGE="${ATLAS_LEAN_IMAGE:-localhost/0mm-atlas-lean:local}"
+SHIM_DIR="$(CDPATH= cd -- "$(dirname "$0")" && pwd)"
+UID_NUM="$(id -u)"
+RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/${UID_NUM}}"
+DRY_RUN=false
+
+error_exit() {
+  echo "Error: $1" >&2
+  exit 1
+}
+
+_PD_HELPER=""
+if [[ -f "${SHIM_DIR}/lib/project-dir.sh" ]]; then
+  _PD_HELPER="${SHIM_DIR}/lib/project-dir.sh"
+elif [[ -f "${SHIM_DIR}/../../bin/lib/project-dir.sh" ]]; then
+  _PD_HELPER="${SHIM_DIR}/../../bin/lib/project-dir.sh"
+fi
+[[ -n "${_PD_HELPER}" ]] || error_exit "bin/lib/project-dir.sh not found (shim=${SHIM_DIR})"
+# shellcheck source=bin/lib/project-dir.sh
+source "${_PD_HELPER}"
+
+_SOCK_HELPER=""
+if [[ -f "${SHIM_DIR}/lib/podman-socket.sh" ]]; then
+  _SOCK_HELPER="${SHIM_DIR}/lib/podman-socket.sh"
+elif [[ -f "${SHIM_DIR}/../../bin/lib/podman-socket.sh" ]]; then
+  _SOCK_HELPER="${SHIM_DIR}/../../bin/lib/podman-socket.sh"
+fi
+[[ -n "${_SOCK_HELPER}" ]] || error_exit "bin/lib/podman-socket.sh not found (shim=${SHIM_DIR})"
+# shellcheck source=bin/lib/podman-socket.sh
+source "${_SOCK_HELPER}"
+
+is_nested() {
+  [[ -f /run/.containerenv ]] || [[ -f /.dockerenv ]]
+}
+
+# Shim-only flags (stripped before the in-image CLI).
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --dry-run) DRY_RUN=true; shift ;;
+    --) shift; break ;;
+    *) break ;;
+  esac
+done
+
+cli_bin_path() {
+  local root
+  root="$(CDPATH= cd -- "${SHIM_DIR}/.." && pwd)"
+  printf '%s\n' "${root}/tools/atlas-lean/target/release/atlas-lean"
+}
+
+ensure_local_cli() {
+  local root bin cargo src manifest
+  root="$(CDPATH= cd -- "${SHIM_DIR}/.." && pwd)"
+  manifest="${root}/tools/atlas-lean/Cargo.toml"
+  bin="$(cli_bin_path)"
+  src="${root}/tools/atlas-lean/src/main.rs"
+  if [[ -x "${CARGO:-}" ]]; then
+    cargo="$CARGO"
+  elif [[ -x "${HOME}/.local/share/cargo/bin/cargo" ]]; then
+    cargo="${HOME}/.local/share/cargo/bin/cargo"
+  elif [[ -x /usr/bin/cargo ]]; then
+    cargo=/usr/bin/cargo
+  else
+    cargo=cargo
+  fi
+  if [[ ! -x "$bin" ]] || [[ "$src" -nt "$bin" ]] || [[ "$manifest" -nt "$bin" ]]; then
+    "$cargo" build --release --manifest-path "$manifest" >/dev/null 2>&1
+  fi
+}
+
+exec_local_cli() {
+  ensure_local_cli
+  exec "$(cli_bin_path)" "$@"
+}
+
+# Control plane (Pi or host): run the in-tree Rust CLI.
+# Workload image is for lake/python/lean, not for a host-glibc binary
+# (host glibc 2.41 vs debian bookworm 2.36). --dry-run still prints the
+# podman plan. FORCE_HOST_SHIM=1 takes the launch path (live exec needs a
+# bookworm-linked CLI).
+if [[ "$DRY_RUN" != true && "${ATLAS_LEAN_FORCE_HOST_SHIM:-0}" != "1" ]]; then
+  exec_local_cli "$@"
+fi
+
+HOST_PROJECT_DIR="$(project_dir_discover --shim "$0" 2>/dev/null || true)"
+if [[ -z "${HOST_PROJECT_DIR}" ]]; then
+  HOST_PROJECT_DIR="${PROJECT_DIR_HOST:-${PROJECT_DIR:-}}"
+fi
+[[ -n "${HOST_PROJECT_DIR}" ]] || error_exit "cannot discover PROJECT_DIR from shim $0"
+GUEST_PROJECT_DIR="${PI_GUEST_MOUNT:-/work}"
+
+if [[ "$DRY_RUN" != true ]]; then
+  if ! command -v podman >/dev/null 2>&1 || ! podman image exists "$IMAGE" >/dev/null 2>&1; then
+    if [[ "${ATLAS_LEAN_FORCE_HOST_SHIM:-0}" == "1" ]]; then
+      echo "atlas-lean: missing image ${IMAGE}" >&2
+      exit 3
+    fi
+    # Host/dev without the workload image: run the in-tree CLI (same as nested Pi).
+    exec_local_cli "$@"
+  fi
+  ensure_local_cli
+fi
+
+PODMAN_SOCK="${RUNTIME_DIR}/podman/podman.sock"
+REMOTE_BIN="${HOST_PROJECT_DIR}/cache/podman-remote/podman-remote-static-linux_amd64"
+EXTRA_ARGS=()
+# Always plan the host engine socket (Pi pattern) so the CLI can podman-run lake.
+EXTRA_ARGS+=(-v "${PODMAN_SOCK}:/run/podman/podman.sock")
+EXTRA_ARGS+=(-e CONTAINER_HOST=unix:///run/podman/podman.sock)
+if [[ -x "${REMOTE_BIN}" ]]; then
+  EXTRA_ARGS+=(-v "${REMOTE_BIN}:/usr/local/bin/podman-remote:ro")
+  EXTRA_ARGS+=(-v "${REMOTE_BIN}:/usr/local/bin/podman:ro")
+fi
+CLI_BIN="$(cli_bin_path)"
+EXTRA_ARGS+=(-v "${CLI_BIN}:/usr/local/bin/atlas-lean:ro")
+
+TTY_ARGS=()
+if [[ -t 0 && -t 1 ]]; then
+  TTY_ARGS+=(-t)
+fi
+
+RUN=(podman run --rm -i "${TTY_ARGS[@]}"
+  --network=host
+  --userns=keep-id
+  --security-opt label=disable
+  --label ai.oneshot.slug=atlas-lean-workflow
+  -v "${HOST_PROJECT_DIR}:${GUEST_PROJECT_DIR}:Z"
+  -w "${GUEST_PROJECT_DIR}"
+  -e "PROJECT_DIR=${GUEST_PROJECT_DIR}"
+  -e "PROJECT_DIR_HOST=${HOST_PROJECT_DIR}"
+  -e "PATH=${GUEST_PROJECT_DIR}/bin:/opt/elan/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+  -e "ATLAS_LEAN_LAKE=lake"
+  "${EXTRA_ARGS[@]}"
+  --entrypoint atlas-lean
+  "$IMAGE"
+  "$@")
+
+if [[ "$DRY_RUN" == true ]]; then
+  printf '[dry-run]'
+  printf ' %q' "${RUN[@]}"
+  printf '\n'
+  exit 0
+fi
+
+exec "${RUN[@]}"

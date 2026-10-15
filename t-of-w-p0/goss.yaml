@@ -1,0 +1,9 @@
+# In-guest contract for localhost/0mm-t-of-w-p0:local (ADR 0001).
+# Do not run this file against the host.
+command:
+  python3:
+    exec: "python3 -c 'import numpy, scipy, safetensors, fastcluster'"
+    exit-status: 0
+  no_cuda_toolkit:
+    exec: "test ! -d /usr/local/cuda"
+    exit-status: 0

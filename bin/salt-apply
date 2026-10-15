@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+# Thin host entry for salt-call apply. Workspace-specific formulas live in the tree.
+set -euo pipefail
+ROOT="${BTSTRP_ROOT:-${PWD}}"
+export PATH="${HOME}/.local/bin:${ROOT}/bin:${PATH}"
+if ! command -v salt-call >/dev/null 2>&1; then
+  echo "salt-apply: salt-call missing — run ensure-host-salt first" >&2
+  exit 1
+fi
+# Default: local file_roots under $ROOT/salt if present
+args=("$@")
+if [[ ${#args[@]} -eq 0 ]]; then
+  echo "usage: salt-apply [--domain <name>] [state ...]" >&2
+  exit 2
+fi
+# Prefer project wrapper if principal replaced this file; otherwise salt-call local
+if [[ -f "${ROOT}/salt/minion" || -d "${ROOT}/salt" ]]; then
+  exec salt-call --local --file-root="${ROOT}/salt" --pillar-root="${ROOT}/salt/pillar" state.apply "${args[@]}"
+fi
+exec salt-call --local state.apply "${args[@]}"

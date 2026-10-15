@@ -1,0 +1,61 @@
+#!/usr/bin/env bash
+# Install ShellSpec, BATS, git-subrepo under $BTSTRP_ROOT/cache (idempotent).
+# git-subrepo is required for private subrepo attach — fail if it cannot be installed.
+set -euo pipefail
+ROOT="${BTSTRP_ROOT:-${PWD}}"
+CACHE="${ROOT}/cache"
+mkdir -p "$CACHE" "${ROOT}/bin"
+
+log() { echo "install-dev-tools: $*" >&2; }
+die() { log "ERROR: $*"; exit 1; }
+
+clone_or_update() {
+  local url="$1" dest="$2"
+  if [[ -d "${dest}/.git" ]]; then
+    git -C "$dest" pull --ff-only 2>/dev/null || true
+    return 0
+  fi
+  git clone --depth 1 "$url" "$dest"
+}
+
+command -v git >/dev/null || die "git required on PATH"
+
+# ShellSpec (best-effort)
+if [[ ! -x "${CACHE}/shellspec/bin/shellspec" ]]; then
+  log "fetching ShellSpec"
+  clone_or_update "https://github.com/shellspec/shellspec.git" "${CACHE}/shellspec" \
+    || log "warning: ShellSpec clone failed"
+fi
+if [[ -x "${CACHE}/shellspec/bin/shellspec" ]]; then
+  # Relative so nested Pi (/work) and host ($HOME/…/ai) share one link.
+  ln -sfn "../cache/shellspec/bin/shellspec" "${ROOT}/bin/shellspec"
+fi
+
+# BATS (best-effort)
+if [[ ! -x "${CACHE}/bats-core/bin/bats" ]]; then
+  log "fetching bats-core"
+  clone_or_update "https://github.com/bats-core/bats-core.git" "${CACHE}/bats-core" \
+    || log "warning: bats-core clone failed"
+fi
+if [[ -x "${CACHE}/bats-core/bin/bats" ]]; then
+  ln -sfn "../cache/bats-core/bin/bats" "${ROOT}/bin/bats"
+fi
+
+# git-subrepo (required)
+if [[ ! -f "${CACHE}/git-subrepo/lib/git-subrepo" ]]; then
+  log "fetching git-subrepo"
+  clone_or_update "https://github.com/ingydotnet/git-subrepo.git" "${CACHE}/git-subrepo" \
+    || die "git-subrepo clone failed (network?) — required for private subrepo attach"
+fi
+[[ -f "${CACHE}/git-subrepo/lib/git-subrepo" ]] \
+  || die "git-subrepo missing at ${CACHE}/git-subrepo/lib/git-subrepo"
+
+# Verify git subrepo works with the same PATH layout as dev-tools-env
+export GIT_SUBREPO_ROOT="${CACHE}/git-subrepo"
+export PATH="${CACHE}/git-subrepo/lib:${ROOT}/bin:${PATH}"
+git subrepo --version >/dev/null 2>&1 \
+  || die "git subrepo --version failed after install"
+
+log "ok git-subrepo=$(git subrepo --version 2>/dev/null | head -1)"
+log "done"
+exit 0

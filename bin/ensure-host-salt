@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+# Ensure salt-call is available on the host (pipx), non-fatal if impossible.
+set -euo pipefail
+if command -v salt-call >/dev/null 2>&1; then
+  echo "ensure-host-salt: salt-call already on PATH" >&2
+  exit 0
+fi
+if ! command -v pipx >/dev/null 2>&1; then
+  if command -v pip3 >/dev/null 2>&1; then
+    pip3 install --user pipx >/dev/null 2>&1 || true
+    export PATH="${HOME}/.local/bin:${PATH}"
+  fi
+fi
+if command -v pipx >/dev/null 2>&1; then
+  pipx install salt 2>/dev/null || pipx upgrade salt 2>/dev/null || true
+  export PATH="${HOME}/.local/bin:${PATH}"
+fi
+if command -v salt-call >/dev/null 2>&1; then
+  echo "ensure-host-salt: salt-call ready" >&2
+  exit 0
+fi
+echo "ensure-host-salt: salt-call not available (install pipx/salt later)" >&2
+exit 0

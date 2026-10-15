@@ -1,0 +1,18 @@
+# Workload image for t-of-w-p0 measurement (ADR 0006).
+# Official Then is CPU float64. Do not require a GPU compiler.
+# Build: 0mm-containers/t-of-w-p0/build.sh → localhost/0mm-t-of-w-p0:local
+FROM docker.io/library/python:3.12-slim-bookworm
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
+
+WORKDIR /work
+
+RUN pip install --no-cache-dir \
+      numpy \
+      scipy \
+      safetensors \
+      fastcluster
+
+CMD ["python3", "-c", "import numpy, scipy, safetensors, fastcluster; print('ok')"]

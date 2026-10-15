@@ -1,0 +1,20 @@
+# Thin Packer image for rootless Podman hosts (ckrd-vps Floci / OCI smoke).
+# Prefer host ~/.local/bin/packer when present; this image is optional.
+ARG BASE=docker.io/ubuntu:24.04
+FROM ${BASE}
+ARG PACKER_VERSION=1.11.2
+ENV DEBIAN_FRONTEND=noninteractive
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends ca-certificates curl unzip \
+ && ARCH="$(uname -m)" \
+ && case "${ARCH}" in x86_64) PARCH=amd64;; aarch64) PARCH=arm64;; *) exit 1;; esac \
+ && curl -fsSL "https://releases.hashicorp.com/packer/${PACKER_VERSION}/packer_${PACKER_VERSION}_linux_${PARCH}.zip" -o /tmp/packer.zip \
+ && unzip -q /tmp/packer.zip -d /usr/local/bin \
+ && chmod +x /usr/local/bin/packer \
+ && rm -f /tmp/packer.zip \
+ && apt-get clean && rm -rf /var/lib/apt/lists/*
+RUN useradd -m -s /bin/bash -u 1001 ckrd
+USER ckrd
+WORKDIR /work
+ENTRYPOINT ["packer"]
+CMD ["version"]

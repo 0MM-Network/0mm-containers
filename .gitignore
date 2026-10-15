@@ -6,6 +6,12 @@
 !.aiderignore
  
 # And these specific files
+!AGENTS.md
+!bootstrap.sh
+!bin/
+!bin/**
+!bootstrap.d/
+!bootstrap.d/**
 !Containerfile
 !install.sh
 !test_shim.sh
@@ -20,6 +26,7 @@
 !gsd
 !opencode
 !opencode-lite
+!pi
 !**/*.do
 !*-setup.sh
 !**/artifacts/**/*
@@ -37,6 +44,8 @@
 
 !aws/
 
+!packer/
+
 !goose-ai/
 !goose-ai/artifacts/
 !goose-ai/tests/
@@ -48,6 +57,23 @@
 !opencode-ai/
 !opencode-ai/artifacts
 !opencode-ai/tests/
+
+!pi-ai/
+!pi-ai/artifacts/
+!pi-ai/tests/
+
+!0mm-doc-tools/
+!0mm-doc-tools/**
+
+!t-of-w-p0/
+!t-of-w-p0/**
+!t-of-w-p0/build.sh
+
+!atlas-lean/
+!atlas-lean/**
+
+!atlas-lean-vllm/
+!atlas-lean-vllm/**
 
 !python/
 
@@ -63,6 +89,23 @@ terraform/examples/**/node_modules/
 
 !test/
 !test/unit/
+!test/contract/
+!test/contract/**
+
+!docs/
+!docs/adr/
+!docs/adr/**
+!docs/reviews/
+!docs/reviews/**
+!docs/features/
+!docs/features/**
+
+# Package contract assets (whitelist repo ignores * by default)
+!**/goss.yaml
+!**/goss-*.yaml
+!**/package.json
+!**/package-lock.json
+!**/run-contract-tests.sh
 
 !vault/
 !vault/references/

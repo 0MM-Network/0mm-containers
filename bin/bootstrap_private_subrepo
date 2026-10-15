@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# Thin PATH shim → isolated implementation under bin/lib/
+set -euo pipefail
+HERE="$(CDPATH= cd -- "$(dirname "$0")" && pwd)"
+exec "${HERE}/lib/bootstrap_private_subrepo" "$@"

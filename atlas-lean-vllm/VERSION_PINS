@@ -1,0 +1,7 @@
+# GPU vLLM workload for atlas-lean I0/C1. Not PRINCIPAL_ANSWERS lock on the tag.
+# retrieval date: 2026-09-17
+base_image=docker.io/vllm/vllm-openai:v0.8.5
+model=AI-MO/Kimina-Prover-RL-0.6B
+host=127.0.0.1
+port=18100
+image=localhost/0mm-atlas-lean-vllm:local

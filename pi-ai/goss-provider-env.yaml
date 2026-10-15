@@ -1,0 +1,20 @@
+# Provider env contract (layer B package).
+# Proves the guest sees XAI_API_KEY when the orchestrator injects it — the same
+# surface the shim exposes via `--secret pi_XAI_API_KEY,type=env,target=XAI_API_KEY`
+# or `-e XAI_API_KEY`. Does not call xAI and must not require a real credential.
+#
+# Base goss.yaml deliberately omits this: the image must validate without keys.
+
+environment:
+  XAI_API_KEY:
+    exists: true
+    value: "contract-test-xai-key"
+
+command:
+  xai_api_key_nonempty:
+    exec: "bash -c 'test -n \"${XAI_API_KEY:-}\"'"
+    exit-status: 0
+  xai_api_key_not_from_image:
+    # Guard: value must be the suite token, not an accidental bake-in / empty.
+    exec: "bash -c '[[ \"$XAI_API_KEY\" == \"contract-test-xai-key\" ]]'"
+    exit-status: 0

@@ -1,0 +1,593 @@
+#!/usr/bin/env bash
+# Thin host shim → containerised Pi (localhost/pi:latest)
+set -euo pipefail
+
+# Rootless pasta may live in ~/.local/bin when the system package is absent.
+export PATH="${HOME}/.local/bin:${PATH}"
+
+IMAGE="${PI_IMAGE:-localhost/pi:latest}"
+WORK_DIR="$(pwd)"
+SHIM_DIR="$(cd "$(dirname "$0")" && pwd)"
+UID_NUM="$(id -u)"
+RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/${UID_NUM}}"
+DRY_RUN=false
+ENSURE_SECRETS=false
+PI_NEW_NAME=""
+
+error_exit() {
+  echo "Error: $1" >&2
+  exit 1
+}
+
+# ADR 0007: monorepo root helper (PROJECT_DIR). Nested handoff must not re-discover.
+_PI_HELPER=""
+if [[ -f "${SHIM_DIR}/lib/project-dir.sh" ]]; then
+  _PI_HELPER="${SHIM_DIR}/lib/project-dir.sh"
+elif [[ -f "${SHIM_DIR}/../../bin/lib/project-dir.sh" ]]; then
+  _PI_HELPER="${SHIM_DIR}/../../bin/lib/project-dir.sh"
+fi
+[[ -n "${_PI_HELPER}" ]] || error_exit "bin/lib/project-dir.sh not found (shim=${SHIM_DIR})"
+# shellcheck source=bin/lib/project-dir.sh
+source "${_PI_HELPER}"
+
+_PI_SOCK_HELPER=""
+if [[ -f "${SHIM_DIR}/lib/podman-socket.sh" ]]; then
+  _PI_SOCK_HELPER="${SHIM_DIR}/lib/podman-socket.sh"
+elif [[ -f "${SHIM_DIR}/../../bin/lib/podman-socket.sh" ]]; then
+  _PI_SOCK_HELPER="${SHIM_DIR}/../../bin/lib/podman-socket.sh"
+fi
+[[ -n "${_PI_SOCK_HELPER}" ]] || error_exit "bin/lib/podman-socket.sh not found (shim=${SHIM_DIR})"
+# shellcheck source=bin/lib/podman-socket.sh
+source "${_PI_SOCK_HELPER}"
+
+# Already inside the Pi container (host shim often appears on PATH via guest bin).
+# Hand off to the real in-image agent; never nest another podman run from guest.
+# Do not re-assign PROJECT_DIR — inherit guest env (ADR 0007 single-setter).
+# PI_FORCE_HOST_SHIM=1 — tests exercise the host launch path from a nested shell.
+# PI_REAL_BIN — override real agent path (tests).
+if [[ -n "${PROJECT_DIR_HOST:-}" \
+  && "${PI_FORCE_HOST_SHIM:-0}" != "1" \
+  && ( -f /run/.containerenv || -f /.dockerenv ) ]]; then
+  REAL_PI="${PI_REAL_BIN:-/usr/local/bin/pi}"
+  if [[ -x "$REAL_PI" ]]; then
+    exec "$REAL_PI" "$@"
+  fi
+  error_exit "inside container but real pi not found at $REAL_PI"
+fi
+
+# Host plane: discover monorepo once (shim path or valid PROJECT_DIR).
+HOST_PROJECT_DIR="$(project_dir_discover --shim "$0")" \
+  || error_exit "cannot discover PROJECT_DIR from shim $0 (need bin/ + 0mm-containers/)"
+export PROJECT_DIR="${HOST_PROJECT_DIR}"
+# Guest mount path is anonymous; PROJECT_DIR in guest = that path (dynamic, not identity hardcode).
+GUEST_PROJECT_DIR="${PI_GUEST_MOUNT:-/work}"
+
+default_session_name() {
+  # Filesystem-safe UTC stamp (avoid ':' / '+' from ISO-8601)
+  date -u +%Y-%m-%dT%H%M%SZ 2>/dev/null || date -u +%Y%m%dT%H%M%SZ
+}
+
+sanitize_session_label() {
+  # Keep human label but strip chars that break paths / arg edge cases
+  local s="$1"
+  s="${s//:/-}"
+  s="${s//+/-}"
+  s="${s// /_}"
+  printf '%s' "$s" | tr -c 'A-Za-z0-9._\n-' '-' | sed 's/--*/-/g;s/^-//;s/-$//'
+}
+
+# Shim-only flags (stripped before forwarding to container pi).
+# MUST use this file ($PROJECT_DIR/bin/pi), not /usr/local/bin/pi (npm upstream).
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --dry-run) DRY_RUN=true; shift ;;
+    --ensure-secrets) ENSURE_SECRETS=true; shift ;;
+    --no-continue) PI_NO_CONTINUE=1; shift ;;
+    --new)
+      # Fresh session (no default -c). Name: --new | --new NAME | --new=NAME
+      # Example: $PROJECT_DIR/bin/pi --new="$(date --iso-8601=seconds)"
+      PI_NO_CONTINUE=1
+      shift
+      # Take following arg as name unless it is another shim flag or empty
+      if [[ $# -gt 0 && "$1" != --dry-run && "$1" != --ensure-secrets \
+          && "$1" != --no-continue && "$1" != --new && "$1" != --new=* && "$1" != -- ]]; then
+        PI_NEW_NAME="$1"
+        shift
+      else
+        PI_NEW_NAME="$(default_session_name)"
+      fi
+      ;;
+    --new=*)
+      PI_NO_CONTINUE=1
+      PI_NEW_NAME="${1#--new=}"
+      [[ -n "$PI_NEW_NAME" ]] || PI_NEW_NAME="$(default_session_name)"
+      shift
+      ;;
+    --) shift; break ;;
+    *) break ;;
+  esac
+done
+
+warn() {
+  echo "warning: $1" >&2
+}
+
+have_podman() { command -v podman >/dev/null 2>&1; }
+
+# ---------------------------------------------------------------------------
+# Container-aware "pi update": in-image npm global self-update is wrong here.
+# Self-update rebuilds localhost/pi via install.sh; package/model updates run
+# inside the container (they write to mounted ~/.pi).
+# ---------------------------------------------------------------------------
+# Populated by handle_pi_update when package/model update must run in-container.
+PI_UPDATE_CONTAINER_ARGS=()
+
+handle_pi_update() {
+  # args after "update"
+  local -a uargs=("$@")
+  local want_self=0 want_pkgs=0 want_models=0
+  local -a passthrough=()
+  PI_UPDATE_CONTAINER_ARGS=()
+
+  if [[ ${#uargs[@]} -eq 0 ]]; then
+    want_self=1
+  fi
+
+  local a
+  for a in "${uargs[@]+"${uargs[@]}"}"; do
+    case "$a" in
+      --help|-h)
+        cat <<'EOF'
+pi update (container shim)
+
+  pi update                 Rebuild the Pi container image (self)
+  pi update --self          Same (image rebuild via install.sh)
+  pi update --all           Rebuild image, then update packages in-container
+  pi update --extensions    Update packages only (in-container → ~/.pi)
+  pi update --models        Refresh model catalogs only (in-container)
+  pi update <package-src>   Update one package (in-container)
+
+Self-update does NOT run npm -g inside the image (ephemeral / wrong).
+It runs:  $PROJECT_DIR/0mm-containers/pi-ai/install.sh
+  • resolves latest @earendil-works/pi-coding-agent unless PI_VERSION=x.y.z
+  • does not prompt for API keys (secrets are host-side; PI_ENSURE_SECRETS=1 to opt in)
+Override: PI_VERSION=latest|x.y.z  PI_IMAGE=…  PI_BUILD_NO_CACHE=1
+EOF
+        exit 0
+        ;;
+      --self) want_self=1 ;;
+      --all) want_self=1; want_pkgs=1 ;;
+      --extensions) want_pkgs=1; passthrough+=("$a") ;;
+      --models) want_models=1; passthrough+=("$a") ;;
+      --force) passthrough+=("$a") ;;
+      --extension)
+        want_pkgs=1
+        passthrough+=("$a")
+        ;;
+      *)
+        want_pkgs=1
+        passthrough+=("$a")
+        ;;
+    esac
+  done
+
+  local install_sh="${HOST_PROJECT_DIR}/0mm-containers/pi-ai/install.sh"
+  if [[ "$want_self" -eq 1 ]]; then
+    [[ -x "$install_sh" ]] || error_exit "missing ${install_sh} (cannot rebuild Pi image)"
+    if [[ "$DRY_RUN" == true ]]; then
+      printf '[dry-run] PI_IMAGE=%q PROJECT_DIR=%q %q\n' "$IMAGE" "$HOST_PROJECT_DIR" "$install_sh"
+    else
+      echo "pi shim: rebuilding container image via install.sh (not npm -g self-update)…"
+      PI_IMAGE="${IMAGE}" PROJECT_DIR="${HOST_PROJECT_DIR}" "$install_sh"
+    fi
+  fi
+
+  if [[ "$want_pkgs" -eq 1 || "$want_models" -eq 1 ]]; then
+    PI_UPDATE_CONTAINER_ARGS=(update)
+    # --all with empty package flags → extensions
+    if [[ "$want_pkgs" -eq 1 ]]; then
+      local has_pkg_arg=0
+      for a in "${passthrough[@]+"${passthrough[@]}"}"; do
+        case "$a" in
+          --extensions|--extension|--models|npm:*|git:*|http:*|https:*|./*|/*) has_pkg_arg=1 ;;
+        esac
+      done
+      if [[ "$has_pkg_arg" -eq 0 ]]; then
+        PI_UPDATE_CONTAINER_ARGS+=(--extensions)
+      fi
+    fi
+    PI_UPDATE_CONTAINER_ARGS+=("${passthrough[@]+"${passthrough[@]}"}")
+    return 0
+  fi
+
+  # self-only finished
+  exit 0
+}
+
+# Default: continue most recent session (pi -c). Built into pi; shim injects it.
+# Disable: PI_NO_CONTINUE=1 or --no-continue, or any explicit session/mode flag.
+should_default_continue() {
+  [[ "${PI_NO_CONTINUE:-0}" != "1" ]] || return 1
+  [[ $# -eq 0 ]] && return 0
+  local a skip=0
+  for a in "$@"; do
+    if [[ "$skip" -eq 1 ]]; then skip=0; continue; fi
+    case "$a" in
+      -c|--continue|-r|--resume|--session|--session-id|--fork|--no-session|--session-dir|--name|-n)
+        return 1 ;;
+      -p|--print|--mode|--export|--help|-h|--version|-v)
+        return 1 ;;
+      update|install|remove|list|config|login|logout)
+        return 1 ;;
+      --name=*|-n=*|--session=*|--session-id=*)
+        return 1 ;;
+      -*)
+        # other flags: still OK to continue unless known exclusive
+        ;;
+      *)
+        # positional prompt / file → new-ish interaction; still allow -c
+        ;;
+    esac
+  done
+  return 0
+}
+
+# Intercept update before container run
+if [[ "${1:-}" == "update" ]]; then
+  shift
+  handle_pi_update "$@"
+  # Package/model path: replace argv for podman run
+  if [[ ${#PI_UPDATE_CONTAINER_ARGS[@]} -gt 0 ]]; then
+    set -- "${PI_UPDATE_CONTAINER_ARGS[@]}"
+  fi
+fi
+
+# Normalize flags pi only accepts as two argv words (not --flag=value).
+# Upstream parseArgs: --name / -n take the *next* arg; --name=foo is NOT name.
+norm_args=()
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --name=*)
+      norm_args+=(--name "${1#--name=}")
+      PI_NO_CONTINUE=1
+      shift
+      ;;
+    -n=*)
+      norm_args+=(--name "${1#-n=}")
+      PI_NO_CONTINUE=1
+      shift
+      ;;
+    --session-id=*)
+      norm_args+=(--session-id "${1#--session-id=}")
+      PI_NO_CONTINUE=1
+      shift
+      ;;
+    --session=*)
+      norm_args+=(--session "${1#--session=}")
+      PI_NO_CONTINUE=1
+      shift
+      ;;
+    --name|-n)
+      norm_args+=(--name)
+      PI_NO_CONTINUE=1
+      shift
+      if [[ $# -gt 0 && "$1" != -* ]]; then
+        norm_args+=("$1")
+        shift
+      fi
+      ;;
+    *)
+      norm_args+=("$1")
+      shift
+      ;;
+  esac
+done
+set -- "${norm_args[@]+"${norm_args[@]}"}"
+unset norm_args
+
+if should_default_continue "$@"; then
+  set -- -c "$@"
+fi
+
+# --new [name]: force a *new* session (never -c). Uses pi --name + --session-id.
+if [[ -n "${PI_NEW_NAME}" ]]; then
+  _args=()
+  for _a in "$@"; do
+    case "$_a" in
+      -c|--continue) continue ;;
+      *) _args+=("$_a") ;;
+    esac
+  done
+  set -- "${_args[@]+"${_args[@]}"}"
+  unset _args _a
+  PI_NEW_LABEL="$(sanitize_session_label "$PI_NEW_NAME")"
+  [[ -n "$PI_NEW_LABEL" ]] || PI_NEW_LABEL="$(default_session_name)"
+  set -- --name "$PI_NEW_LABEL" --session-id "$PI_NEW_LABEL" "$@"
+  echo "pi-shim: path=$0 new session name=${PI_NEW_LABEL} (no -c)" >&2
+fi
+
+API_KEYS=(
+  XAI_API_KEY ANTHROPIC_API_KEY OPENAI_API_KEY GEMINI_API_KEY
+  GROQ_API_KEY OPENROUTER_API_KEY GOOGLE_API_KEY MISTRAL_API_KEY
+  DEEPSEEK_API_KEY
+)
+
+# Create or replace pi_<ENV> from a value (no trailing newline in payload).
+# Works on the host engine; also works in-guest via podman-remote + mounted socket.
+store_pi_secret() {
+  local env_name="$1"
+  local value="$2"
+  local secret_name="pi_${env_name}"
+
+  if [[ -z "${value}" ]]; then
+    return 0
+  fi
+  if ! have_podman; then
+    warn "podman not found; cannot store secret ${secret_name}"
+    return 0
+  fi
+  if podman secret exists "${secret_name}" 2>/dev/null; then
+    podman secret rm "${secret_name}" >/dev/null 2>&1 || true
+  fi
+  if ! printf '%s' "${value}" | podman secret create "${secret_name}" - >/dev/null; then
+    warn "failed to create podman secret ${secret_name}"
+    return 1
+  fi
+  echo "Stored podman secret: ${secret_name} → env ${env_name}"
+}
+
+# Promote host/env API keys into Podman secrets.
+# mode=missing-only (default on launch): create only when secret absent
+# mode=refresh (--ensure-secrets): replace when env is set
+sync_api_key_secrets() {
+  local mode="${1:-missing-only}"
+  local key secret_name
+  local any=false
+
+  if ! have_podman; then
+    return 0
+  fi
+
+  for key in "${API_KEYS[@]}"; do
+    secret_name="pi_${key}"
+    if [[ -z "${!key:-}" ]]; then
+      continue
+    fi
+    if [[ "${mode}" == "missing-only" ]] && podman secret exists "${secret_name}" 2>/dev/null; then
+      any=true
+      continue
+    fi
+    if store_pi_secret "${key}" "${!key}"; then
+      any=true
+    fi
+  done
+
+  if [[ "${any}" == true ]]; then
+    return 0
+  fi
+  return 1
+}
+
+any_pi_api_secret_exists() {
+  local key secret_name
+  have_podman || return 1
+  for key in "${API_KEYS[@]}"; do
+    secret_name="pi_${key}"
+    if podman secret exists "${secret_name}" 2>/dev/null; then
+      return 0
+    fi
+  done
+  return 1
+}
+
+prompt_xai_if_needed() {
+  if [[ -n "${XAI_API_KEY:-}" ]]; then
+    return 0
+  fi
+  # Any existing provider secret is enough — do not prompt.
+  if any_pi_api_secret_exists; then
+    echo "Using existing podman API secret(s); skip key prompt."
+    return 0
+  fi
+  if have_podman && podman secret exists "pi_XAI_API_KEY" 2>/dev/null; then
+    echo "Using existing podman secret pi_XAI_API_KEY."
+    return 0
+  fi
+  if [[ ! -t 0 ]]; then
+    warn "XAI_API_KEY unset and no pi_* API secrets (non-interactive)"
+    return 1
+  fi
+  echo
+  echo "xAI / Grok API key required for models."
+  echo "Create one at https://console.x.ai → API Keys if needed."
+  echo "Input is masked. Stored as podman secret pi_XAI_API_KEY."
+  echo
+  # shellcheck disable=SC2162
+  read -s -p "xAI API key: " XAI_API_KEY
+  echo
+  if [[ -z "${XAI_API_KEY}" ]]; then
+    warn "No key entered"
+    return 1
+  fi
+  export XAI_API_KEY
+  store_pi_secret "XAI_API_KEY" "${XAI_API_KEY}"
+}
+
+# --- --ensure-secrets: seed/refresh secrets and exit (host or in-guest via socket) ---
+if [[ "${ENSURE_SECRETS}" == true ]]; then
+  if [[ "${DRY_RUN}" == true ]]; then
+    echo "[dry-run] would sync API key env → podman secrets pi_<NAME> (refresh)"
+    exit 0
+  fi
+  have_podman || error_exit "podman not found"
+  # If secrets already present and no env refresh requested, do not prompt.
+  if any_pi_api_secret_exists && [[ -z "${XAI_API_KEY:-}" ]]; then
+    echo "Secrets already present (podman pi_*). No prompt."
+    echo "Export a key and re-run to refresh, or delete the secret to re-enter."
+    exit 0
+  fi
+  prompt_xai_if_needed || true
+  if sync_api_key_secrets "refresh"; then
+    echo "Secrets ready. New container sessions will inject them as env vars."
+    exit 0
+  fi
+  if any_pi_api_secret_exists || podman secret exists "pi_XAI_API_KEY" 2>/dev/null; then
+    echo "Secrets ready (existing pi_* secrets)."
+    exit 0
+  fi
+  error_exit "No API keys in env and none stored. Export XAI_API_KEY and re-run: $0 --ensure-secrets"
+fi
+
+if [[ "$DRY_RUN" != true ]]; then
+  command -v podman >/dev/null || error_exit "podman not found"
+  if ! podman image exists "$IMAGE"; then
+    # SHIM_DIR is $PROJECT_DIR/bin — install.sh lives under 0mm-containers/pi-ai/
+    _pi_install="${HOST_PROJECT_DIR}/0mm-containers/pi-ai/install.sh"
+    if [[ -x "${_pi_install}" ]]; then
+      echo "pi shim: image ${IMAGE} missing — building via ${_pi_install}" >&2
+      INSTALL_AI_BIN="${INSTALL_AI_BIN:-1}" "${_pi_install}" \
+        || error_exit "image ${IMAGE} missing and install.sh failed"
+      podman image exists "$IMAGE" \
+        || error_exit "image ${IMAGE} still missing after install.sh"
+    else
+      error_exit "image ${IMAGE} missing — run: ${HOST_PROJECT_DIR}/0mm-containers/pi-ai/install.sh (not ${SHIM_DIR}/install.sh)"
+    fi
+  fi
+  # Backport path: older bootstrap never created secrets — promote env → secret once.
+  sync_api_key_secrets "missing-only" || true
+fi
+
+mkdir -p "${HOME}/.pi/agent"
+mkdir -p "${HOST_PROJECT_DIR}/cache/pi"
+
+TTY_ARGS=()
+if [[ -t 0 && -t 1 ]]; then
+  TTY_ARGS+=(-t)
+fi
+
+# Provider API keys: prefer Podman secrets (pi_<NAME>); fall back to host env.
+# Other Pi/runtime env vars are still forwarded from the host when set.
+ENV_ARGS=()
+SECRET_ARGS=()
+OTHER_ENV=(
+  PI_CODING_AGENT_DIR PI_OFFLINE PI_SKIP_VERSION_CHECK
+  TERM COLORTERM
+)
+
+for key in "${API_KEYS[@]}"; do
+  secret_name="pi_${key}"
+  if have_podman && podman secret exists "${secret_name}" 2>/dev/null; then
+    SECRET_ARGS+=(--secret "${secret_name},type=env,target=${key}")
+  elif [[ -n "${!key:-}" ]]; then
+    ENV_ARGS+=(-e "$key")
+  fi
+done
+
+for key in "${OTHER_ENV[@]}"; do
+  if [[ -n "${!key:-}" ]]; then
+    ENV_ARGS+=(-e "$key")
+  fi
+done
+
+# Pi builtin /llama is a separate login from pi-local. Router --api-key is
+# pi-local; llama.cpp defaults to key "local" (401 / Access denied).
+: "${LLAMA_BASE_URL:=http://127.0.0.1:8080}"
+: "${LLAMA_API_KEY:=pi-local}"
+ENV_ARGS+=(-e "LLAMA_BASE_URL=${LLAMA_BASE_URL}")
+ENV_ARGS+=(-e "LLAMA_API_KEY=${LLAMA_API_KEY}")
+
+# Host Podman API socket model (not a nested engine).
+# Probe via bin/lib/podman-socket.sh — same as bin/_run sidecars.
+EXTRA_ARGS=()
+PODMAN_SOCK="${RUNTIME_DIR}/podman/podman.sock"
+REMOTE_BIN="${HOST_PROJECT_DIR}/cache/podman-remote/podman-remote-static-linux_amd64"
+
+PODMAN_SOCKET_LOG="pi-shim"
+PODMAN_SOCKET_VERBOSE=1
+if podman_socket_probe; then
+  warn "podman.socket live (_ping=200)"
+  EXTRA_ARGS+=(-v "${PODMAN_SOCK}:/run/podman/podman.sock")
+  EXTRA_ARGS+=(-e CONTAINER_HOST=unix:///run/podman/podman.sock)
+  if [[ -x "${REMOTE_BIN}" ]]; then
+    # Image has no podman binary; remote client answers both names.
+    EXTRA_ARGS+=(-v "${REMOTE_BIN}:/usr/local/bin/podman-remote:ro")
+    EXTRA_ARGS+=(-v "${REMOTE_BIN}:/usr/local/bin/podman:ro")
+  else
+    warn "podman.socket mounted but podman-remote client missing at ${REMOTE_BIN}"
+    warn "re-run bootstrap or: curl -fsSL -o ${REMOTE_BIN} <podman-remote-static-linux_amd64>"
+  fi
+else
+  warn "in-container Podman client disabled. Fix: systemctl --user enable --now podman.socket"
+  warn "then start a new Pi (do not exec into a container that already mounted a dead sock)"
+fi
+
+# Host user Salt apply socket (project|image KIS) — mount dir so sock is visible in Pi
+SALT_AI_ROOT_DIR="${RUNTIME_DIR}/ai-root"
+SALT_PROJECT_SOCK_HOST="${SALT_AI_ROOT_DIR}/salt-project.sock"
+if [[ -d "${SALT_AI_ROOT_DIR}" ]]; then
+  EXTRA_ARGS+=(-v "${SALT_AI_ROOT_DIR}:${SALT_AI_ROOT_DIR}")
+  EXTRA_ARGS+=(-e "SALT_PROJECT_SOCK=${SALT_PROJECT_SOCK_HOST}")
+  EXTRA_ARGS+=(-e "XDG_RUNTIME_DIR=${RUNTIME_DIR}")
+elif [[ -S "${SALT_PROJECT_SOCK_HOST}" ]]; then
+  EXTRA_ARGS+=(-v "${SALT_PROJECT_SOCK_HOST}:${SALT_PROJECT_SOCK_HOST}")
+  EXTRA_ARGS+=(-e "SALT_PROJECT_SOCK=${SALT_PROJECT_SOCK_HOST}")
+fi
+
+# Guest PATH: control-plane shims under ${GUEST_PROJECT_DIR}/bin (cwd mount).
+# Keep node/npm defaults + pi agent bin so upstream tooling still resolves.
+PI_GUEST_PATH="${GUEST_PROJECT_DIR}/bin:/home/node/.pi/agent/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+
+# Official grok CLI is a host peer (Mode P). Guest HOME is /home/node, so
+# without this bind pi-grok-cli probes /home/node/.grok and misses host
+# `grok login` (auth.json existsSync) and ~/.grok/bin/grok.
+HOST_GROK_HOME="${HOME}/.grok"
+if [[ -d "${HOST_GROK_HOME}" ]]; then
+  EXTRA_ARGS+=(-v "${HOST_GROK_HOME}:/home/node/.grok:Z")
+  PI_GUEST_PATH="/home/node/.grok/bin:${PI_GUEST_PATH}"
+fi
+
+# HashiStack is userspace on host loopback (Nomad :4646, Vault0 :8200 on 127.0.0.100).
+# Guest 127.0.0.1 is not the host unless we share the netns (same as vault0 shims).
+# Seed user-owned parents so nested binds do not mkdir .config/.cache/.npm as root.
+# npm default cache is $HOME/.npm; keep-id cannot mkdir image /home/node/.npm
+# (pi install npm:… then EACCES). Same hole as .config before the nomad bind.
+PI_HOME_SEED="${HOST_PROJECT_DIR}/cache/pi-home"
+mkdir -p "${PI_HOME_SEED}/.config" "${PI_HOME_SEED}/.cache" "${PI_HOME_SEED}/.npm"
+EXTRA_ARGS+=(-v "${PI_HOME_SEED}/.config:/home/node/.config:Z")
+EXTRA_ARGS+=(-v "${PI_HOME_SEED}/.cache:/home/node/.cache:Z")
+EXTRA_ARGS+=(-v "${PI_HOME_SEED}/.npm:/home/node/.npm:Z")
+ENV_ARGS+=(-e "npm_config_cache=/home/node/.npm")
+
+NOMAD_HOST_CFG="${HOME}/.config/nomad"
+if [[ -d "${NOMAD_HOST_CFG}" ]]; then
+  EXTRA_ARGS+=(-v "${NOMAD_HOST_CFG}:/home/node/.config/nomad:ro")
+fi
+
+RUN=(podman run --rm -i "${TTY_ARGS[@]}"
+  --network=host
+  --userns=keep-id
+  --security-opt label=disable
+  -v "${WORK_DIR}:${GUEST_PROJECT_DIR}:Z"
+  -w "${GUEST_PROJECT_DIR}"
+  -v "${HOME}/.pi:/home/node/.pi:Z"
+  -v "${HOST_PROJECT_DIR}/cache/pi:/home/node/.cache/pi:Z"
+  -e HOME=/home/node
+  -e USER="${USER:-node}"
+  -e "PROJECT_DIR=${GUEST_PROJECT_DIR}"
+  -e "PROJECT_DIR_HOST=${HOST_PROJECT_DIR}"
+  -e "PATH=${PI_GUEST_PATH}"
+  -e "NOMAD_ADDR=${NOMAD_ADDR:-http://127.0.0.1:4646}"
+  "${ENV_ARGS[@]}"
+  "${SECRET_ARGS[@]}"
+  "${EXTRA_ARGS[@]}"
+  "$IMAGE"
+  "$@")
+
+if [[ "$DRY_RUN" == true ]]; then
+  printf '[dry-run]'
+  printf ' %q' "${RUN[@]}"
+  printf '\n'
+  exit 0
+fi
+
+exec "${RUN[@]}"

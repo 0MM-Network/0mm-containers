@@ -1,0 +1,6 @@
+# In-guest contract for localhost/0mm-atlas-lean-vllm:local (ADR 0001).
+# Do not run this file against the host.
+command:
+  vllm_import:
+    exec: python3 -c "import vllm"
+    exit-status: 0

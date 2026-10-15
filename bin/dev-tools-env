@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+# Source-friendly env for ShellSpec/BATS/git-subrepo under $BTSTRP_ROOT/cache.
+# Usage: . bin/dev-tools-env   OR   source bin/dev-tools-env
+#
+# Do NOT wrap git() here — wedges Pi when ShellSpec/backlog sources this with a TTY.
+# Push with auth: ./bin/git-subrepo-push <subdir>  (host only)
+#
+ROOT="${BTSTRP_ROOT:-${PWD}}"
+if [[ -n "${BASH_SOURCE[0]:-}" ]]; then
+  _dte_here="$(CDPATH= cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  if [[ -d "${_dte_here}/../cache" || -f "${_dte_here}/../bin/dev-tools-env" ]]; then
+    ROOT="$(CDPATH= cd -- "${_dte_here}/.." && pwd)"
+  fi
+  unset _dte_here
+fi
+CACHE="${ROOT}/cache"
+export PATH="${ROOT}/bin:${PATH}"
+if [[ -d "${CACHE}/shellspec/bin" ]]; then
+  export PATH="${CACHE}/shellspec/bin:${PATH}"
+fi
+if [[ -d "${CACHE}/bats-core/bin" ]]; then
+  export PATH="${CACHE}/bats-core/bin:${PATH}"
+fi
+if [[ -f "${CACHE}/git-subrepo/lib/git-subrepo" ]]; then
+  export GIT_SUBREPO_ROOT="${CACHE}/git-subrepo"
+  export PATH="${CACHE}/git-subrepo/lib:${PATH}"
+fi

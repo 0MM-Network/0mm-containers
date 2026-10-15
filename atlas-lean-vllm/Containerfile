@@ -1,0 +1,14 @@
+# GPU vLLM for atlas-lean I0 wrap. Not the CPU Lean image. Not Pi.
+# Bind 127.0.0.1:18100 via run.sh (host network). Never Docker.
+# syntax=docker/dockerfile:1
+
+ARG BASE_IMAGE=docker.io/vllm/vllm-openai:v0.8.5
+FROM ${BASE_IMAGE}
+
+ENV VLLM_HOST=127.0.0.1 \
+    VLLM_PORT=18100 \
+    VLLM_MODEL=AI-MO/Kimina-Prover-RL-0.6B
+
+# Engine only. Weights are host-mounted from cache/models/Kimina-Prover-RL-0.6B/weights.
+ENTRYPOINT ["vllm"]
+CMD ["serve", "AI-MO/Kimina-Prover-RL-0.6B", "--host", "127.0.0.1", "--port", "18100"]

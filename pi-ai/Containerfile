@@ -1,0 +1,30 @@
+# Pi coding agent – rootless Podman image
+# Adapted from @earendil-works/pi-coding-agent docs/containerization.md
+#
+# Build:  podman build -t localhost/pi:latest -f Containerfile .
+# Run:    ./pi --version   (after install.sh)
+
+FROM docker.io/node:22-bookworm-slim
+
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends \
+    bash \
+    ca-certificates \
+    curl \
+    git \
+    openssh-client \
+    ripgrep \
+  && rm -rf /var/lib/apt/lists/*
+
+ARG PI_VERSION=0.82.1
+RUN npm install -g --ignore-scripts "@earendil-works/pi-coding-agent@${PI_VERSION}" \
+  && pi --version
+
+# Pre-create XDG parents as the keep-id user. Bind-mounting only a child
+# (e.g. .config/nomad) otherwise makes Podman mkdir .config as root.
+RUN mkdir -p /home/node/.config /home/node/.cache \
+  && chown -R node:node /home/node/.config /home/node/.cache
+
+# Host cwd is bind-mounted here; --userns=keep-id keeps file ownership correct.
+WORKDIR /work
+ENTRYPOINT ["pi"]

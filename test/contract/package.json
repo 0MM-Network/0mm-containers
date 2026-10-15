@@ -1,0 +1,13 @@
+{
+  "name": "0mm-containers-contract",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Shared Testcontainers + Goss contract harness for 0mm-containers packages",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "testcontainers": "^11.7.1"
+  }
+}

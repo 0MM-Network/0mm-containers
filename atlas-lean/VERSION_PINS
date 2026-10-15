@@ -1,0 +1,30 @@
+# proposal / OQ-1, not PRINCIPAL_ANSWERS lock
+# retrieval date: 2026-08-28
+lean_toolchain=leanprover/lean4:v4.34.1
+mathlib4_git=https://github.com/leanprover-community/mathlib4
+mathlib4_rev=v4.34.1
+autoformbot_git=https://github.com/facebookresearch/autoform-bot
+autoformbot_rev=da4fb7c5395aa2875d7f710369c194c3b38ec905
+autoform_cli_rev=13be889dee8477cba7271d3b805c5a87460124a3
+atlas_lean_git=https://github.com/facebookresearch/atlas-lean
+atlas_lean_tree=v1
+atlas_lean_rev=8004bc185206d3d34cc6a7cf0840edca89cf64ce
+apollo_git=https://github.com/aziksh-ospanov/APOLLO
+apollo_rev=b6d94e872d3efbeba321ac82d36ca330af5ebfe7
+leanarchitect_git=https://github.com/hanwenzhu/LeanArchitect
+leanarchitect_rev=v4.34.0-rc1
+leanblueprint_pypi=leanblueprint==0.0.20
+pantograph_git=https://github.com/leanprover/Pantograph
+pantograph_rev=66a510321a58b43470b736b2db8efd9f296a9c48
+pypantograph_git=https://github.com/stanford-centaur/PyPantograph
+pypantograph_rev=f8aee320ee5550ea2677e414534618a61e7e1497
+leap_paper=arXiv:2606.03303v2
+leap_results_git=https://github.com/google-deepmind/superhuman
+goedel_prover_v2_8b=Goedel-LM/Goedel-Prover-V2-8B
+kimina_prover_rl_06b=AI-MO/Kimina-Prover-RL-0.6B
+kimina_prover_rl_17b=AI-MO/Kimina-Prover-RL-1.7B
+pythagoras_prover_4b=Pythagoras-LM/Pythagoras-Prover-4B
+mvp_prove_worker=AI-MO/Kimina-Prover-RL-0.6B
+mvp_formalize_worker=Goedel-LM/Goedel-Formalizer-V2-8B
+mvp_graph_worker=AI-MO/Kimina-Prover-RL-1.7B
+image=localhost/0mm-atlas-lean:local

@@ -1,0 +1,93 @@
+# Workload: Lean 4 + Lake + AutoformBot + APOLLO + Pantograph + leanblueprint.
+# CPU only (ADR 0006). Not the Pi image. Not CUDA/vLLM.
+# Mathlib oleans live on the host at $PROJECT_DIR/cache/lean.
+# Build: 0mm-containers/atlas-lean/build.sh
+# syntax=docker/dockerfile:1
+
+ARG BASE_IMAGE=docker.io/library/debian:bookworm-slim
+FROM ${BASE_IMAGE}
+
+ARG ELAN_TOOLCHAIN=leanprover/lean4:v4.34.0-rc1
+ARG AUTOFORMBOT_GIT=https://github.com/facebookresearch/autoform-bot
+ARG AUTOFORMBOT_REV=da4fb7c5395aa2875d7f710369c194c3b38ec905
+ARG AUTOFORM_CLI_GIT=https://github.com/facebookresearch/autoform-bot
+ARG AUTOFORM_CLI_REV=13be889dee8477cba7271d3b805c5a87460124a3
+ARG APOLLO_GIT=https://github.com/aziksh-ospanov/APOLLO
+ARG APOLLO_REV=b6d94e872d3efbeba321ac82d36ca330af5ebfe7
+ARG PANTOGRAPH_GIT=https://github.com/leanprover/Pantograph
+ARG PANTOGRAPH_REV=66a510321a58b43470b736b2db8efd9f296a9c48
+ARG LEANBLUEPRINT_PYPI=leanblueprint==0.0.20
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    PATH="/opt/elan/bin:/opt/venv/bin:${PATH}" \
+    ELAN_HOME="/opt/elan" \
+    PYTHONPATH="/opt/autoform-bot:/opt/apollo:${PYTHONPATH}" \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PYTHONDONTWRITEBYTECODE=1
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      ca-certificates curl git gcc g++ make \
+      python3 python3-pip python3-venv python3-dev \
+    && rm -rf /var/lib/apt/lists/* \
+    && python3 -m venv /opt/venv \
+    && /opt/venv/bin/pip install --no-cache-dir --upgrade pip setuptools wheel \
+    && /opt/venv/bin/pip install --no-cache-dir "${LEANBLUEPRINT_PYPI}"
+
+RUN curl -sSf https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh \
+      | sh -s -- -y --no-modify-path --default-toolchain "${ELAN_TOOLCHAIN}" \
+    && lean --version \
+    && lake --version
+
+# Pin ICD is python -m autoform.bot.main (pyproject deps). Do not pip the CUDA conda dump.
+RUN git clone --filter=blob:none "${AUTOFORMBOT_GIT}" /opt/autoform-bot \
+    && git -C /opt/autoform-bot checkout --detach "${AUTOFORMBOT_REV}" \
+    && /opt/venv/bin/pip install --no-cache-dir /opt/autoform-bot \
+    && PYTHONPATH="/opt/autoform-bot:${PYTHONPATH}" python3 -c "import autoform.bot.main"
+
+# Plugin-host console scripts (A190). da4fb7c stays importable via PYTHONPATH.
+ARG AUTOFORM_CLI_GIT
+ARG AUTOFORM_CLI_REV
+RUN git clone --filter=blob:none "${AUTOFORM_CLI_GIT}" /opt/autoform-cli \
+    && git -C /opt/autoform-cli checkout --detach "${AUTOFORM_CLI_REV}" \
+    && /opt/venv/bin/pip install --no-cache-dir /opt/autoform-cli \
+    && test -x /opt/venv/bin/autoform \
+    && test -x /opt/venv/bin/autoform-visualize \
+    && test -x /opt/venv/bin/autoform-lean-runtime \
+    && PYTHONPATH="/opt/autoform-bot:${PYTHONPATH}" python3 -c "import autoform.bot.main"
+
+# APOLLO requirements.txt is a CUDA conda export — out of this CPU image.
+# Checkout is the wrap pin; full `import apollo` pulls torch (not installed here).
+RUN git clone --filter=blob:none "${APOLLO_GIT}" /opt/apollo \
+    && git -C /opt/apollo checkout --detach "${APOLLO_REV}" \
+    && python3 -c "import pathlib; t=pathlib.Path('/opt/apollo/apollo.py').read_text(); assert 'class ApolloRepair' in t"
+
+RUN git clone --filter=blob:none "${PANTOGRAPH_GIT}" /opt/pantograph \
+    && git -C /opt/pantograph checkout --detach "${PANTOGRAPH_REV}" \
+    && printf '%s\n' "${ELAN_TOOLCHAIN}" > /opt/pantograph/lean-toolchain \
+    && cd /opt/pantograph \
+    && lake build \
+    && lake exe repl --version
+
+ARG AUTOFORM_EXECUTION_REV
+ARG AUTOFORM_CLI_GIT
+RUN if [ -n "${AUTOFORM_EXECUTION_REV}" ]; then \
+      git clone --filter=blob:none "${AUTOFORM_CLI_GIT}" /opt/autoform-execution \
+      && git -C /opt/autoform-execution checkout --detach "${AUTOFORM_EXECUTION_REV}" \
+      && /opt/venv/bin/pip install --no-cache-dir /opt/autoform-execution \
+      && test -x /opt/venv/bin/autoform-worker; \
+    fi
+
+# keep-id must read baked tools and write lake-manifest in the Pantograph tree.
+# Login shells need elan on PATH.
+RUN chmod -R a+rX /opt/elan /opt/venv /opt/autoform-bot /opt/autoform-cli /opt/apollo \
+    && if [ -d /opt/autoform-execution ]; then chmod -R a+rX /opt/autoform-execution; fi \
+    && chmod -R a+rwX /opt/pantograph \
+    && ln -sf /opt/pantograph/.lake/build/bin/repl /usr/local/bin/pantograph-repl \
+    && printf '%s\n' 'export PATH="/opt/elan/bin:/opt/venv/bin:$PATH"' > /etc/profile.d/elan.sh \
+    && chmod 644 /etc/profile.d/elan.sh \
+    && git config --system --add safe.directory '*'
+
+WORKDIR /lake
+RUN chmod 1777 /lake
+ENTRYPOINT ["lake"]
+CMD ["--help"]

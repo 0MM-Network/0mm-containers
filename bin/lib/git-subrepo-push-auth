@@ -1,0 +1,82 @@
+#!/usr/bin/env bash
+# git-subrepo-push-auth — ALWAYS prompt for GitHub user + PAT, then export
+# ephemeral git url.insteadOf so `git push https://github.com/...` authenticates.
+#
+# Sourced by bin/dev-tools-env (git wrapper on `subrepo push`).
+# Never prints the token. Never writes token to disk/gitconfig permanently.
+# shellcheck shell=bash
+
+git_subrepo_push_auth_prompt() {
+  # Always prompt (ignore pre-set GH_USER/GH_TOKEN).
+  # Hard refuse inside Pi/agent guest — never steal the agent TTY.
+  if [[ -f /run/.containerenv || -f /.dockerenv || -n "${AI_ROOT_HOST:-}" ]]; then
+    echo "git-subrepo-push-auth: refuse prompt inside Pi/container" >&2
+    return 2
+  fi
+  local user token
+  local use_tty=0
+  if { true <>/dev/tty; } 2>/dev/null; then
+    use_tty=1
+  fi
+
+  if [[ "${use_tty}" -eq 1 ]]; then
+    printf 'GitHub username (or x-access-token): ' >/dev/tty
+    IFS= read -r user </dev/tty || true
+    printf 'GitHub PAT (input hidden): ' >/dev/tty
+    IFS= read -r -s token </dev/tty || true
+    printf '\n' >/dev/tty
+  else
+    # Tests / no TTY: two lines on stdin (user, token) — caller must not pipe
+    # the function itself (use heredoc) so exports stay in-shell.
+    printf 'GitHub username (or x-access-token): ' >&2
+    IFS= read -r user || true
+    printf 'GitHub PAT: ' >&2
+    IFS= read -r token || true
+    printf '\n' >&2
+  fi
+  user="${user//$'\r'/}"
+  token="${token//$'\r'/}"
+  if [[ -z "${user}" || -z "${token}" ]]; then
+    echo "git-subrepo-push-auth: username and token are required" >&2
+    return 1
+  fi
+  _GIT_SUBREPO_PUSH_USER="${user}"
+  _GIT_SUBREPO_PUSH_TOKEN="${token}"
+  export _GIT_SUBREPO_PUSH_USER _GIT_SUBREPO_PUSH_TOKEN
+  return 0
+}
+
+git_subrepo_push_auth_apply() {
+  if [[ -z "${_GIT_SUBREPO_PUSH_USER:-}" || -z "${_GIT_SUBREPO_PUSH_TOKEN:-}" ]]; then
+    echo "git-subrepo-push-auth: call git_subrepo_push_auth_prompt first" >&2
+    return 1
+  fi
+  local n="${GIT_CONFIG_COUNT:-0}"
+  export GIT_CONFIG_COUNT=$((n + 1))
+  export GIT_CONFIG_KEY_${n}="url.https://${_GIT_SUBREPO_PUSH_USER}:${_GIT_SUBREPO_PUSH_TOKEN}@github.com/.insteadOf"
+  export GIT_CONFIG_VALUE_${n}="https://github.com/"
+  _GIT_SUBREPO_PUSH_CFG_INDEX="${n}"
+  export _GIT_SUBREPO_PUSH_CFG_INDEX
+  return 0
+}
+
+git_subrepo_push_auth_clear() {
+  if [[ -n "${_GIT_SUBREPO_PUSH_CFG_INDEX:-}" ]]; then
+    unset "GIT_CONFIG_KEY_${_GIT_SUBREPO_PUSH_CFG_INDEX}" 2>/dev/null || true
+    unset "GIT_CONFIG_VALUE_${_GIT_SUBREPO_PUSH_CFG_INDEX}" 2>/dev/null || true
+    if [[ "${GIT_CONFIG_COUNT:-0}" -gt 0 ]]; then
+      export GIT_CONFIG_COUNT=$((GIT_CONFIG_COUNT - 1))
+    fi
+  fi
+  unset _GIT_SUBREPO_PUSH_USER _GIT_SUBREPO_PUSH_TOKEN _GIT_SUBREPO_PUSH_CFG_INDEX 2>/dev/null || true
+  return 0
+}
+
+git_subrepo_push_auth_run() {
+  git_subrepo_push_auth_prompt || return 1
+  git_subrepo_push_auth_apply || return 1
+  local rc=0
+  "$@" || rc=$?
+  git_subrepo_push_auth_clear
+  return "${rc}"
+}

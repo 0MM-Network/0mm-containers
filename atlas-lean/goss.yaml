@@ -1,0 +1,50 @@
+# In-guest contract for localhost/0mm-atlas-lean:local (ADR 0001).
+# Do not run this file against the host.
+command:
+  lean_version:
+    exec: "lean --version"
+    exit-status: 0
+    stdout:
+      - "4.34.0-rc1"
+  lake_version:
+    exec: "lake --version"
+    exit-status: 0
+  autoform_bot:
+    exec: python3 -c "import autoform.bot.main"
+    exit-status: 0
+  # Full `import apollo` pulls torch; wrap pin is the ApolloRepair class file.
+  apollo_module:
+    exec: python3 -c "import pathlib; t=pathlib.Path('/opt/apollo/apollo.py').read_text(); assert 'class ApolloRepair' in t"
+    exit-status: 0
+  leanblueprint_help:
+    exec: "bash -lc 'cd /opt/pantograph && leanblueprint --help'"
+    exit-status: 0
+  login_lake:
+    exec: "bash -lc 'lake --version'"
+    exit-status: 0
+    stdout:
+      - "Lean"
+  pantograph_repl:
+    exec: "pantograph-repl --version"
+    exit-status: 0
+    stdout:
+      - "0.3.18"
+file:
+  /opt/elan/bin/lean:
+    exists: true
+    filetype: file
+  /opt/elan/bin/lake:
+    exists: true
+    filetype: file
+  /opt/autoform-bot:
+    exists: true
+    filetype: directory
+  /opt/apollo:
+    exists: true
+    filetype: directory
+  /opt/pantograph:
+    exists: true
+    filetype: directory
+  /usr/local/bin/pantograph-repl:
+    exists: true
+    filetype: symlink

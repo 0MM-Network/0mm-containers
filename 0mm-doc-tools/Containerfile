@@ -1,0 +1,76 @@
+# Generic document/text tool runtime. Binaries only; host mounts /config /pipeline /work.
+# syntax=docker/dockerfile:1
+
+ARG BASE=debian:bookworm-slim
+FROM docker.io/library/node:22-bookworm-slim AS nodepkgs
+
+ARG TEXTLINT_VERSION
+ARG TEXTLINT_LATEX2E
+ARG TEXTLINT_WRITE_GOOD
+ARG TEXTLINT_STOP_WORDS
+ARG LATEX_UTENSILS
+
+RUN npm install -g --omit=dev \
+      "textlint@${TEXTLINT_VERSION}" \
+      "textlint-plugin-latex2e@${TEXTLINT_LATEX2E}" \
+      "textlint-rule-write-good@${TEXTLINT_WRITE_GOOD}" \
+      "textlint-rule-stop-words@${TEXTLINT_STOP_WORDS}" \
+      "latex-utensils@${LATEX_UTENSILS}" \
+    && npm cache clean --force
+
+FROM ${BASE}
+
+ARG VALE_VERSION
+ARG HARPER_VERSION
+ARG LATEXINDENT_VERSION
+ARG TARGETARCH
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    PATH="/usr/local/bin:${PATH}"
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        ca-certificates \
+        curl \
+        chktex \
+        lacheck \
+        perl \
+        libyaml-tiny-perl \
+        libfile-homedir-perl \
+        libunicode-linebreak-perl \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=nodepkgs /usr/local /usr/local
+
+RUN set -eu; \
+    arch="${TARGETARCH:-amd64}"; \
+    case "$arch" in \
+      amd64|x86_64) vale_asset="Linux_64-bit"; harper_asset="x86_64-unknown-linux-gnu" ;; \
+      arm64|aarch64) vale_asset="Linux_arm64"; harper_asset="aarch64-unknown-linux-gnu" ;; \
+      *) echo "unsupported arch: $arch" >&2; exit 1 ;; \
+    esac; \
+    tmp="$(mktemp -d)"; \
+    curl -fsSL -o "${tmp}/vale.tgz" \
+      "https://github.com/vale-cli/vale/releases/download/v${VALE_VERSION}/vale_${VALE_VERSION}_${vale_asset}.tar.gz"; \
+    tar -xzf "${tmp}/vale.tgz" -C /usr/local/bin vale; \
+    curl -fsSL -o "${tmp}/harper.tgz" \
+      "https://github.com/Automattic/harper/releases/download/v${HARPER_VERSION}/harper-cli-${harper_asset}.tar.gz"; \
+    tar -xzf "${tmp}/harper.tgz" -C "${tmp}"; \
+    if [ -f "${tmp}/harper-cli" ]; then \
+      install -m 0755 "${tmp}/harper-cli" /usr/local/bin/harper-cli; \
+    else \
+      find "${tmp}" -type f -name 'harper-cli' -exec install -m 0755 {} /usr/local/bin/harper-cli \;; \
+    fi; \
+    curl -fsSL -o /usr/local/bin/latexindent \
+      "https://github.com/cmhughes/latexindent.pl/releases/download/V${LATEXINDENT_VERSION}/latexindent-linux"; \
+    chmod 0755 /usr/local/bin/latexindent; \
+    rm -rf "${tmp}"
+
+COPY tools-versions /usr/local/bin/tools-versions
+RUN chmod 0755 /usr/local/bin/tools-versions
+
+RUN useradd -u 1000 -m -s /bin/bash appuser
+USER 1000
+WORKDIR /work
+
+LABEL org.opencontainers.image.title="0mm-doc-tools" \
+      org.opencontainers.image.description="Generic document and text tool runtime"

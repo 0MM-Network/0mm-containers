@@ -1,0 +1,148 @@
+#!/usr/bin/env bash
+# Generic: attach a private HTTPS GitHub repo as a git-subrepo under BTSTRP_ROOT.
+#
+# Env (prompted on TTY if unset):
+#   REPO_URL   — https://github.com/org/repo.git
+#   DEST_DIR   — relative path under BTSTRP_ROOT (e.g. chef)
+#   GH_USER    — GitHub username (or x-access-token)
+#   GH_TOKEN   — fine-scoped PAT (Contents: Read is enough to clone; write scope to push back)
+#
+# Also accepted: GITHUB_TOKEN, PRIVATE_REPO_TOKEN as aliases for GH_TOKEN.
+#   BTSTRP_ROOT — workspace root (default: cwd if it contains .git)
+#
+# Prerequisites (normally satisfied by workspace bootstrap.sh):
+#   - workspace is a git repository
+#   - git-subrepo installed under cache/ and on PATH via bin/dev-tools-env
+#   - Interactive TTY if REPO_URL/DEST_DIR/GH_USER/GH_TOKEN are missing
+#
+# Example (after bootstrap):
+#   cd "$BTSTRP_ROOT" && ./bin/bootstrap_private_subrepo
+#   # answers prompts for REPO_URL DEST_DIR GH_USER GH_TOKEN
+set -euo pipefail
+
+log() { echo "bootstrap_private_subrepo: $*" >&2; }
+die() { log "ERROR: $*"; exit 1; }
+
+# Resolve workspace: BTSTRP_ROOT → parent of bin/ when invoked via bin/shim or bin/lib → cwd git root
+SCRIPT_DIR="$(CDPATH= cd -- "$(dirname "$0")" && pwd)"
+ROOT="${BTSTRP_ROOT:-}"
+if [[ -z "$ROOT" ]]; then
+  # bin/lib/this → workspace; bin/shim calls lib so $0 is still lib path
+  if [[ "$(basename "$SCRIPT_DIR")" == "lib" ]]; then
+    ROOT="$(CDPATH= cd -- "${SCRIPT_DIR}/../.." && pwd)"
+  elif [[ -d "${SCRIPT_DIR}/lib" ]]; then
+    ROOT="$(CDPATH= cd -- "${SCRIPT_DIR}/.." && pwd)"
+  elif [[ -d "${PWD}/.git" || -f "${PWD}/.git" ]]; then
+    ROOT="$PWD"
+  else
+    die "BTSTRP_ROOT unset; run from workspace (./bin/bootstrap_private_subrepo) or export BTSTRP_ROOT"
+  fi
+fi
+ROOT="$(CDPATH= cd -- "$ROOT" && pwd)"
+export BTSTRP_ROOT="$ROOT"
+
+# Load git-subrepo (bootstrap already installed it; operator need not source env manually)
+if [[ -f "${ROOT}/bin/dev-tools-env" ]]; then
+  # shellcheck disable=SC1091
+  set +u
+  # shellcheck source=/dev/null
+  . "${ROOT}/bin/dev-tools-env"
+  set -u
+elif [[ -f "${ROOT}/cache/git-subrepo/lib/git-subrepo" ]]; then
+  export GIT_SUBREPO_ROOT="${ROOT}/cache/git-subrepo"
+  export PATH="${ROOT}/cache/git-subrepo/lib:${ROOT}/bin:${PATH}"
+fi
+export PATH="${ROOT}/bin:${ROOT}/bin/lib:${PATH}"
+
+command -v git >/dev/null || die "git required"
+git -C "$ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1 \
+  || die "not a git work tree: $ROOT (git init first if this is a new workspace)"
+
+if ! git subrepo --version >/dev/null 2>&1; then
+  die "git subrepo not available — re-run workspace bootstrap so 0010 can install it"
+fi
+
+# git-subrepo refuses clone when the parent has unstaged/uncommitted changes
+if [[ -n "$(git -C "$ROOT" status --porcelain 2>/dev/null)" ]]; then
+  log "parent work tree is not clean (git-subrepo requires a clean index+worktree)"
+  git -C "$ROOT" status -sb >&2 || true
+  die "commit or stash changes under $ROOT, then re-run (git subrepo: Can't clone subrepo. Unstaged changes)"
+fi
+
+prompt_var() {
+  # prompt_var VAR "message" [secret=0|1]
+  local var="$1" msg="$2" secret="${3:-0}" val=""
+  if [[ -n "${!var:-}" ]]; then
+    return 0
+  fi
+  if [[ ! -t 0 ]] || [[ ! -t 1 ]]; then
+    die "${var} is unset and stdin/stdout is not a TTY (set env or run on a terminal)"
+  fi
+  if [[ "$secret" == "1" ]]; then
+    read -r -s -p "${msg}: " val || true
+    echo >&2
+  else
+    read -r -p "${msg}: " val || true
+  fi
+  [[ -n "$val" ]] || die "${var} empty"
+  printf -v "$var" '%s' "$val"
+  export "$var"
+}
+
+# Token aliases
+if [[ -z "${GH_TOKEN:-}" ]]; then
+  GH_TOKEN="${GITHUB_TOKEN:-${PRIVATE_REPO_TOKEN:-}}"
+  export GH_TOKEN
+fi
+
+prompt_var REPO_URL "Private repo HTTPS URL (e.g. https://github.com/org/repo.git)"
+prompt_var DEST_DIR "Destination directory relative to workspace (e.g. chef)"
+prompt_var GH_USER  "GitHub username (or x-access-token)"
+prompt_var GH_TOKEN "GitHub PAT (input hidden)" 1
+
+# Normalize
+REPO_URL="${REPO_URL%.git}.git"
+REPO_URL="${REPO_URL//$'\r'/}"
+DEST_DIR="${DEST_DIR#./}"
+DEST_DIR="${DEST_DIR%/}"
+[[ "$DEST_DIR" != *".."* ]] || die "DEST_DIR must not contain .."
+[[ "$DEST_DIR" != /* ]] || die "DEST_DIR must be relative to BTSTRP_ROOT"
+[[ "$REPO_URL" == https://github.com/* ]] || log "warning: REPO_URL is not https://github.com/… (continuing)"
+
+DEST_ABS="${ROOT}/${DEST_DIR}"
+if [[ -e "$DEST_ABS" ]]; then
+  if [[ -f "${DEST_ABS}/.gitrepo" ]] || [[ -d "${DEST_ABS}/.git" ]]; then
+    die "destination already exists as git/subrepo: ${DEST_DIR} (remove or choose another DEST_DIR)"
+  fi
+  # non-empty dir without git?
+  if [[ -n "$(ls -A "$DEST_ABS" 2>/dev/null || true)" ]]; then
+    die "destination not empty: ${DEST_DIR}"
+  fi
+  rmdir "$DEST_ABS" 2>/dev/null || true
+fi
+
+# Auth without permanently storing PAT in remote URL: rewrite only for this process
+# shellcheck disable=SC2016
+export GIT_CONFIG_COUNT=1
+export GIT_CONFIG_KEY_0="url.https://${GH_USER}:${GH_TOKEN}@github.com/.insteadOf"
+export GIT_CONFIG_VALUE_0="https://github.com/"
+
+log "subrepo clone $REPO_URL -> ${DEST_DIR} (BTSTRP_ROOT=$ROOT)"
+cd "$ROOT"
+# Avoid leaking token via xtrace
+set +x
+if ! git subrepo clone "$REPO_URL" "$DEST_DIR"; then
+  die "git subrepo clone failed (check URL, PAT scope, network)"
+fi
+
+# Ensure recorded remote is clean HTTPS without embedded credentials
+if [[ -f "${DEST_ABS}/.gitrepo" ]]; then
+  if grep -q '@github.com' "${DEST_ABS}/.gitrepo" 2>/dev/null; then
+    log "warning: .gitrepo may contain credentials — edit remote to plain https://github.com/…"
+  fi
+fi
+
+log "OK: ${DEST_DIR} is a git-subrepo of ${REPO_URL}"
+log "Day-2 pull:  cd \"\$BTSTRP_ROOT\" && . bin/dev-tools-env && git subrepo pull ${DEST_DIR}"
+log "Day-2 push:  cd \"\$BTSTRP_ROOT\" && . bin/dev-tools-env && git subrepo push ${DEST_DIR}"
+exit 0

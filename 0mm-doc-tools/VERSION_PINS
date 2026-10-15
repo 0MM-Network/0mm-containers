@@ -1,0 +1,15 @@
+# Tool versions for 0mm-doc-tools. Key=value. Rebuild after any change.
+debian_base=debian:bookworm-slim
+node=22
+vale=3.17.1
+textlint=15.8.0
+textlint-plugin-latex2e=1.2.1
+textlint-rule-write-good=2.0.0
+textlint-rule-stop-words=5.2.0
+latex-utensils=7.0.0
+harper-cli=2.8.0
+chktex=debian-bookworm
+lacheck=debian-bookworm
+latexindent=4.0.2
+perl_yaml_tiny=debian-bookworm
+perl_file_homedir=debian-bookworm

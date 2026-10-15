@@ -1,0 +1,49 @@
+# In-guest contract for localhost/0mm-doc-tools:local (ADR 0001).
+# Do not run this file against the host.
+file:
+  /usr/local/bin/tools-versions:
+    exists: true
+    filetype: file
+  /usr/local/bin/vale:
+    exists: true
+    filetype: file
+  /usr/local/bin/latexindent:
+    exists: true
+    filetype: file
+
+command:
+  tools_versions:
+    exec: "tools-versions"
+    exit-status: 0
+    stdout:
+      - "/vale=/"
+      - "/textlint=/"
+      - "/chktex=/"
+      - "/latexindent=/"
+      - "/lacheck=/"
+      - "/harper-cli=/"
+      - "/node=/"
+  vale:
+    exec: "vale --version"
+    exit-status: 0
+  textlint:
+    exec: "textlint --version"
+    exit-status: 0
+  chktex:
+    exec: "chktex --version"
+    exit-status: 0
+  latexindent:
+    exec: "latexindent --version"
+    exit-status: 0
+  lacheck:
+    exec: "command -v lacheck"
+    exit-status: 0
+  harper_cli:
+    exec: "harper-cli --version"
+    exit-status: 0
+  node:
+    exec: "node --version"
+    exit-status: 0
+  not_root:
+    exec: "bash -c 'test \"$(id -u)\" -ne 0'"
+    exit-status: 0

@@ -1,0 +1,44 @@
+#!/bin/sh
+# Self-check: one line per required tool. Exit 1 if any binary is missing.
+set -eu
+
+fail=0
+
+report() {
+  name="$1"
+  shift
+  if command -v "$name" >/dev/null 2>&1; then
+    ver="$("$@" 2>&1 | head -n1 | tr -d '\r')"
+    printf '%s=%s\n' "$name" "$ver"
+  else
+    printf '%s=not-found\n' "$name"
+    fail=1
+  fi
+}
+
+report node node --version
+report vale vale --version
+report textlint textlint --version
+report chktex chktex --version
+if command -v latexindent >/dev/null 2>&1; then
+  report latexindent latexindent --version
+elif command -v latexindent.pl >/dev/null 2>&1; then
+  report latexindent latexindent.pl -v
+else
+  printf '%s=not-found\n' "latexindent"
+  fail=1
+fi
+if command -v lacheck >/dev/null 2>&1; then
+  printf '%s=%s\n' "lacheck" "$(command -v lacheck)"
+else
+  printf '%s=not-found\n' "lacheck"
+  fail=1
+fi
+if command -v harper-cli >/dev/null 2>&1; then
+  report harper-cli harper-cli --version
+else
+  printf '%s=not-found\n' "harper-cli"
+  fail=1
+fi
+
+exit "$fail"

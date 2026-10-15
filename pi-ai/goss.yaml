@@ -1,0 +1,37 @@
+# In-guest configuration contract for localhost/pi (layer B).
+# Orchestrated by Testcontainers — see docs/adr/0001-container-contract-testing.md
+# Do not run this file against the host.
+
+file:
+  /work:
+    exists: true
+    filetype: directory
+  /work/.contract-marker:
+    exists: true
+    contents:
+      - "pi-contract"
+  /usr/local/bin/pi:
+    exists: true
+  /opt/contract/goss:
+    exists: true
+    filetype: file
+
+command:
+  pi_version:
+    exec: "bash -c 'v=$(pi --version); echo \"$v\"; [[ \"$v\" =~ ^[0-9]+\\.[0-9]+\\.[0-9]+ ]]'"
+    exit-status: 0
+  rg_available:
+    exec: "rg --version"
+    exit-status: 0
+  find_available:
+    exec: "find --version"
+    exit-status: 0
+  bash_available:
+    exec: "bash --version"
+    exit-status: 0
+  cwd_is_work:
+    exec: "bash -c '[[ \"$PWD\" == \"/work\" ]]'"
+    exit-status: 0
+  home_is_node:
+    exec: "bash -c '[[ \"$HOME\" == \"/home/node\" ]]'"
+    exit-status: 0
