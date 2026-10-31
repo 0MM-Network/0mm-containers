@@ -1,7 +1,8 @@
 #!/usr/bin/env bats
 # Contract for bin/0mm-run (0mm-containers ADR 0002).
 # Run: bin/bats test/unit/0mm_run_contract.bats
-# A fake podman on PATH records every `podman run` argument, one per line.
+# A fake podman on PATH records every `podman run` argument, one per line,
+# and one line per `podman info` call.
 
 setup() {
   PKG="$(CDPATH= cd -- "$(dirname "$BATS_TEST_FILENAME")/../.." && pwd)"
@@ -14,10 +15,12 @@ setup() {
   export FAKE_RUN_LOG="${BATS_TEST_TMPDIR}/podman-run.args"
   export FAKE_ROOTLESS=true
   export FAKE_INFO_EXIT=0
+  export FAKE_INFO_LOG="${BATS_TEST_TMPDIR}/podman-info.calls"
   cat > "${FAKEBIN}/podman" <<'FAKE'
 #!/usr/bin/env bash
 case "$1" in
   info)
+    echo info >> "$FAKE_INFO_LOG"
     [ "$FAKE_INFO_EXIT" = 0 ] || { echo "Cannot connect to Podman" >&2; exit "$FAKE_INFO_EXIT"; }
     echo "$FAKE_ROOTLESS"
     ;;
@@ -38,8 +41,12 @@ FAKE
   WORK="${BATS_TEST_TMPDIR}/work"
   mkdir -p "$WORK"
   cd "$WORK"
-  unset AI_ROOT OMM_BOT CONTAINER_HOST
+  unset AI_ROOT OMM_BOT CONTAINER_HOST CONTAINER_CONNECTION CONTAINERS_CONF
+  export XDG_RUNTIME_DIR="${BATS_TEST_TMPDIR}/xdg"
+  mkdir -m 700 "$XDG_RUNTIME_DIR"
 }
+
+info_calls() { [ -e "$FAKE_INFO_LOG" ] && wc -l < "$FAKE_INFO_LOG" || echo 0; }
 
 # Write a manifest that is echo.toml with the given `key = value` lines replacing or adding keys.
 variant() {
@@ -184,6 +191,72 @@ hello"
   FAKE_INFO_EXIT=125 run "$RUN" "$ECHO" hello
   refused
   [[ "$output" == *"podman unavailable"* ]]
+}
+
+@test "the rootless probe runs once, not on every exec" {
+  run "$RUN" "$ECHO" hello
+  [ "$status" -eq 0 ]
+  run "$RUN" "$ECHO" hello
+  [ "$status" -eq 0 ]
+  [ "$output" = "hello" ]
+  [ "$(info_calls)" -eq 1 ]
+}
+
+@test "a refused probe is not remembered" {
+  FAKE_ROOTLESS=false run "$RUN" "$ECHO" hello
+  refused
+  FAKE_INFO_EXIT=125 run "$RUN" "$ECHO" hello
+  refused
+  [ "$(info_calls)" -eq 2 ]
+}
+
+@test "a remembered probe does not cover a new CONTAINER_HOST" {
+  run "$RUN" "$ECHO" hello
+  [ "$status" -eq 0 ]
+  rm -f "$FAKE_RUN_LOG"
+  CONTAINER_HOST=unix:///nonexistent/podman.sock FAKE_ROOTLESS=false run "$RUN" "$ECHO" hello
+  refused
+  [[ "$output" == *"not rootless"* ]]
+}
+
+@test "a remembered probe does not cover a different podman binary" {
+  run "$RUN" "$ECHO" hello
+  [ "$status" -eq 0 ]
+  rm -f "$FAKE_RUN_LOG"
+  cp "${FAKEBIN}/podman" "${FAKEBIN}/podman.new"
+  mv "${FAKEBIN}/podman.new" "${FAKEBIN}/podman"
+  FAKE_ROOTLESS=false run "$RUN" "$ECHO" hello
+  refused
+}
+
+@test "a remembered probe expires" {
+  run "$RUN" "$ECHO" hello
+  [ "$status" -eq 0 ]
+  rm -f "$FAKE_RUN_LOG"
+  find "$XDG_RUNTIME_DIR" -type f -exec touch -d '-1 hour' {} +
+  FAKE_ROOTLESS=false run "$RUN" "$ECHO" hello
+  refused
+}
+
+@test "a probe record not owned by the caller or behind a symlink is ignored" {
+  run "$RUN" "$ECHO" hello
+  [ "$status" -eq 0 ]
+  rm -f "$FAKE_RUN_LOG"
+  local f
+  for f in $(find "$XDG_RUNTIME_DIR" -type f); do
+    mv "$f" "$f.real"; ln -s "$f.real" "$f"
+  done
+  FAKE_ROOTLESS=false run "$RUN" "$ECHO" hello
+  refused
+}
+
+@test "with no XDG_RUNTIME_DIR the probe runs every time" {
+  unset XDG_RUNTIME_DIR
+  run "$RUN" "$ECHO" hello
+  [ "$status" -eq 0 ]
+  rm -f "$FAKE_RUN_LOG"
+  FAKE_ROOTLESS=false run "$RUN" "$ECHO" hello
+  refused
 }
 
 @test "root caller is refused" {
