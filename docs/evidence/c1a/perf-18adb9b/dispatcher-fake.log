@@ -1,0 +1,26 @@
+# head 0mm-containers 18adb9b1da2ff34d9d71f9e70e9812c77bcc1e21
+# date 2026-10-31T21:24:45+11:00
+# nproc 12; load before: 37.04 26.18 17.91
+# fake podman: info prints true, everything else exits 0 (the plan's method)
+dispatcher_ms 17
+dispatcher_ms 16
+dispatcher_ms 19
+dispatcher_ms 13
+dispatcher_ms 25
+dispatcher_ms 19
+dispatcher_ms 12
+dispatcher_ms 15
+dispatcher_ms 23
+dispatcher_ms 20
+dispatcher_ms 19
+dispatcher_ms 22
+dispatcher_ms 15
+dispatcher_ms 29
+dispatcher_ms 22
+dispatcher_ms 18
+dispatcher_ms 14
+dispatcher_ms 19
+dispatcher_ms 25
+dispatcher_ms 17
+# load after: 36.72 26.30 17.99
+# median dispatcher_ms 19 (n=20, min 12, max 29)

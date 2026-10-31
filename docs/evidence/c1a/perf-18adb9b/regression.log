@@ -1,0 +1,23 @@
+# trunk ai 7b3c45e8fb7d8394b56e047fea88c6643c457c54
+# head 0mm-containers 18adb9b1da2ff34d9d71f9e70e9812c77bcc1e21
+# date 2026-10-31T21:23:40+11:00
+# nproc 12; load before: 30.91 22.57 16.22
+# trunk shim:
+$ (cd <home>/work/ai-c1a-verify && bin/python3 -c print(1))
+## stdout
+1
+## stderr
+## exit 0
+# head dispatcher, fixture manifest:
+$ (cd <home>/work/0mm-containers-verify/.lanes/1 && <home>/work/0mm-containers-verify/bin/0mm-run <home>/work/0mm-containers-verify/test/fixtures/manifests/echo.toml hello)
+## stdout
+hello
+## stderr
+## exit 0
+# head dispatcher, trunk image:
+$ (cd <home>/work/0mm-containers-verify/.lanes/1 && <home>/work/0mm-containers-verify/bin/0mm-run <home>/work/0mm-containers-verify/.lanes/py-print.toml)
+## stdout
+1
+## stderr
+## exit 0
+# load after: 32.20 22.98 16.39
