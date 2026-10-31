@@ -163,6 +163,17 @@ hello"
   refused
 }
 
+@test "a -- separator does not exempt a refused option name" {
+  run "$RUN" "$ECHO" -- --network=host
+  refused
+}
+
+@test "a refused option name in the manifest command reaches the tool" {
+  run "$RUN" "$(variant 'command = ["echo", "--network=none"]')" hello
+  [ "$status" -eq 0 ]
+  [ "$output" = "--network=none hello" ]
+}
+
 @test "podman that is not rootless is refused" {
   FAKE_ROOTLESS=false run "$RUN" "$ECHO" hello
   refused
