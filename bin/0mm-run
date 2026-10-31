@@ -135,11 +135,51 @@ check_workdir() {
   [[ "$PWD" != *[:,]* ]] || refuse "working directory path may not contain : or ,"
 }
 
+# `podman info` costs most of a second, so a passing probe is remembered for
+# ROOTLESS_TTL seconds in the caller's XDG_RUNTIME_DIR. The record holds a key
+# built from everything that can change which engine `podman` reaches: the
+# uid, the podman binary (path, device, inode, size, mtime), the
+# CONTAINER_HOST, CONTAINER_CONNECTION, CONTAINERS_CONF and
+# CONTAINERS_CONF_OVERRIDE values, and the stat of every containers.conf
+# podman reads. Any change, an expired or foreign record, or a failed probe
+# means a fresh probe. Failures are never remembered.
+ROOTLESS_TTL=60
+
+rootless_key() {
+  local podman_bin="$1" conf="${XDG_CONFIG_HOME:-${HOME:-}/.config}/containers"
+  printf 'v1 uid=%s host=%s conn=%s conf=%s override=%s stat=' "$EUID" \
+    "${CONTAINER_HOST-}" "${CONTAINER_CONNECTION-}" "${CONTAINERS_CONF-}" "${CONTAINERS_CONF_OVERRIDE-}"
+  stat -L --printf '%n:%d:%i:%s:%Y;' "$podman_bin" ${CONTAINERS_CONF:+"$CONTAINERS_CONF"} \
+    ${CONTAINERS_CONF_OVERRIDE:+"$CONTAINERS_CONF_OVERRIDE"} \
+    /usr/share/containers/containers.conf /etc/containers/containers.conf \
+    /etc/containers/containers.conf.d "${conf}/containers.conf" "${conf}/containers.conf.d" 2>/dev/null
+  return 0
+}
+
+# Prints the record path when XDG_RUNTIME_DIR is a private directory owned by
+# the caller; prints nothing otherwise.
+rootless_record() {
+  local run="${XDG_RUNTIME_DIR-}"
+  [[ "$run" == /* && -d "$run" && ! -L "$run" && -O "$run" ]] || return 0
+  [[ "$(stat -c %a "$run")" == 700 ]] || return 0
+  printf '%s\n' "${run}/0mm-run-rootless"
+}
+
 check_rootless() {
-  local rootless
-  command -v podman >/dev/null || refuse "podman unavailable"
+  local podman_bin rootless key record seen mtime tmp
+  podman_bin="$(command -v podman)" || refuse "podman unavailable"
+  key="$(rootless_key "$podman_bin")"
+  record="$(rootless_record)"
+  if [[ -n "$record" && -f "$record" && ! -L "$record" && -O "$record" ]]; then
+    mtime="$(stat -c %Y "$record")"
+    IFS= read -r seen < "$record" || true
+    (( EPOCHSECONDS - mtime >= 0 && EPOCHSECONDS - mtime < ROOTLESS_TTL )) && [[ "$seen" == "$key" ]] && return 0
+  fi
   rootless="$(podman info --format '{{.Host.Security.Rootless}}' 2>/dev/null)" || refuse "podman unavailable"
   [[ "$rootless" == true ]] || refuse "podman is not rootless"
+  [[ -n "$record" ]] || return 0
+  tmp="$(umask 077 && mktemp "${record}.XXXXXX" 2>/dev/null)" || return 0
+  printf '%s\n' "$key" > "$tmp" && mv -f "$tmp" "$record" || rm -f "$tmp"
 }
 
 main() {

@@ -61,6 +61,15 @@ The dispatcher exits 2 with `0mm-run: refused: <reason>` before any `podman run`
 - An argument equals one of `--privileged`, `--cap-add`, `--security-opt`, `--device`, `--volume`, `--mount`, `--network`, `--net`, `--userns`, `--pid`, `--ipc`, or is one of them followed by `=value`. Arguments belong to the tool, so these names are refused outright instead of being guessed at.
 - The working directory is `/`, the caller's home, or contains `:` or `,`.
 
+A passing `podman info` probe takes most of a second, so the dispatcher remembers it for 60 seconds. The record lives in the caller's `XDG_RUNTIME_DIR`, and only when that directory is the caller's own with mode 700. The record must be a regular file the caller owns, not a symlink. It holds a key, and the dispatcher probes again when any part of the key changes:
+
+- the uid;
+- the podman binary's path, device, inode, size and mtime;
+- `CONTAINER_HOST`, `CONTAINER_CONNECTION`, `CONTAINERS_CONF` and `CONTAINERS_CONF_OVERRIDE`;
+- the stat of each `containers.conf` podman reads.
+
+A refused or failed probe is never remembered, and with no usable `XDG_RUNTIME_DIR` every call probes. Within the 60 seconds, a change that the key does not cover goes unseen, such as a new rootful service behind an unchanged socket path. Anyone who can make that change can already run podman as the caller.
+
 ### Secrets
 
 A secret value never appears in a manifest, an image, or an argument. A credential reaches a container only as a file mount read at call time, or through a variable name the manifest lists. This ADR adds no credential path.
