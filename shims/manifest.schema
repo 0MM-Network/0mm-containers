@@ -1,0 +1,27 @@
+# Manifest schema for bin/0mm-run (0mm-containers ADR 0002).
+# bin/0mm-run reads this file. It is the one place the manifest keys are decided.
+#
+# A manifest is one TOML file per tool, in a strict subset: `key = value` lines,
+# where a value is a "string" without escapes, true or false, an integer, or a
+# one-line array of strings. Comments sit on their own lines. Anything else is refused.
+#
+# Columns: key, type (string|array|bool|int|-), presence (required|optional|forbidden), check.
+# A key not listed here is refused as unknown. A forbidden key is refused as "not allowed".
+#
+# key          type    presence   check
+runtime        string  required   runtime
+image          string  required   digest
+command        array   required   nonempty
+network        string  optional   network
+mounts         array   optional   mount
+devices        array   optional   device
+env            array   optional   envname
+pids_limit     int     optional   -
+memory         string  optional   size
+cpus           string  optional   cpus
+privileged     -       forbidden  -
+cap_add        -       forbidden  -
+security_opt   -       forbidden  -
+userns         -       forbidden  -
+pid            -       forbidden  -
+ipc            -       forbidden  -
