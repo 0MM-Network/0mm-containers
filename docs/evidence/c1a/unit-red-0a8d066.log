@@ -1,0 +1,38 @@
+$ git rev-parse --short HEAD
+0a8d066
+$ bin/bats test/unit/0mm_run_contract.bats
+1..29
+ok 1 echo manifest prints its argument and exits 0
+ok 2 echo manifest yields the exact hardened podman run argument list
+ok 3 manifest privileged = true is refused with exit 2 before podman run
+ok 4 manifest cap_add is refused
+ok 5 manifest security_opt that weakens seccomp is refused
+ok 6 manifest network = host is refused
+ok 7 manifest mount of the user podman socket is refused
+not ok 8 manifest mount whose cache path is neither a file nor a directory is refused
+# (from function `refused' in file test/unit/0mm_run_contract.bats, line 54,
+#  in test file test/unit/0mm_run_contract.bats, line 116)
+#   `refused' failed
+# expected exit 2, got 0: hello
+ok 9 manifest device /dev/kvm is refused for runtime podman
+ok 10 manifest device outside the allowlist is refused for runtime nanos
+ok 11 runtime nanos with /dev/kvm passes the allowlist and stops at the missing backend
+ok 12 argument --privileged is refused
+ok 13 argument --cap-add=SYS_ADMIN is refused
+ok 14 argument --security-opt=seccomp=unconfined is refused
+ok 15 argument --network=host is refused
+ok 16 argument mounting a host socket is refused
+ok 17 argument --device is refused
+ok 18 podman that is not rootless is refused
+ok 19 unreachable podman is refused
+ok 20 root caller is refused
+ok 21 reserved runtime krun is refused
+ok 22 reserved runtime sel4 is refused
+ok 23 unknown manifest key is refused
+ok 24 image not pinned by digest is refused
+ok 25 host environment is not forwarded, listed names are
+ok 26 manifest env entry carrying a value is refused
+ok 27 shared cache mounts read-only, per-bot cache may be writable
+ok 28 writable mount outside the per-bot cache is refused
+ok 29 mount escaping the cache root with .. is refused
+exit=1

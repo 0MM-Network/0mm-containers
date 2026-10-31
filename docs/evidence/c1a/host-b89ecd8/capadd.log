@@ -1,0 +1,9 @@
+# head b89ecd8ab4861a9a960d192fac2604cb39507270
+# date 2026-10-31T20:51:44+11:00
+# cwd <home>/work/0mm-containers-verify/.lanes/1
+$ <home>/work/0mm-containers-verify/bin/0mm-run <home>/work/0mm-containers-verify/test/fixtures/manifests/echo.toml --cap-add=SYS_ADMIN
+## stdout
+## stderr
+0mm-run: refused: argument --cap-add=SYS_ADMIN is not allowed
+## exit 2
+# podman ps -a count before=18 after=18

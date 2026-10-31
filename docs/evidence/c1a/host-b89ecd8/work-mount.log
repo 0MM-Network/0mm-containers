@@ -1,0 +1,11 @@
+# head b89ecd8ab4861a9a960d192fac2604cb39507270
+# date 2026-10-31T20:51:42+11:00
+# cwd <home>/work/0mm-containers-verify/.lanes/2
+$ <home>/work/0mm-containers-verify/bin/0mm-run <home>/work/0mm-containers-verify/.lanes/sh.toml ls -ln /work; id
+## stdout
+total 0
+-rw-rw-r--    1 1000     1000             0 Oct 31 09:51 marker-c1a
+uid=1000(<user>) gid=1000(<user>) groups=1000(<user>)
+## stderr
+## exit 0
+# host owner of marker: uid 1000 caller uid 1000

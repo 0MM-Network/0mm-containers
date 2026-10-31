@@ -1,0 +1,16 @@
+# head b89ecd8ab4861a9a960d192fac2604cb39507270
+# date 2026-10-31T20:51:44+11:00
+# cwd <home>/work/0mm-containers-verify/.lanes/1
+$ <home>/work/0mm-containers-verify/bin/0mm-run <home>/work/0mm-containers-verify/.lanes/nethost.toml hello
+## stdout
+## stderr
+0mm-run: refused: network host is not allowed
+## exit 2
+# head b89ecd8ab4861a9a960d192fac2604cb39507270
+# date 2026-10-31T20:51:44+11:00
+# cwd <home>/work/0mm-containers-verify/.lanes/1
+$ <home>/work/0mm-containers-verify/bin/0mm-run <home>/work/0mm-containers-verify/.lanes/sock.toml hello
+## stdout
+## stderr
+0mm-run: refused: mount source <xdg-runtime-dir>/podman/podman.sock is outside the cache root; sources are relative to $AI_ROOT/cache
+## exit 2
