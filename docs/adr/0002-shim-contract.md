@@ -26,7 +26,7 @@ One TOML file per tool. `shims/manifest.schema` is the single list of keys, thei
 | `image` | string, required | Pinned by digest, `name@sha256:<64 hex>`. |
 | `command` | array, required | Non-empty. |
 | `network` | string | `none` (the default), `pasta`, or `slirp4netns`. `host` is refused. |
-| `mounts` | array | `source:target:ro` or `source:target:rw`. The source is relative to `$AI_ROOT/cache/` and must resolve inside it. Shared caches mount `ro`. A `rw` mount must resolve under `$AI_ROOT/cache/<tool>/<bot>/`, where `<tool>` is the manifest file name without `.toml` and `<bot>` is `$OMM_BOT`, or the caller's user name when that is unset. Sockets are refused. Targets are absolute and outside `/work`. |
+| `mounts` | array | `source:target:ro` or `source:target:rw`. The source is relative to `$AI_ROOT/cache/` and must resolve inside it. Shared caches mount `ro`. A `rw` mount must resolve under `$AI_ROOT/cache/<tool>/<bot>/`, where `<tool>` is the manifest file name without `.toml` and `<bot>` is `$OMM_BOT`, or the caller's user name when that is unset. Sockets, FIFOs and devices are refused; a source must be a file or a directory. Targets are absolute and outside `/work`. |
 | `devices` | array | Only `/dev/kvm`, and only for `runtime = "nanos"`. |
 | `env` | array | Variable names to forward from the caller. Names only, never values. |
 | `pids_limit`, `memory`, `cpus` | int, string, string | Resource caps. Defaults `1024`, `4g`, `2`. |

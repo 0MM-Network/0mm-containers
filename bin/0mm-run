@@ -100,7 +100,7 @@ check_mount() {
   cache="$(realpath -e "${AI_ROOT}/cache" 2>/dev/null)" || refuse "cache root \$AI_ROOT/cache does not exist"
   path="$(realpath -e "${cache}/${src}" 2>/dev/null)" || refuse "mount source $src does not exist under the cache root"
   [[ "$path" == "$cache" || "$path" == "$cache"/* ]] || refuse "mount source $src resolves outside the cache root"
-  [[ ! -S "$path" ]] || refuse "mount source $src is a socket"
+  [[ -d "$path" || -f "$path" ]] || refuse "mount source $src is not a file or directory"
   if [[ "$mode" == rw ]]; then
     own="${cache}/${TOOL}/${BOT}"
     [[ "$path" == "$own" || "$path" == "$own"/* ]] || refuse "writable mount $src must sit under the per-bot cache ${TOOL}/${BOT}"
