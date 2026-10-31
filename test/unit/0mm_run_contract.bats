@@ -108,10 +108,10 @@ hello"
   refused
 }
 
-@test "manifest mount whose cache path resolves to a socket is refused" {
+@test "manifest mount whose cache path is neither a file nor a directory is refused" {
   export AI_ROOT="${BATS_TEST_TMPDIR}/ai"
   mkdir -p "${AI_ROOT}/cache"
-  python3 -c 'import socket,sys; socket.socket(socket.AF_UNIX).bind(sys.argv[1])' "${AI_ROOT}/cache/api.sock"
+  mkfifo "${AI_ROOT}/cache/api.sock"
   run "$RUN" "$(variant 'mounts = ["api.sock:/run/api.sock:ro"]')" hello
   refused
 }
