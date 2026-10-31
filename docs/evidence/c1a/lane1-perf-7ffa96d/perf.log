@@ -1,0 +1,70 @@
+# trunk ai 7b3c45e8fb7d8394b56e047fea88c6643c457c54
+# head 0mm-containers 7ffa96d36d7b8c36887fd6f23da733cbf8fc5224
+# date 2026-10-31T21:15:47+11:00
+# warm-up, not counted
+warmup trunk exit 0
+warmup head exit 0
+trunk_ms 215 exit 0
+head_ms 930 exit 0
+trunk_ms 200 exit 0
+head_ms 894 exit 0
+trunk_ms 234 exit 0
+head_ms 920 exit 0
+trunk_ms 178 exit 0
+head_ms 1010 exit 0
+trunk_ms 214 exit 0
+head_ms 1018 exit 0
+trunk_ms 225 exit 0
+head_ms 925 exit 0
+trunk_ms 268 exit 0
+head_ms 907 exit 0
+trunk_ms 830 exit 0
+head_ms 981 exit 0
+trunk_ms 484 exit 0
+head_ms 1106 exit 0
+trunk_ms 555 exit 0
+head_ms 958 exit 0
+trunk_ms 234 exit 0
+head_ms 1056 exit 0
+trunk_ms 281 exit 0
+head_ms 1089 exit 0
+trunk_ms 880 exit 0
+head_ms 940 exit 0
+trunk_ms 744 exit 0
+head_ms 912 exit 0
+trunk_ms 784 exit 0
+head_ms 1004 exit 0
+trunk_ms 543 exit 0
+head_ms 965 exit 0
+trunk_ms 804 exit 0
+head_ms 975 exit 0
+trunk_ms 877 exit 0
+head_ms 1003 exit 0
+trunk_ms 599 exit 0
+head_ms 955 exit 0
+trunk_ms 808 exit 0
+head_ms 1018 exit 0
+dispatcher_ms 12
+dispatcher_ms 16
+dispatcher_ms 10
+dispatcher_ms 13
+dispatcher_ms 17
+dispatcher_ms 13
+dispatcher_ms 11
+dispatcher_ms 13
+dispatcher_ms 11
+dispatcher_ms 11
+dispatcher_ms 16
+dispatcher_ms 15
+dispatcher_ms 14
+dispatcher_ms 25
+dispatcher_ms 18
+dispatcher_ms 10
+dispatcher_ms 12
+dispatcher_ms 30
+dispatcher_ms 31
+dispatcher_ms 12
+# median trunk_ms 513.5 (n=20)
+# median head_ms 970 (n=20)
+# median dispatcher_ms 13 (n=20)
+# nonzero exits: 0

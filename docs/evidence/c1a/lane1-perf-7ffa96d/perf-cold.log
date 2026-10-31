@@ -1,0 +1,47 @@
+# trunk ai 7b3c45e8fb7d8394b56e047fea88c6643c457c54 with AI_SHIM_WARM=0 (cold podman run --rm path)
+# head 0mm-containers 7ffa96d36d7b8c36887fd6f23da733cbf8fc5224
+# date 2026-10-31T21:16:36+11:00
+warmup trunk_cold exit 0
+trunk_cold_ms 327 exit 0
+head_ms 1070 exit 0
+trunk_cold_ms 276 exit 0
+head_ms 1211 exit 0
+trunk_cold_ms 371 exit 0
+head_ms 947 exit 0
+trunk_cold_ms 249 exit 0
+head_ms 1013 exit 0
+trunk_cold_ms 325 exit 0
+head_ms 1087 exit 0
+trunk_cold_ms 349 exit 0
+head_ms 994 exit 0
+trunk_cold_ms 232 exit 0
+head_ms 1026 exit 0
+trunk_cold_ms 259 exit 0
+head_ms 1087 exit 0
+trunk_cold_ms 304 exit 0
+head_ms 956 exit 0
+trunk_cold_ms 316 exit 0
+head_ms 1134 exit 0
+trunk_cold_ms 362 exit 0
+head_ms 934 exit 0
+trunk_cold_ms 304 exit 0
+head_ms 911 exit 0
+trunk_cold_ms 266 exit 0
+head_ms 1117 exit 0
+trunk_cold_ms 348 exit 0
+head_ms 1099 exit 0
+trunk_cold_ms 288 exit 0
+head_ms 1050 exit 0
+trunk_cold_ms 318 exit 0
+head_ms 966 exit 0
+trunk_cold_ms 437 exit 0
+head_ms 977 exit 0
+trunk_cold_ms 320 exit 0
+head_ms 1154 exit 0
+trunk_cold_ms 332 exit 0
+head_ms 1007 exit 0
+trunk_cold_ms 308 exit 0
+head_ms 959 exit 0
+# median trunk_cold_ms 317 (n=20)
+# median head_ms 1019.5 (n=20)
+# nonzero exits: 0

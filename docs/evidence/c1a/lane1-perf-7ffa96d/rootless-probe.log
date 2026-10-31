@@ -1,0 +1,25 @@
+# cost of the rootless probe in bin/0mm-run (line 141), head 7ffa96d36d7b8c36887fd6f23da733cbf8fc5224, 2026-10-31T21:18:01+11:00
+$ podman info --format '{{.Host.Security.Rootless}}'   (x10)
+info_ms 837 -> true
+info_ms 870 -> true
+info_ms 815 -> true
+info_ms 916 -> true
+info_ms 803 -> true
+info_ms 896 -> true
+info_ms 894 -> true
+info_ms 896 -> true
+info_ms 1091 -> true
+info_ms 752 -> true
+$ podman run <floor flags> <echo image> true   (x10, the exec step alone)
+run_ms 182 exit 0
+run_ms 176 exit 0
+run_ms 210 exit 0
+run_ms 172 exit 0
+run_ms 200 exit 0
+run_ms 231 exit 0
+run_ms 214 exit 0
+run_ms 196 exit 0
+run_ms 180 exit 0
+run_ms 189 exit 0
+# median info_ms 882 (n=10)
+# median run_ms 192.5 (n=10)

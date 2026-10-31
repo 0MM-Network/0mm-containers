@@ -1,0 +1,21 @@
+# trunk ai 7b3c45e8fb7d8394b56e047fea88c6643c457c54
+# head 0mm-containers 7ffa96d36d7b8c36887fd6f23da733cbf8fc5224
+# date 2026-10-31T21:15:46+11:00
+# trunk has no 0mm-run:
+$ (cd <home>/work/ai-c1a-verify && ls bin/0mm-run)
+## stdout
+## stderr
+ls: cannot access 'bin/0mm-run': No such file or directory
+## exit 2
+# trunk shim:
+$ (cd <home>/work/ai-c1a-verify && bin/python3 -c print(1))
+## stdout
+1
+## stderr
+## exit 0
+# head dispatcher:
+$ (cd <home>/work/0mm-containers-verify/.lanes/1 && <home>/work/0mm-containers-verify/bin/0mm-run <home>/work/0mm-containers-verify/test/fixtures/manifests/echo.toml hello)
+## stdout
+hello
+## stderr
+## exit 0
