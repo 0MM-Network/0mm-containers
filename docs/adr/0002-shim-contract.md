@@ -4,6 +4,8 @@
 
 Proposed. Mark promotes it to Accepted once the C1a pull request merges and its live lanes pass on the target host.
 
+Supersedes 0mm-containers ADR 0001 §2 (privileged Ryuk row).
+
 ## Context
 
 Bots run their toolchains in containers through thin shims from this package, never as host installs. Each shim used to carry its own `podman run` line. Every copy could drop a hardening flag, and nothing stopped a shim from asking for more than it needed. The contract has to hold now on rootless podman and later on other backends (the Nanos unikernel next, then krun or seL4 guests) without rewriting every shim.
@@ -79,7 +81,7 @@ Ryuk stays disabled for every suite that runs through `0mm-run`: `TESTCONTAINERS
 - A new tool is a manifest file, not a new script.
 - A new runtime is one backend file. Reserved names fail clearly until it exists.
 - Tools that need a flag outside the floor need a schema change and a review, which is the point.
-- Refusing the listed option names as arguments blocks a tool that takes an option of the same name. None does today.
+- Arguments named `--privileged`, `--cap-add`, `--security-opt`, `--device`, `--volume`, `--mount`, `--network`, `--net`, `--userns`, `--pid` or `--ipc` are refused even when they are the tool's own option. A `--` separator does not help, because every argument is checked. The workaround is the manifest: put the tool's option in the `command` array, which is not checked against these names, and ask for a container network, mount, or device through the `network`, `mounts`, or `devices` keys.
 - Until host sudo is removed for the calling user, these refusals stop mistakes, not a determined caller.
 
 ## Evidence

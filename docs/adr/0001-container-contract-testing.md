@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted — **pi-ai is the reference implementation**.  
+Accepted — **pi-ai is the reference implementation**. Superseded in part by [0mm-containers ADR 0002](0002-shim-contract.md).  
 All other `0mm-containers` packages should follow this ADR unless a later ADR supersedes it.
 
 ## Context
