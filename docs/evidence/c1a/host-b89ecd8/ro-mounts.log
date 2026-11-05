@@ -1,0 +1,11 @@
+# head b89ecd8ab4861a9a960d192fac2604cb39507270
+# date 2026-10-31T20:51:43+11:00
+# cwd <home>/work/0mm-containers-verify/.lanes/3/w
+$ <home>/work/0mm-containers-verify/bin/0mm-run <home>/work/0mm-containers-verify/.lanes/3/ro.toml for p in / /tmp /opt/shared /work; do if touch "$p/c1a-probe" 2>/dev/null; then echo "write $p ok"; else echo "write $p denied"; fi; done
+## stdout
+write / denied
+write /tmp ok
+write /opt/shared denied
+write /work ok
+## stderr
+## exit 0

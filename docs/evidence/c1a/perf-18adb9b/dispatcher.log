@@ -1,0 +1,28 @@
+# trunk ai 7b3c45e8fb7d8394b56e047fea88c6643c457c54
+# head 0mm-containers 18adb9b1da2ff34d9d71f9e70e9812c77bcc1e21
+# date 2026-10-31T21:24:30+11:00
+# nproc 12; load before: 37.71 25.73 17.63
+# podman wrapper: run exits 0 at once, everything else goes to the real podman
+# probe record removed first, so run 1 pays for podman info
+dispatcher_ms 1766 exit 0
+dispatcher_ms 37 exit 0
+dispatcher_ms 34 exit 0
+dispatcher_ms 41 exit 0
+dispatcher_ms 53 exit 0
+dispatcher_ms 54 exit 0
+dispatcher_ms 27 exit 0
+dispatcher_ms 54 exit 0
+dispatcher_ms 39 exit 0
+dispatcher_ms 29 exit 0
+dispatcher_ms 45 exit 0
+dispatcher_ms 48 exit 0
+dispatcher_ms 58 exit 0
+dispatcher_ms 51 exit 0
+dispatcher_ms 40 exit 0
+dispatcher_ms 51 exit 0
+dispatcher_ms 33 exit 0
+dispatcher_ms 45 exit 0
+dispatcher_ms 24 exit 0
+dispatcher_ms 49 exit 0
+# load after: 37.98 25.99 17.76
+# median dispatcher_ms 45 (n=20, min 24, max 1766)

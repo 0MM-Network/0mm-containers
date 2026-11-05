@@ -1,0 +1,51 @@
+# trunk ai 7b3c45e8fb7d8394b56e047fea88c6643c457c54
+# head 0mm-containers 18adb9b1da2ff34d9d71f9e70e9812c77bcc1e21
+# date 2026-10-31T21:24:05+11:00
+# nproc 12; load before: 35.37 24.29 16.96
+# head image docker.io/library/busybox@sha256:dc2d74b28e4cf8984fa52af1f39bc7c3d9c73760b41a74d629f5d11b1ab28616 (fixture); trunk image localhost/ai-python-cp@sha256:b86913b15aaed089c03ff095976753d9f25ad88c2e2ea329ed11ecec2c836442
+# warm-up, not counted
+warm_trunk 320 exit 0
+warm_head 333 exit 0
+trunk_ms 1543 exit 0
+head_ms 257 exit 0
+trunk_ms 340 exit 0
+head_ms 265 exit 0
+trunk_ms 407 exit 0
+head_ms 304 exit 0
+trunk_ms 1893 exit 0
+head_ms 277 exit 0
+trunk_ms 326 exit 0
+head_ms 244 exit 0
+trunk_ms 304 exit 0
+head_ms 274 exit 0
+trunk_ms 1122 exit 0
+head_ms 278 exit 0
+trunk_ms 360 exit 0
+head_ms 340 exit 0
+trunk_ms 2281 exit 0
+head_ms 373 exit 0
+trunk_ms 441 exit 0
+head_ms 268 exit 0
+trunk_ms 1432 exit 0
+head_ms 238 exit 0
+trunk_ms 391 exit 0
+head_ms 309 exit 0
+trunk_ms 394 exit 0
+head_ms 389 exit 0
+trunk_ms 1671 exit 0
+head_ms 288 exit 0
+trunk_ms 438 exit 0
+head_ms 323 exit 0
+trunk_ms 2227 exit 0
+head_ms 340 exit 0
+trunk_ms 344 exit 0
+head_ms 303 exit 0
+trunk_ms 1596 exit 0
+head_ms 326 exit 0
+trunk_ms 364 exit 0
+head_ms 269 exit 0
+trunk_ms 300 exit 0
+head_ms 289 exit 0
+# load after: 37.71 25.73 17.63
+# median trunk_ms 422.5 (n=20, min 300, max 2281)
+# median head_ms 288.5 (n=20, min 238, max 389)

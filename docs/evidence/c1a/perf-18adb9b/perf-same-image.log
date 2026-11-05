@@ -1,0 +1,51 @@
+# trunk ai 7b3c45e8fb7d8394b56e047fea88c6643c457c54
+# head 0mm-containers 18adb9b1da2ff34d9d71f9e70e9812c77bcc1e21
+# date 2026-10-31T21:23:42+11:00
+# nproc 12; load before: 32.20 22.98 16.39
+# image (both) localhost/ai-python-cp@sha256:b86913b15aaed089c03ff095976753d9f25ad88c2e2ea329ed11ecec2c836442
+# warm-up, not counted
+warm_trunk 1580 exit 0
+warm_head 375 exit 0
+trunk_ms 319 exit 0
+head_ms 327 exit 0
+trunk_ms 1746 exit 0
+head_ms 216 exit 0
+trunk_ms 270 exit 0
+head_ms 254 exit 0
+trunk_ms 329 exit 0
+head_ms 302 exit 0
+trunk_ms 1468 exit 0
+head_ms 304 exit 0
+trunk_ms 392 exit 0
+head_ms 190 exit 0
+trunk_ms 1875 exit 0
+head_ms 212 exit 0
+trunk_ms 307 exit 0
+head_ms 300 exit 0
+trunk_ms 290 exit 0
+head_ms 363 exit 0
+trunk_ms 1470 exit 0
+head_ms 272 exit 0
+trunk_ms 284 exit 0
+head_ms 278 exit 0
+trunk_ms 179 exit 0
+head_ms 281 exit 0
+trunk_ms 305 exit 0
+head_ms 261 exit 0
+trunk_ms 1433 exit 0
+head_ms 302 exit 0
+trunk_ms 314 exit 0
+head_ms 325 exit 0
+trunk_ms 353 exit 0
+head_ms 263 exit 0
+trunk_ms 1304 exit 0
+head_ms 257 exit 0
+trunk_ms 310 exit 0
+head_ms 363 exit 0
+trunk_ms 355 exit 0
+head_ms 350 exit 0
+trunk_ms 1671 exit 0
+head_ms 352 exit 0
+# load after: 35.37 24.29 16.96
+# median trunk_ms 341 (n=20, min 179, max 1875)
+# median head_ms 290.5 (n=20, min 190, max 363)

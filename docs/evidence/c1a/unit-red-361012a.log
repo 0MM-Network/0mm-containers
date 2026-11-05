@@ -1,0 +1,231 @@
+$ git rev-parse --short HEAD
+361012a
+$ bin/bats test/unit/0mm_run_contract.bats
+1..29
+not ok 1 echo manifest prints its argument and exits 0
+# (in test file test/unit/0mm_run_contract.bats, line 61)
+#   `[ "$status" -eq 0 ]' failed
+not ok 2 echo manifest yields the exact hardened podman run argument list
+# (in test file test/unit/0mm_run_contract.bats, line 67)
+#   `[ "$status" -eq 0 ]' failed
+not ok 3 manifest privileged = true is refused with exit 2 before podman run
+# (from function `refused' in file test/unit/0mm_run_contract.bats, line 54,
+#  in test file test/unit/0mm_run_contract.bats, line 87)
+#   `refused' failed
+# expected exit 2, got 127: <bats-core>/lib/bats-core/test_functions.bash: line 162: /workspace/containers-eng/wt-red/bin/0mm-run: No such file or directory
+not ok 4 manifest cap_add is refused
+# (from function `refused' in file test/unit/0mm_run_contract.bats, line 54,
+#  in test file test/unit/0mm_run_contract.bats, line 93)
+#   `refused' failed
+# expected exit 2, got 127: <bats-core>/lib/bats-core/test_functions.bash: line 162: /workspace/containers-eng/wt-red/bin/0mm-run: No such file or directory
+not ok 5 manifest security_opt that weakens seccomp is refused
+# (from function `refused' in file test/unit/0mm_run_contract.bats, line 54,
+#  in test file test/unit/0mm_run_contract.bats, line 98)
+#   `refused' failed
+# expected exit 2, got 127: <bats-core>/lib/bats-core/test_functions.bash: line 162: /workspace/containers-eng/wt-red/bin/0mm-run: No such file or directory
+not ok 6 manifest network = host is refused
+# (from function `refused' in file test/unit/0mm_run_contract.bats, line 54,
+#  in test file test/unit/0mm_run_contract.bats, line 103)
+#   `refused' failed
+# expected exit 2, got 127: <bats-core>/lib/bats-core/test_functions.bash: line 162: /workspace/containers-eng/wt-red/bin/0mm-run: No such file or directory
+not ok 7 manifest mount of the user podman socket is refused
+# (from function `refused' in file test/unit/0mm_run_contract.bats, line 54,
+#  in test file test/unit/0mm_run_contract.bats, line 108)
+#   `refused' failed
+# expected exit 2, got 127: <bats-core>/lib/bats-core/test_functions.bash: line 162: /workspace/containers-eng/wt-red/bin/0mm-run: No such file or directory
+not ok 8 manifest mount whose cache path resolves to a socket is refused
+# (from function `refused' in file test/unit/0mm_run_contract.bats, line 54,
+#  in test file test/unit/0mm_run_contract.bats, line 116)
+#   `refused' failed
+# expected exit 2, got 127: <bats-core>/lib/bats-core/test_functions.bash: line 162: /workspace/containers-eng/wt-red/bin/0mm-run: No such file or directory
+not ok 9 manifest device /dev/kvm is refused for runtime podman
+# (from function `refused' in file test/unit/0mm_run_contract.bats, line 54,
+#  in test file test/unit/0mm_run_contract.bats, line 121)
+#   `refused' failed
+# expected exit 2, got 127: <bats-core>/lib/bats-core/test_functions.bash: line 162: /workspace/containers-eng/wt-red/bin/0mm-run: No such file or directory
+not ok 10 manifest device outside the allowlist is refused for runtime nanos
+# (from function `refused' in file test/unit/0mm_run_contract.bats, line 54,
+#  in test file test/unit/0mm_run_contract.bats, line 126)
+#   `refused' failed
+# expected exit 2, got 127: <bats-core>/lib/bats-core/test_functions.bash: line 162: /workspace/containers-eng/wt-red/bin/0mm-run: No such file or directory
+not ok 11 runtime nanos with /dev/kvm passes the allowlist and stops at the missing backend
+# (from function `refused' in file test/unit/0mm_run_contract.bats, line 54,
+#  in test file test/unit/0mm_run_contract.bats, line 132)
+#   `refused' failed
+# expected exit 2, got 127: <bats-core>/lib/bats-core/test_functions.bash: line 162: /workspace/containers-eng/wt-red/bin/0mm-run: No such file or directory
+not ok 12 argument --privileged is refused
+# (from function `refused' in file test/unit/0mm_run_contract.bats, line 54,
+#  in test file test/unit/0mm_run_contract.bats, line 138)
+#   `refused' failed
+# expected exit 2, got 127: <bats-core>/lib/bats-core/test_functions.bash: line 162: /workspace/containers-eng/wt-red/bin/0mm-run: No such file or directory
+not ok 13 argument --cap-add=SYS_ADMIN is refused
+# (from function `refused' in file test/unit/0mm_run_contract.bats, line 54,
+#  in test file test/unit/0mm_run_contract.bats, line 143)
+#   `refused' failed
+# expected exit 2, got 127: <bats-core>/lib/bats-core/test_functions.bash: line 162: /workspace/containers-eng/wt-red/bin/0mm-run: No such file or directory
+not ok 14 argument --security-opt=seccomp=unconfined is refused
+# (from function `refused' in file test/unit/0mm_run_contract.bats, line 54,
+#  in test file test/unit/0mm_run_contract.bats, line 148)
+#   `refused' failed
+# expected exit 2, got 127: <bats-core>/lib/bats-core/test_functions.bash: line 162: /workspace/containers-eng/wt-red/bin/0mm-run: No such file or directory
+not ok 15 argument --network=host is refused
+# (from function `refused' in file test/unit/0mm_run_contract.bats, line 54,
+#  in test file test/unit/0mm_run_contract.bats, line 153)
+#   `refused' failed
+# expected exit 2, got 127: <bats-core>/lib/bats-core/test_functions.bash: line 162: /workspace/containers-eng/wt-red/bin/0mm-run: No such file or directory
+not ok 16 argument mounting a host socket is refused
+# (from function `refused' in file test/unit/0mm_run_contract.bats, line 54,
+#  in test file test/unit/0mm_run_contract.bats, line 158)
+#   `refused' failed
+# expected exit 2, got 127: <bats-core>/lib/bats-core/test_functions.bash: line 162: /workspace/containers-eng/wt-red/bin/0mm-run: No such file or directory
+not ok 17 argument --device is refused
+# (from function `refused' in file test/unit/0mm_run_contract.bats, line 54,
+#  in test file test/unit/0mm_run_contract.bats, line 163)
+#   `refused' failed
+# expected exit 2, got 127: <bats-core>/lib/bats-core/test_functions.bash: line 162: /workspace/containers-eng/wt-red/bin/0mm-run: No such file or directory
+not ok 18 podman that is not rootless is refused
+# (from function `refused' in file test/unit/0mm_run_contract.bats, line 54,
+#  in test file test/unit/0mm_run_contract.bats, line 168)
+#   `refused' failed
+# expected exit 2, got 127: <bats-core>/lib/bats-core/test_functions.bash: line 162: /workspace/containers-eng/wt-red/bin/0mm-run: No such file or directory
+not ok 19 unreachable podman is refused
+# (from function `refused' in file test/unit/0mm_run_contract.bats, line 54,
+#  in test file test/unit/0mm_run_contract.bats, line 174)
+#   `refused' failed
+# expected exit 2, got 127: <bats-core>/lib/bats-core/test_functions.bash: line 162: /workspace/containers-eng/wt-red/bin/0mm-run: No such file or directory
+not ok 20 root caller is refused
+# (from function `refused' in file test/unit/0mm_run_contract.bats, line 54,
+#  in test file test/unit/0mm_run_contract.bats, line 182)
+#   `refused' failed
+# expected exit 2, got 127: <bats-core>/lib/bats-core/test_functions.bash: line 162: /workspace/containers-eng/wt-red/bin/0mm-run: No such file or directory
+not ok 21 reserved runtime krun is refused
+# (from function `refused' in file test/unit/0mm_run_contract.bats, line 54,
+#  in test file test/unit/0mm_run_contract.bats, line 188)
+#   `refused' failed
+# expected exit 2, got 127: <bats-core>/lib/bats-core/test_functions.bash: line 162: /workspace/containers-eng/wt-red/bin/0mm-run: No such file or directory
+not ok 22 reserved runtime sel4 is refused
+# (from function `refused' in file test/unit/0mm_run_contract.bats, line 54,
+#  in test file test/unit/0mm_run_contract.bats, line 194)
+#   `refused' failed
+# expected exit 2, got 127: <bats-core>/lib/bats-core/test_functions.bash: line 162: /workspace/containers-eng/wt-red/bin/0mm-run: No such file or directory
+not ok 23 unknown manifest key is refused
+# (from function `refused' in file test/unit/0mm_run_contract.bats, line 54,
+#  in test file test/unit/0mm_run_contract.bats, line 200)
+#   `refused' failed
+# expected exit 2, got 127: <bats-core>/lib/bats-core/test_functions.bash: line 162: /workspace/containers-eng/wt-red/bin/0mm-run: No such file or directory
+not ok 24 image not pinned by digest is refused
+# (from function `refused' in file test/unit/0mm_run_contract.bats, line 54,
+#  in test file test/unit/0mm_run_contract.bats, line 205)
+#   `refused' failed
+# expected exit 2, got 127: <bats-core>/lib/bats-core/test_functions.bash: line 162: /workspace/containers-eng/wt-red/bin/0mm-run: No such file or directory
+not ok 25 host environment is not forwarded, listed names are
+# (in test file test/unit/0mm_run_contract.bats, line 211)
+#   `[ "$status" -eq 0 ]' failed
+not ok 26 manifest env entry carrying a value is refused
+# (from function `refused' in file test/unit/0mm_run_contract.bats, line 54,
+#  in test file test/unit/0mm_run_contract.bats, line 218)
+#   `refused' failed
+# expected exit 2, got 127: <bats-core>/lib/bats-core/test_functions.bash: line 162: /workspace/containers-eng/wt-red/bin/0mm-run: No such file or directory
+not ok 27 shared cache mounts read-only, per-bot cache may be writable
+# (in test file test/unit/0mm_run_contract.bats, line 225)
+#   `[ "$status" -eq 0 ]' failed
+not ok 28 writable mount outside the per-bot cache is refused
+# (from function `refused' in file test/unit/0mm_run_contract.bats, line 54,
+#  in test file test/unit/0mm_run_contract.bats, line 234)
+#   `refused' failed
+# expected exit 2, got 127: <bats-core>/lib/bats-core/test_functions.bash: line 162: /workspace/containers-eng/wt-red/bin/0mm-run: No such file or directory
+not ok 29 mount escaping the cache root with .. is refused
+# (from function `refused' in file test/unit/0mm_run_contract.bats, line 54,
+#  in test file test/unit/0mm_run_contract.bats, line 241)
+#   `refused' failed
+# expected exit 2, got 127: <bats-core>/lib/bats-core/test_functions.bash: line 162: /workspace/containers-eng/wt-red/bin/0mm-run: No such file or directory
+
+The following warnings were encountered during tests:
+BW01: `run`'s command `/workspace/containers-eng/wt-red/bin/0mm-run /workspace/containers-eng/wt-red/test/fixtures/manifests/echo.toml hello` exited with code 127, indicating 'Command not found'. Use run's return code checks, e.g. `run -127`, to fix this message.
+      (from function `run' in file <bats-core>/lib/bats-core/test_functions.bash, line 446,
+       in test file test/unit/0mm_run_contract.bats, line 60)
+BW01: `run`'s command `/workspace/containers-eng/wt-red/bin/0mm-run /workspace/containers-eng/wt-red/test/fixtures/manifests/echo.toml hello` exited with code 127, indicating 'Command not found'. Use run's return code checks, e.g. `run -127`, to fix this message.
+      (from function `run' in file <bats-core>/lib/bats-core/test_functions.bash, line 446,
+       in test file test/unit/0mm_run_contract.bats, line 66)
+BW01: `run`'s command `/workspace/containers-eng/wt-red/bin/0mm-run <bats-tmp>/test/3/variant.toml hello` exited with code 127, indicating 'Command not found'. Use run's return code checks, e.g. `run -127`, to fix this message.
+      (from function `run' in file <bats-core>/lib/bats-core/test_functions.bash, line 446,
+       in test file test/unit/0mm_run_contract.bats, line 86)
+BW01: `run`'s command `/workspace/containers-eng/wt-red/bin/0mm-run <bats-tmp>/test/4/variant.toml hello` exited with code 127, indicating 'Command not found'. Use run's return code checks, e.g. `run -127`, to fix this message.
+      (from function `run' in file <bats-core>/lib/bats-core/test_functions.bash, line 446,
+       in test file test/unit/0mm_run_contract.bats, line 92)
+BW01: `run`'s command `/workspace/containers-eng/wt-red/bin/0mm-run <bats-tmp>/test/5/variant.toml hello` exited with code 127, indicating 'Command not found'. Use run's return code checks, e.g. `run -127`, to fix this message.
+      (from function `run' in file <bats-core>/lib/bats-core/test_functions.bash, line 446,
+       in test file test/unit/0mm_run_contract.bats, line 97)
+BW01: `run`'s command `/workspace/containers-eng/wt-red/bin/0mm-run <bats-tmp>/test/6/variant.toml hello` exited with code 127, indicating 'Command not found'. Use run's return code checks, e.g. `run -127`, to fix this message.
+      (from function `run' in file <bats-core>/lib/bats-core/test_functions.bash, line 446,
+       in test file test/unit/0mm_run_contract.bats, line 102)
+BW01: `run`'s command `/workspace/containers-eng/wt-red/bin/0mm-run <bats-tmp>/test/7/variant.toml hello` exited with code 127, indicating 'Command not found'. Use run's return code checks, e.g. `run -127`, to fix this message.
+      (from function `run' in file <bats-core>/lib/bats-core/test_functions.bash, line 446,
+       in test file test/unit/0mm_run_contract.bats, line 107)
+BW01: `run`'s command `/workspace/containers-eng/wt-red/bin/0mm-run <bats-tmp>/test/8/variant.toml hello` exited with code 127, indicating 'Command not found'. Use run's return code checks, e.g. `run -127`, to fix this message.
+      (from function `run' in file <bats-core>/lib/bats-core/test_functions.bash, line 446,
+       in test file test/unit/0mm_run_contract.bats, line 115)
+BW01: `run`'s command `/workspace/containers-eng/wt-red/bin/0mm-run <bats-tmp>/test/9/variant.toml hello` exited with code 127, indicating 'Command not found'. Use run's return code checks, e.g. `run -127`, to fix this message.
+      (from function `run' in file <bats-core>/lib/bats-core/test_functions.bash, line 446,
+       in test file test/unit/0mm_run_contract.bats, line 120)
+BW01: `run`'s command `/workspace/containers-eng/wt-red/bin/0mm-run <bats-tmp>/test/10/variant.toml hello` exited with code 127, indicating 'Command not found'. Use run's return code checks, e.g. `run -127`, to fix this message.
+      (from function `run' in file <bats-core>/lib/bats-core/test_functions.bash, line 446,
+       in test file test/unit/0mm_run_contract.bats, line 125)
+BW01: `run`'s command `/workspace/containers-eng/wt-red/bin/0mm-run <bats-tmp>/test/11/variant.toml hello` exited with code 127, indicating 'Command not found'. Use run's return code checks, e.g. `run -127`, to fix this message.
+      (from function `run' in file <bats-core>/lib/bats-core/test_functions.bash, line 446,
+       in test file test/unit/0mm_run_contract.bats, line 131)
+BW01: `run`'s command `/workspace/containers-eng/wt-red/bin/0mm-run /workspace/containers-eng/wt-red/test/fixtures/manifests/echo.toml --privileged` exited with code 127, indicating 'Command not found'. Use run's return code checks, e.g. `run -127`, to fix this message.
+      (from function `run' in file <bats-core>/lib/bats-core/test_functions.bash, line 446,
+       in test file test/unit/0mm_run_contract.bats, line 137)
+BW01: `run`'s command `/workspace/containers-eng/wt-red/bin/0mm-run /workspace/containers-eng/wt-red/test/fixtures/manifests/echo.toml --cap-add=SYS_ADMIN` exited with code 127, indicating 'Command not found'. Use run's return code checks, e.g. `run -127`, to fix this message.
+      (from function `run' in file <bats-core>/lib/bats-core/test_functions.bash, line 446,
+       in test file test/unit/0mm_run_contract.bats, line 142)
+BW01: `run`'s command `/workspace/containers-eng/wt-red/bin/0mm-run /workspace/containers-eng/wt-red/test/fixtures/manifests/echo.toml --security-opt=seccomp=unconfined` exited with code 127, indicating 'Command not found'. Use run's return code checks, e.g. `run -127`, to fix this message.
+      (from function `run' in file <bats-core>/lib/bats-core/test_functions.bash, line 446,
+       in test file test/unit/0mm_run_contract.bats, line 147)
+BW01: `run`'s command `/workspace/containers-eng/wt-red/bin/0mm-run /workspace/containers-eng/wt-red/test/fixtures/manifests/echo.toml --network=host` exited with code 127, indicating 'Command not found'. Use run's return code checks, e.g. `run -127`, to fix this message.
+      (from function `run' in file <bats-core>/lib/bats-core/test_functions.bash, line 446,
+       in test file test/unit/0mm_run_contract.bats, line 152)
+BW01: `run`'s command `/workspace/containers-eng/wt-red/bin/0mm-run /workspace/containers-eng/wt-red/test/fixtures/manifests/echo.toml --volume=<bats-tmp>/test/16/podman.sock:/run/podman.sock` exited with code 127, indicating 'Command not found'. Use run's return code checks, e.g. `run -127`, to fix this message.
+      (from function `run' in file <bats-core>/lib/bats-core/test_functions.bash, line 446,
+       in test file test/unit/0mm_run_contract.bats, line 157)
+BW01: `run`'s command `/workspace/containers-eng/wt-red/bin/0mm-run /workspace/containers-eng/wt-red/test/fixtures/manifests/echo.toml --device=/dev/kvm` exited with code 127, indicating 'Command not found'. Use run's return code checks, e.g. `run -127`, to fix this message.
+      (from function `run' in file <bats-core>/lib/bats-core/test_functions.bash, line 446,
+       in test file test/unit/0mm_run_contract.bats, line 162)
+BW01: `run`'s command `/workspace/containers-eng/wt-red/bin/0mm-run /workspace/containers-eng/wt-red/test/fixtures/manifests/echo.toml hello` exited with code 127, indicating 'Command not found'. Use run's return code checks, e.g. `run -127`, to fix this message.
+      (from function `run' in file <bats-core>/lib/bats-core/test_functions.bash, line 446,
+       in test file test/unit/0mm_run_contract.bats, line 167)
+BW01: `run`'s command `/workspace/containers-eng/wt-red/bin/0mm-run /workspace/containers-eng/wt-red/test/fixtures/manifests/echo.toml hello` exited with code 127, indicating 'Command not found'. Use run's return code checks, e.g. `run -127`, to fix this message.
+      (from function `run' in file <bats-core>/lib/bats-core/test_functions.bash, line 446,
+       in test file test/unit/0mm_run_contract.bats, line 173)
+BW01: `run`'s command `/workspace/containers-eng/wt-red/bin/0mm-run /workspace/containers-eng/wt-red/test/fixtures/manifests/echo.toml hello` exited with code 127, indicating 'Command not found'. Use run's return code checks, e.g. `run -127`, to fix this message.
+      (from function `run' in file <bats-core>/lib/bats-core/test_functions.bash, line 446,
+       in test file test/unit/0mm_run_contract.bats, line 181)
+BW01: `run`'s command `/workspace/containers-eng/wt-red/bin/0mm-run <bats-tmp>/test/21/variant.toml hello` exited with code 127, indicating 'Command not found'. Use run's return code checks, e.g. `run -127`, to fix this message.
+      (from function `run' in file <bats-core>/lib/bats-core/test_functions.bash, line 446,
+       in test file test/unit/0mm_run_contract.bats, line 187)
+BW01: `run`'s command `/workspace/containers-eng/wt-red/bin/0mm-run <bats-tmp>/test/22/variant.toml hello` exited with code 127, indicating 'Command not found'. Use run's return code checks, e.g. `run -127`, to fix this message.
+      (from function `run' in file <bats-core>/lib/bats-core/test_functions.bash, line 446,
+       in test file test/unit/0mm_run_contract.bats, line 193)
+BW01: `run`'s command `/workspace/containers-eng/wt-red/bin/0mm-run <bats-tmp>/test/23/variant.toml hello` exited with code 127, indicating 'Command not found'. Use run's return code checks, e.g. `run -127`, to fix this message.
+      (from function `run' in file <bats-core>/lib/bats-core/test_functions.bash, line 446,
+       in test file test/unit/0mm_run_contract.bats, line 199)
+BW01: `run`'s command `/workspace/containers-eng/wt-red/bin/0mm-run <bats-tmp>/test/24/variant.toml hello` exited with code 127, indicating 'Command not found'. Use run's return code checks, e.g. `run -127`, to fix this message.
+      (from function `run' in file <bats-core>/lib/bats-core/test_functions.bash, line 446,
+       in test file test/unit/0mm_run_contract.bats, line 204)
+BW01: `run`'s command `/workspace/containers-eng/wt-red/bin/0mm-run <bats-tmp>/test/25/variant.toml hello` exited with code 127, indicating 'Command not found'. Use run's return code checks, e.g. `run -127`, to fix this message.
+      (from function `run' in file <bats-core>/lib/bats-core/test_functions.bash, line 446,
+       in test file test/unit/0mm_run_contract.bats, line 210)
+BW01: `run`'s command `/workspace/containers-eng/wt-red/bin/0mm-run <bats-tmp>/test/26/variant.toml hello` exited with code 127, indicating 'Command not found'. Use run's return code checks, e.g. `run -127`, to fix this message.
+      (from function `run' in file <bats-core>/lib/bats-core/test_functions.bash, line 446,
+       in test file test/unit/0mm_run_contract.bats, line 217)
+BW01: `run`'s command `/workspace/containers-eng/wt-red/bin/0mm-run <bats-tmp>/test/27/variant.toml hello` exited with code 127, indicating 'Command not found'. Use run's return code checks, e.g. `run -127`, to fix this message.
+      (from function `run' in file <bats-core>/lib/bats-core/test_functions.bash, line 446,
+       in test file test/unit/0mm_run_contract.bats, line 224)
+BW01: `run`'s command `/workspace/containers-eng/wt-red/bin/0mm-run <bats-tmp>/test/28/variant.toml hello` exited with code 127, indicating 'Command not found'. Use run's return code checks, e.g. `run -127`, to fix this message.
+      (from function `run' in file <bats-core>/lib/bats-core/test_functions.bash, line 446,
+       in test file test/unit/0mm_run_contract.bats, line 233)
+BW01: `run`'s command `/workspace/containers-eng/wt-red/bin/0mm-run <bats-tmp>/test/29/variant.toml hello` exited with code 127, indicating 'Command not found'. Use run's return code checks, e.g. `run -127`, to fix this message.
+      (from function `run' in file <bats-core>/lib/bats-core/test_functions.bash, line 446,
+       in test file test/unit/0mm_run_contract.bats, line 240)
+exit=1

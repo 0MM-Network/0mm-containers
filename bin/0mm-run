@@ -1,0 +1,204 @@
+#!/usr/bin/env bash
+# Single rootless dispatcher: bin/0mm-run <manifest.toml> [args...]
+# Contract: docs/adr/0002-shim-contract.md. Schema: shims/manifest.schema.
+# Every refusal exits 2 before any container starts.
+set -euo pipefail
+
+SELF="$(readlink -f "${BASH_SOURCE[0]}")"
+PKG="${SELF%/bin/*}"
+SCHEMA="${PKG}/shims/manifest.schema"
+BACKENDS="${PKG}/bin/lib/0mm-run"
+
+RESERVED_RUNTIMES=" krun sel4 "
+NETWORKS=" none pasta slirp4netns "
+# Podman options that never reach podman through argv. Arguments go to the tool,
+# so these names are refused outright rather than guessed at.
+ARG_DENY=(--privileged --cap-add --security-opt --device --volume --mount --network --net --userns --pid --ipc)
+
+refuse() { echo "0mm-run: refused: $*" >&2; exit 2; }
+
+declare -A TYPE=() PRESENCE=() CHECK=()
+KEYS=()
+load_schema() {
+  local k t p c
+  while read -r k t p c; do
+    [[ -z "$k" || "$k" == \#* ]] && continue
+    KEYS+=("$k") TYPE[$k]="$t" PRESENCE[$k]="$p" CHECK[$k]="$c"
+  done < "$SCHEMA"
+}
+
+# M[key] holds a scalar, or array elements joined by newlines.
+declare -A M=()
+parse_value() {
+  local key="$1" raw="$2" n="$3" rest elems=()
+  case "${TYPE[$key]}" in
+    string) [[ "$raw" =~ ^\"([^\"\\]*)\"$ ]] || refuse "$key must be a string (line $n)"; M[$key]="${BASH_REMATCH[1]}" ;;
+    bool)   [[ "$raw" =~ ^(true|false)$ ]] || refuse "$key must be true or false (line $n)"; M[$key]="$raw" ;;
+    int)    [[ "$raw" =~ ^[0-9]+$ ]] || refuse "$key must be an integer (line $n)"; M[$key]="$raw" ;;
+    array)
+      [[ "$raw" =~ ^\[(.*)\]$ ]] || refuse "$key must be an array of strings (line $n)"
+      rest="${BASH_REMATCH[1]}"
+      while [[ "$rest" =~ ^[[:space:]]*\"([^\"\\]*)\"[[:space:]]*(,|$)(.*)$ ]]; do
+        elems+=("${BASH_REMATCH[1]}"); rest="${BASH_REMATCH[3]}"
+      done
+      [[ "$rest" =~ ^[[:space:]]*$ ]] || refuse "$key must be an array of strings (line $n)"
+      M[$key]="$(printf '%s\n' "${elems[@]+"${elems[@]}"}")"
+      [[ ${#elems[@]} -gt 0 ]] || M[$key]=""
+      ;;
+  esac
+}
+
+parse_manifest() {
+  local file="$1" line key n=0
+  [[ -f "$file" && -r "$file" ]] || refuse "manifest $file is not a readable file"
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    n=$((n + 1))
+    [[ "$line" =~ ^[[:space:]]*(#.*)?$ ]] && continue
+    [[ "$line" =~ ^[[:space:]]*([A-Za-z0-9_]+)[[:space:]]*=[[:space:]]*(.*[^[:space:]])[[:space:]]*$ ]] \
+      || refuse "cannot parse manifest line $n"
+    key="${BASH_REMATCH[1]}"
+    case "${PRESENCE[$key]:-unknown}" in
+      forbidden) refuse "$key is not allowed" ;;
+      unknown) refuse "unknown manifest key $key" ;;
+    esac
+    [[ -z "${M[$key]+set}" ]] || refuse "duplicate manifest key $key"
+    parse_value "$key" "${BASH_REMATCH[2]}" "$n"
+  done < "$file"
+  for key in "${!PRESENCE[@]}"; do
+    [[ "${PRESENCE[$key]}" != required || -n "${M[$key]+set}" ]] || refuse "manifest is missing $key"
+  done
+}
+
+elems() { [[ -n "${M[$1]:-}" ]] && printf '%s\n' "${M[$1]}"; return 0; }
+
+# One check_<name> per name in the schema's check column. Each takes one value,
+# or one array element.
+check_runtime() {
+  [[ "$RESERVED_RUNTIMES" != *" $1 "* ]] || refuse "runtime $1 is reserved"
+  [[ "$1" == podman || "$1" == nanos ]] || refuse "unknown runtime $1"
+}
+check_digest() { [[ "$1" =~ ^[^@[:space:]]+@sha256:[0-9a-f]{64}$ ]] || refuse "image must be pinned by digest (name@sha256:<64 hex>)"; }
+check_nonempty() { [[ -n "$1" ]] || refuse "command must not be empty"; }
+check_network() { [[ "$NETWORKS" == *" $1 "* ]] || refuse "network $1 is not allowed"; }
+check_size() { [[ "$1" =~ ^[0-9]+[kmg]?$ ]] || refuse "memory $1 must look like 4g"; }
+check_cpus() { [[ "$1" =~ ^[0-9]+(\.[0-9]+)?$ ]] || refuse "cpus $1 must be a number"; }
+check_envname() { [[ "$1" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || refuse "env entries must be variable names, never values"; }
+check_device() {
+  [[ "$1" == /dev/kvm && "${M[runtime]}" == nanos ]] || refuse "device $1 is not allowed for runtime ${M[runtime]}"
+}
+
+VOLUMES=()
+check_mount() {
+  local spec="$1" src dst mode extra cache path own
+  IFS=: read -r src dst mode extra <<< "$spec"
+  [[ -n "$src" && -n "$dst" && -n "$mode" && -z "$extra" ]] || refuse "mount $spec must be source:target:ro|rw"
+  [[ "$src" != /* ]] || refuse "mount source $src is outside the cache root; sources are relative to \$AI_ROOT/cache"
+  [[ "/$src/" != */../* ]] || refuse "mount source $src may not contain .."
+  [[ "$dst" == /* && "$dst" != /work && "$dst" != /work/* ]] || refuse "mount target $dst must be absolute and outside /work"
+  [[ "$mode" == ro || "$mode" == rw ]] || refuse "mount mode $mode must be ro or rw"
+  [[ -n "${AI_ROOT:-}" ]] || refuse "mounts need AI_ROOT set"
+  cache="$(realpath -e "${AI_ROOT}/cache" 2>/dev/null)" || refuse "cache root \$AI_ROOT/cache does not exist"
+  path="$(realpath -e "${cache}/${src}" 2>/dev/null)" || refuse "mount source $src does not exist under the cache root"
+  [[ "$path" == "$cache" || "$path" == "$cache"/* ]] || refuse "mount source $src resolves outside the cache root"
+  [[ -d "$path" || -f "$path" ]] || refuse "mount source $src is not a file or directory"
+  if [[ "$mode" == rw ]]; then
+    own="${cache}/${TOOL}/${BOT}"
+    [[ "$path" == "$own" || "$path" == "$own"/* ]] || refuse "writable mount $src must sit under the per-bot cache ${TOOL}/${BOT}"
+  fi
+  VOLUMES+=("${path}:${dst}:${mode}")
+}
+
+# Schema order matters: runtime is checked before devices, which depend on it.
+validate_manifest() {
+  local key item
+  for key in "${KEYS[@]}"; do
+    [[ -n "${M[$key]+set}" && "${CHECK[$key]}" != - ]] || continue
+    if [[ "${TYPE[$key]}" == array && "${CHECK[$key]}" != nonempty ]]; then
+      while IFS= read -r item; do "check_${CHECK[$key]}" "$item"; done < <(elems "$key")
+    else
+      "check_${CHECK[$key]}" "${M[$key]}"
+    fi
+  done
+}
+
+check_args() {
+  local arg deny
+  for arg in "$@"; do
+    for deny in "${ARG_DENY[@]}"; do
+      [[ "$arg" != "$deny" && "$arg" != "$deny="* ]] || refuse "argument $arg is not allowed"
+    done
+  done
+}
+
+check_workdir() {
+  [[ "$PWD" != / && "$PWD" != "${HOME:-/}" ]] || refuse "will not mount $PWD at /work; run from a project directory"
+  [[ "$PWD" != *[:,]* ]] || refuse "working directory path may not contain : or ,"
+}
+
+# `podman info` costs most of a second, so a passing probe is remembered for
+# ROOTLESS_TTL seconds in the caller's XDG_RUNTIME_DIR. The record holds a key
+# built from everything that can change which engine `podman` reaches: the
+# uid, the podman binary (path, device, inode, size, mtime), the
+# CONTAINER_HOST, CONTAINER_CONNECTION, CONTAINERS_CONF and
+# CONTAINERS_CONF_OVERRIDE values, and the stat of every containers.conf
+# podman reads. Any change, an expired or foreign record, or a failed probe
+# means a fresh probe. Failures are never remembered.
+ROOTLESS_TTL=60
+
+rootless_key() {
+  local podman_bin="$1" conf="${XDG_CONFIG_HOME:-${HOME:-}/.config}/containers"
+  printf 'v1 uid=%s host=%s conn=%s conf=%s override=%s stat=' "$EUID" \
+    "${CONTAINER_HOST-}" "${CONTAINER_CONNECTION-}" "${CONTAINERS_CONF-}" "${CONTAINERS_CONF_OVERRIDE-}"
+  stat -L --printf '%n:%d:%i:%s:%Y;' "$podman_bin" ${CONTAINERS_CONF:+"$CONTAINERS_CONF"} \
+    ${CONTAINERS_CONF_OVERRIDE:+"$CONTAINERS_CONF_OVERRIDE"} \
+    /usr/share/containers/containers.conf /etc/containers/containers.conf \
+    /etc/containers/containers.conf.d "${conf}/containers.conf" "${conf}/containers.conf.d" 2>/dev/null
+  return 0
+}
+
+# Prints the record path when XDG_RUNTIME_DIR is a private directory owned by
+# the caller; prints nothing otherwise.
+rootless_record() {
+  local run="${XDG_RUNTIME_DIR-}"
+  [[ "$run" == /* && -d "$run" && ! -L "$run" && -O "$run" ]] || return 0
+  [[ "$(stat -c %a "$run")" == 700 ]] || return 0
+  printf '%s\n' "${run}/0mm-run-rootless"
+}
+
+check_rootless() {
+  local podman_bin rootless key record seen mtime tmp
+  podman_bin="$(command -v podman)" || refuse "podman unavailable"
+  key="$(rootless_key "$podman_bin")"
+  record="$(rootless_record)"
+  if [[ -n "$record" && -f "$record" && ! -L "$record" && -O "$record" ]]; then
+    mtime="$(stat -c %Y "$record")"
+    IFS= read -r seen < "$record" || true
+    (( EPOCHSECONDS - mtime >= 0 && EPOCHSECONDS - mtime < ROOTLESS_TTL )) && [[ "$seen" == "$key" ]] && return 0
+  fi
+  rootless="$(podman info --format '{{.Host.Security.Rootless}}' 2>/dev/null)" || refuse "podman unavailable"
+  [[ "$rootless" == true ]] || refuse "podman is not rootless"
+  [[ -n "$record" ]] || return 0
+  tmp="$(umask 077 && mktemp "${record}.XXXXXX" 2>/dev/null)" || return 0
+  printf '%s\n' "$key" > "$tmp" && mv -f "$tmp" "$record" || rm -f "$tmp"
+}
+
+main() {
+  [[ $# -ge 1 ]] || { echo "usage: 0mm-run <manifest.toml> [args...]" >&2; exit 2; }
+  [[ "$(id -u)" != 0 ]] || refuse "caller is root"
+  local manifest="$1"; shift
+  TOOL="$(basename "$manifest" .toml)"
+  BOT="${OMM_BOT:-$(id -un)}"
+  [[ "$BOT" =~ ^[a-z0-9][a-z0-9_-]*$ ]] || refuse "bot name $BOT is not a valid name"
+  load_schema
+  parse_manifest "$manifest"
+  validate_manifest
+  check_args "$@"
+  check_workdir
+  [[ -f "${BACKENDS}/${M[runtime]}.sh" ]] || refuse "runtime ${M[runtime]} has no backend yet"
+  check_rootless
+  # shellcheck source=lib/0mm-run/podman.sh
+  source "${BACKENDS}/${M[runtime]}.sh"
+  backend_exec "$@"
+}
+
+main "$@"
