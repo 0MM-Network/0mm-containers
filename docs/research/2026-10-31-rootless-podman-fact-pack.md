@@ -2,7 +2,7 @@
 
 The full research note is private. This stub only says where it lives and what it covers.
 
-- **Canonical note:** private repo `0mm-mark/ai`, branch `bot/researchy/research-packs-rebuild`, path `docs/research/2026-10-31-rootless-podman-fact-pack.md`.
+- **Canonical note:** private repo `0mm-mark/ai`: [docs/research/2026-10-31-rootless-podman-fact-pack.md](https://github.com/0mm-mark/ai/blob/main/docs/research/2026-10-31-rootless-podman-fact-pack.md) (added in 0mm-mark/ai#288).
 - **Why private:** it records deployment-specific security details that don't belong in a public repo.
 - **Provenance:** compiled 2026-10-31; restored 2026-11-18 after a workspace rollback.
 
