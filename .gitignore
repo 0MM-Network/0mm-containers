@@ -99,6 +99,8 @@ terraform/examples/**/node_modules/
 !docs/reviews/**
 !docs/features/
 !docs/features/**
+!docs/research/
+!docs/research/**
 
 # Package contract assets (whitelist repo ignores * by default)
 !**/goss.yaml
